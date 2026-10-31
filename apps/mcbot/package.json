@@ -21,7 +21,7 @@
     "minecraft-data": "^3.119.0",
     "mineflayer": "^4.39.0",
     "mineflayer-pathfinder": "^2.4.5",
-    "vec3": "^0.1.10"
+    "vec3": "^0.2.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
