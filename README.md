@@ -19,7 +19,7 @@
 - Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI，结构化长期记忆落 DB（schema v18；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback，孤儿镜像由维护任务清理）；v0.7.3 文档模式把角色卡与记忆写为只读文档，角色卡只在会话创建时发送，后续轮由模型按需 `read`（默认关闭；生产读范围矩阵 7/7 通过后已显式启用）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`CHATBOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
 - mcbot：Minecraft 附属 Bot（独立服务，仅 loopback `127.0.0.1:3010`）的只读/控制对接：读 Token（`/status`/`/events/recent`/`/history`）与控制 Token（`/task/*`/`/move`/`/say`）分离，控制 Token 为空即只读（`/say` 也 503）；服务端每 5s 轮询 `/status` 与 `/events/recent?limit=200`（生产 v1.0.6，最低 v0.6.0，契约 v1），事件环最多缓存 100 条且 ≤512 KiB；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符；上游 `alert` 映射为本应用告警事件 `status='event'`；浏览器不直连 mcbot、不经手 Token
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 + 运维脚本 **591**，590 pass / 1 skip）+ Vitest/jsdom（**273**，49 文件），ESLint，`tsc --noEmit`，覆盖率门禁；mcbot 独立 **118** 项
+- 测试：`node --test`（服务端 + 运维脚本 **603**，602 pass / 1 skip）+ Vitest/jsdom（**278**，50 文件），ESLint，`tsc --noEmit`，覆盖率门禁；mcbot 独立 **139** 项
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 仓库结构
@@ -96,7 +96,7 @@
 - **群聊共享会话**：同一群聊目标的所有成员复用唯一 OpenCode Chat 会话，模型可见群内不同成员的历史消息；群内 Chat 按目标串行，私聊仍每用户独立会话；真实用户仍分别用于限流、记忆归属、审计与发送工具令牌。
 - **群聊用户名与共享记忆**：群聊用户消息在提示词中带 `<用户名>：` head；群聊使用独立共享记忆 scope，条目按 `<用户名>：<记忆>` 保存/注入；成员用户级记忆不进入群聊会话；Web「角色与记忆」按用户记忆/群聊记忆左右两栏展示元数据并支持清空群共享记忆。群条目归属键使用稳定 `member_openid`（显示名只存 value），无法映射的旧键标 `legacy:` 保留；`/forget confirm` 同时清除本人在各群贡献的条目并取消在途抽取。
 - **自助命令（仅 C2C 私聊）**：`/help`（按身份动态帮助）、`/memory`（查看记忆计数/类型/启停与最近更新，不含 key/value；`/memory off|on` 暂停/恢复）、`/role`（仅私聊）、`/reset`（重置当前目标全部对话，保留长期记忆）、`/forget confirm`（清除结构化条目、状态、legacy 旧摘要与该 Bot×用户全部会话，含远端）；对 C2C 用户开放；`/reset` 与私聊角色卡变更会尽力删除对应远端会话。
-- **出站连通性（Pi 直连）**：`server/src/bot/connectivity.ts` 每 60 秒探测外网与 QQ 平台只读 API；`GET /api/chatbots/connectivity` 仅返回 `{checkedAt,checking,internet,platforms}`（无 `deviceOnline`/`proxy`），`POST /api/chatbots/connectivity/check` 手动复检；网络恢复后触发队列扫描；`/chatbots` 概览展示外网/QQ 平台状态。
+- **出站连通性（Pi 直连）**：`apps/workbench/server/src/chatbot/connectivity.ts` 每 60 秒探测外网与 QQ 平台只读 API；`GET /api/chatbots/connectivity` 仅返回 `{checkedAt,checking,internet,platforms}`（无 `deviceOnline`/`proxy`），`POST /api/chatbots/connectivity/check` 手动复检；网络恢复后触发队列扫描；`/chatbots` 概览展示外网/QQ 平台状态。
 - **平台连接自检**：`POST /api/chatbots/:id/check`（需登录 + CSRF）调用 QQ `access_token` 换取接口，返回脱敏的通过/异常项并刷新 `last_checked_at`；`/chatbots` 配置页“检查连接”展示结果。
 - **诊断与管理**：`GET /api/chatbots/:id/events?hours&limit&offset&outcome` 返回入站事件元数据（不含正文；结果 received/ok/denied/rate_limited/ignored/error）；投递/发布/指标含 `lastErrorHint` 中文提示；`GET/PATCH/DELETE /api/chatbots/:id/roles…` 与记忆管理（`GET /api/chatbots/:id/memories` 用户级计数/类型/状态、`GET .../memories/:userId/items` 条目元数据、`DELETE` 单条/整用户）只返回/操作元数据（key/value 正文绝不进入 Web/API）。
 - 管理 API `/api/chatbots*` 与页面 `/chatbots`：概览、配置、目标、投递与发布、角色与记忆、诊断六个分区；目标支持 `allowChat` 与“最近入站目标”登记；发布仅纯文本；AppSecret 只写不读，数据库只存 AES-256-GCM 密文（`CHATBOT_SECRET_KEY`，32 字节 base64）。
@@ -136,13 +136,13 @@
 npm ci
 npm run dev              # 服务端（Node 原生 TS，默认 127.0.0.1:3000）
 npm run dev:web          # Vite 开发服务器 :5173
-npm run build            # 构建前端到 web/dist（含 PWA 静态资源）
+npm run build            # 构建前端到 apps/workbench/web/dist（含 PWA 静态资源）
 npm run test             # node --test：服务端 + 运维脚本
 npm run test:coverage    # 服务端/脚本测试 + 覆盖率门禁
 npm run test:web         # 前端 Vitest
 npm run test:web:coverage # 前端 + 覆盖率门禁
-npm run check            # typecheck + lint + 服务端测试 + 前端测试
-node scripts/check-version.mjs # 版本一致性（package.json / README / CHANGELOG / ACCEPTANCE / AGENTS / env.example / DEPLOY 标题 / lock / tool-versions）
+npm run check            # check:app（typecheck + lint + 服务端测试 + 前端测试）+ check:mcbot + check:naming + check:docs
+node scripts/check-version.mjs # 版本一致性（package.json / README / CHANGELOG / ACCEPTANCE / AGENTS / deploy/env.example / DEPLOY 标题 / lock / deploy/tool-versions.json）
 npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldcloud 运行）
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
