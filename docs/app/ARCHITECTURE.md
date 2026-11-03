@@ -12,16 +12,16 @@ Internet
 
 Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
  ├─ antifieldcloud.service (User=antifieldcloud, 127.0.0.1:3000)
- │   ├─ Host app.* → React SPA + /api（含 /api/metrics、/api/shares、/api/storage、/api/chatbots、/api/lofii）
+ │   ├─ Host app.* → React SPA + /api（含 /api/metrics、/api/shares、/api/storage、/api/chatbots、/api/mcbot）
  │   ├─ Host ai.*  → 会话校验 + Origin 校验 + 反向代理 → 127.0.0.1:4096 (opencode)
  │   ├─ 公开 Bot Webhook /api/chatbot/webhook/:botId → QQ Ed25519 验签 + 去重 + 命令/Chat（只读/AI）/入队
- │   ├─ mcbot 对接 v0.8.0（v0.8.1 安全加固）→ 127.0.0.1:3010（mcbot v0.6.1，最低 v0.6.0，仅 loopback）：每 5s 轮询 /status + /events/recent?limit=200；
+ │   ├─ mcbot 对接 v0.8.0（v0.8.1 安全加固）→ 127.0.0.1:3010（mcbot v1.0.6，最低 v0.6.0，仅 loopback）：每 5s 轮询 /status + /events/recent?limit=200；
  │   │   快照/最近 100 条（≤512 KiB）事件仅内存；任务/移动/聊天控制代理（聊天需控制 Token）；上游 alert → 本应用告警 status='event'
  │   ├─ QQ 入站图片（默认开启）→ 固定域名后缀下载（.qpic.cn/.qq.com/.qq.com.cn/.gtimg.cn，实际图床如 multimedia.nt.qq.com.cn）→ OpenCode prompt files → 模型 provider（不落盘）
  │   ├─ Bot 出站 → chatbots.qq.com / api.sgroup.qq.com（固定上游，15s 超时）
  │   ├─ Bot AI → 127.0.0.1:4096 OpenCode 本地 API（仅普通消息 Chat，默认关闭；无 /ask）
  │   ├─ Bot 记忆 → SQLite chatbot_memory_items/chatbot_memory_state（7 类结构化条目）；legacy chatbot_ai_memories + DATA_DIR/bot-memory/memory-<uuid>.md（0700/0600）
- │   ├─ SQLite /var/lib/antifieldcloud/db.sqlite（schema v17）
+ │   ├─ SQLite /var/lib/antifieldcloud/db.sqlite（schema v18）
  │   ├─ 文件   /var/lib/antifieldcloud/files/<xx>/<id>（files.origin=user|note|system）
  │   ├─ 应用备份 /var/lib/antifieldcloud/backups（pending/acked/imports/secrets/db-predeploy-*）
  │   ├─ 世界备份 /var/lib/antifieldcloud/world-backups（world-<UTC>.tar.gz，保留 4 份）
@@ -95,23 +95,23 @@ Bot 出站为 Pi 直连；PC 无代理隧道脚本/计划任务，生产 env 不
 
 ### 2.2 mcbot 请求与轮询路径（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-- 组件：`server/src/lofii/client.ts`（HTTP 客户端）、`server/src/lofii/service.ts`（轮询/缓存/游标/告警映射/控制代理）、`server/src/http/routes/lofii.ts`（HTTP 路由）；`app.ts` 构造 `mcbotService` 并挂到 `AppContext.lofii`，`main.ts` 在 listen 后 `startmcbot()`、退出时 `lofii.stop()`（`onClose` 同样 stop，幂等）。
-- 上游：独立附属服务 mcbot v0.6.1（最低兼容 v0.6.0），仅 `127.0.0.1:3010`，契约 `contractVersion=1`；v0.6.1 的 `splitOutgoing` 逐行把行首 `/` 中和为全角 `／`（防御纵深）；应用是纯 HTTP 客户端，不消费 SSE、不访问其 RCON/OpenCode/记忆数据。
+- 组件：`server/src/mcbot/client.ts`（HTTP 客户端）、`server/src/mcbot/service.ts`（轮询/缓存/游标/告警映射/控制代理）、`server/src/http/routes/mcbot.ts`（HTTP 路由）；`app.ts` 构造 `McbotService` 并挂到 `AppContext.mcbot`，`main.ts` 在 listen 后启动轮询、退出时 `stop()`（`onClose` 同样 stop，幂等）。
+- 上游：独立附属服务 mcbot，生产 **v1.0.6**（最低兼容 v0.6.0），仅 `127.0.0.1:3010`，契约 `contractVersion=1`；v0.6.1 起 `splitOutgoing` 逐行把行首 `/` 中和为全角 `／`（防御纵深）；应用是纯 HTTP 客户端，不消费 SSE、不访问其 RCON/OpenCode/记忆数据。
 - 轮询：`setInterval(MCBOT_POLL_MS 默认 5000)` + 启动立即一轮；单飞 `inFlight` Promise，上一轮未结束复用同一 Promise（不并发/不堆积）；每轮 `Promise.allSettled([GET /status, GET /events/recent?limit=200])`（覆盖一次突发）。成功后更新 `statusSnapshot/version/contractVersion/lastPollAt/lastSuccessAt/failedPolls`；失败只更新 `reachable/stale/error` 并保留旧快照。`stale`：未连通且（从未成功时连续 3 轮失败，或距上次成功 > 3×轮询间隔）。`reachable=true` 但 `/events/recent` 或游标失败时 `error≠null`，前端必须展示可见警告。
-- 客户端安全/边界：读 Token 用于 `/status`、`/events/recent`、`/history`；控制 Token 用于 `/task/*`、`/move`、`/say`；`MCBOT_URL` 启动校验 loopback + http(s) 且仅根地址（拒绝 userinfo/路径/查询/片段）；`redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（`readCappedBody` 边读边计数，Content-Length 超限直接拒绝）；错误统一 `mcbotError(code/statusCode/upstreamCode)`，message 大小写不敏感地移除上游 URL 与两枚 Token；上游 4xx 稳定码归一化为 `lofii_<code>`，401/403 → `lofii_auth_failed`，5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留稳定码，其它 5xx/非 JSON → `lofii_upstream_error`，网络/超时/重定向 → `lofii_unavailable`；`/history` 校验 `kind` 与数组形状并只透传对象行。
+- 客户端安全/边界：读 Token 用于 `/status`、`/events/recent`、`/history`；控制 Token 用于 `/task/*`、`/move`、`/say`；`MCBOT_URL` 启动校验 loopback + http(s) 且仅根地址（拒绝 userinfo/路径/查询/片段）；`redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（`readCappedBody` 边读边计数，Content-Length 超限直接拒绝）；错误统一 `mcbotError(code/statusCode/upstreamCode)`，message 大小写不敏感地移除上游 URL 与两枚 Token；上游 4xx 稳定码归一化为 `mcbot_<code>`，401/403 → `mcbot_auth_failed`，5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留稳定码，其它 5xx/非 JSON → `mcbot_upstream_error`，网络/超时/重定向 → `mcbot_unavailable`；`/history` 校验 `kind` 与数组形状并只透传对象行。
 - 事件缓存：合并 `/events/recent` 与现有缓存，按 `id` 去重、按时间 newest-first、最多 `MCBOT_EVENT_CACHE_LIMIT=100` 条且序列化总字节 ≤`MCBOT_EVENT_CACHE_MAX_BYTES=512 KiB`；只存内存，不落库/不写日志（聊天事件正文也只存在这里）。
-- 告警游标：`meta.lofii.event_cursor={bootId,lastEventId,lastTs}`；每轮 `advanceCursor`：`eventsSupported=false` 直接返回；首次/无游标/`bootId` 变化 → 只写基线、返回 0（不重放 ring 旧告警）；否则 `eventsAfterCursor`（优先按 ring 位置，窗口外按 `<bootId>-<seq>` 序号或时间比较，无法判断宁可不重复）过滤 `type='alert'` 的事件 → `mapmcbotAlert`（own-property 已知 5 类映射 event/severity/title，未知 → `lofii_alert`，`severity==='error'` → critical）→ `AlertService.recordExternal`；`MCBOT_ALERTS_ENABLED=false` 仍推进游标不写告警；**告警写入失败时游标停在上一条已完整处理事件并返回，下一轮重试失败事件**（v0.8.1，避免静默丢告警）；游标写库失败只 warn 并置本轮 `error=lofii_cursor_failed`，不回滚缓存。
+- 告警游标：`meta.mcbot.event_cursor={bootId,lastEventId,lastTs}`（v1.0.0 迁移把旧键 `lofii.event_cursor` 改名）；每轮 `advanceCursor`：`eventsSupported=false` 直接返回；首次/无游标/`bootId` 变化 → 只写基线、返回 0（不重放 ring 旧告警）；否则 `eventsAfterCursor`（优先按 ring 位置，窗口外按 `<bootId>-<seq>` 序号或时间比较，无法判断宁可不重复）过滤 `type='alert'` 的事件 → `mapLofiiAlert`（own-property 已知 5 类映射 event/severity/title，未知 → `mcbot_alert`，`severity==='error'` → critical，details 为 `source:"mcbot"` / `mcbotEventId` / `mcbotType`）→ `AlertService.recordExternal`；`MCBOT_ALERTS_ENABLED=false` 仍推进游标不写告警；**告警写入失败时游标停在上一条已完整处理事件并返回，下一轮重试失败事件**（v0.8.1，避免静默丢告警）；游标写库失败只 warn 并置本轮 `error=mcbot_cursor_failed`，不回滚缓存。
 - 告警落库：`AlertService.recordExternal(status='event')` 写 `alert_events`（event 截断 64、title 200、message 1000、details 清洗），不写 `alert_state`；`void deliverExternal(event)` 异步复用 webhook 与 Bot 通知，失败只记脱敏日志；`ALERTS_ENABLED=false` 时不写库/不投递。
-- 控制代理：`/tasks`、`/tasks/stop`、`/tasks/resume`、`/move`、`/say` 均使用控制 Token（v0.8.1 起 `/say` 必须控制 Token，只读模式 503），成功后 `refresh()`（若已有在途轮询先等待再拉一轮）返回上游 `{ok:true,...}`；控制 Token 为空时客户端直接抛 `lofii_control_disabled`（不发请求）。
+- 控制代理：`/tasks`、`/tasks/stop`、`/tasks/resume`、`/move`、`/say` 均使用控制 Token（v0.8.1 起 `/say` 必须控制 Token，只读模式 503），成功后 `refresh()`（若已有在途轮询先等待再拉一轮）返回上游 `{ok:true,...}`；控制 Token 为空时客户端直接抛 `mcbot_control_disabled`（不发请求）。
 - HTTP 路由：全部 `requireAuth`；写操作加 `csrfGuard`；控制 limiter 20/min/IP、say limiter 10/min/IP；任务名/移动动作/`taskId`（trim、无内部空白/控制字符）/消息长度由服务端白名单校验；`/say` **拒绝任意 ASCII `/` 与 C0 控制字符/DEL**（防上游按 240 字符切行后的命令注入）；审计记动作与元数据（say 只记 chars）；`GET /api/mcbot/status` 返回聚合快照（禁用时 `enabled:false` 空壳），`GET /api/mcbot/history` 校验形状后透传只读对象行。
-- 前端：`/minecraft` 由 `meta.lofiiEnabled` 决定是否显示 mcbot 标签；`mcbotPanel` 每 5s 轮询 `/api/mcbot/status`（页面隐藏时暂停，请求序号 + AbortController 防旧响应覆盖），状态经 `safemcbotStatus` 归一化、缺失段显示“—”；写操作走 `/api/mcbot/*` 并在成功后刷新；浏览器不接触 Token/上游地址。
+- 前端：`/minecraft` 由 `meta.mcbotEnabled` 决定是否显示 mcbot 标签（深链 `?tab=mcbot` 或 `#mcbot`）；`McbotPanel` 每 5s 轮询 `/api/mcbot/status`（页面隐藏时暂停，请求序号 + AbortController 防旧响应覆盖），状态经 `safemcbotStatus` 归一化、缺失段显示“—”；写操作走 `/api/mcbot/*` 并在成功后刷新；浏览器不接触 Token/上游地址。
 
 ## 3. 模块
 
 | 模块 | 职责 |
 |---|---|
 | `server/src/config.ts` | 读取 env 文件/环境变量、数值与安全组合校验 |
-| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema **v17**，本版无迁移）、事务；迁移 13 删除非 QQ Bot 及级联数据；迁移 14 结构化记忆两表；迁移 16 群聊角色卡；迁移 17 `audit_write_failures`（均不可逆） |
+| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema **v18**）、事务；迁移 13 删除非 QQ Bot 及级联数据；迁移 14 结构化记忆两表；迁移 16 群聊角色卡；迁移 17 `audit_write_failures`；迁移 18 将 `bot_*` 更名为 `chatbot_*`，并把 `lofii.event_cursor` 改为 `mcbot.event_cursor`（均不可逆） |
 | `auth/` | scrypt、TOTP、恢复码、挑战、会话、CSRF、限流、审计（字段截断 + 失败诊断 `getAuditDiagnostics`） |
 | `files/` | 目录树、上传落库、配额、搜索、回收站、文本预览、MIME 安全分类、`origin` 可见性、物理孤儿回收 |
 | `uploads/` | 分片上传会话/块索引、配额预留、断点状态、原子拼接、过期/终态清理 |
@@ -123,9 +123,9 @@ Bot 出站为 Pi 直连；PC 无代理隧道脚本/计划任务，生产 env 不
 | `notes/` | 笔记/书签、标签、置顶、FTS5 搜索；附件（`origin=note`）与版本历史 |
 | `shares/` | 单文件/多文件分享 token/密码/过期/原子次数/吊销、公开元数据与逐项内容 |
 | `bot/` | QQ 官方 Bot 适配器、Chat AI、结构化长期记忆（群 scope key 用稳定 `member_openid`）、私聊角色卡、群聊目标共享角色卡、上下文文档（`context.ts`：作用域哈希、原子写、清理/sweep）、群消息模式过滤与 `GROUP_MESSAGE_CREATE`、出站连通性、AES-256-GCM 凭据、Webhook 验签/去重、命令（仅 C2C；含自助 `/reset`/`/forget confirm`）、回复管线、QQ 入站图片下载、连接自检、事件诊断、角色/记忆元数据管理、指标/静默、告警通知与文本发布队列/重试。行为保持拆分：`inbound.ts`（入站验签/限流/命令与 Chat 分发）、`diagnostics.ts`（事件/入站目标/指标/最近错误）、`queue.ts`（投递/发布状态机），`service.ts` 保留 facade/依赖装配 |
-| `lofii/` | v0.8.0 引入、v0.8.1 加固的 mcbot Minecraft Bot 对接（仅 loopback）：`client.ts`（读/控制 Token、redirect:error、超时、流式 2 MiB 上限、稳定错误映射、大小写不敏感 URL/Token 脱敏）、`service.ts`（单飞轮询 status/recent?limit=200、快照与 100 条且 ≤512 KiB 事件内存缓存、stale、告警游标 `meta.lofii.event_cursor`、alert→`status='event'` 映射、告警写失败停游标重试、控制代理成功后刷新）；不持久化聊天/事件，不改 schema |
+| `mcbot/` | v0.8.0 引入、v0.8.1 加固的 mcbot Minecraft Bot 对接（仅 loopback）：`client.ts`（读/控制 Token、redirect:error、超时、流式 2 MiB 上限、稳定错误映射、大小写不敏感 URL/Token 脱敏）、`service.ts`（单飞轮询 status/recent?limit=200、快照与 100 条且 ≤512 KiB 事件内存缓存、stale、告警游标 `meta.mcbot.event_cursor`、alert→`status='event'` 映射、告警写失败停游标重试、控制代理成功后刷新）；不持久化聊天/事件，不改 schema |
 | `alerts/` | 阈值评估、状态去重/恢复、通用 webhook；世界备份/拉取/演练超期与异地副本超期；`recordExternal`（mcbot 等外部事件 `status='event'`，不写 `alert_state`，异步 webhook/Bot 通知）；Bot 通知入队 |
-| `http/` | 路由、守卫、错误处理、安全头、Host 分流、静态资源、`requestMeta` 统一信任模型；`chatbots.ts` 管理 API、`bot-webhook.ts` 公开入口、`lofii.ts` mcbot 只读/控制路由 |
+| `http/` | 路由、守卫、错误处理、安全头、Host 分流、静态资源、`requestMeta` 统一信任模型；`chatbots.ts` 管理 API、`bot-webhook.ts` 公开入口、`mcbot.ts` 只读/控制路由 |
 | `cli/` | provisioning、两阶段备份 CLI（prepare/pending/ack/snapshot-db）、backup-encryption.ts（age 加密/公钥校验/sidecar/孤儿正则） |
 | `util/` | 时间/路径/响应/错误；`status.ts` 只读状态文件解析 |
 | `web/` | React SPA（登录、Dashboard、文件、回收站、知识库、分享、MC + mcbot 面板、活动、设置、公开分享页、PWA） |
@@ -136,7 +136,7 @@ Bot 出站为 Pi 直连；PC 无代理隧道脚本/计划任务，生产 env 不
 
 ## 4. 数据模型
 
-SQLite（WAL）核心表（schema v17）：
+SQLite（WAL）核心表（schema v18）：
 
 - `users`：单管理员；scrypt 哈希 + salt；TOTP secret；`totp_last_step` 防重放；恢复码哈希 JSON。
 - `auth_challenges`：密码通过后的 5 分钟一次性挑战（只存 token 哈希）。
@@ -155,7 +155,7 @@ SQLite（WAL）核心表（schema v17）：
 - `alert_events`、`alert_state`：告警历史/去重冷却；`alert_events` 保留 90 天。
 - `metrics_samples`：60s 主机指标样本（`ts/ts_epoch/cpu/mem/temp/disk/load`），按 `ts_epoch` 索引，30 天保留。
 - `chatbots`：平台/名称/启用/公开配置 + `secret_ciphertext/secret_iv/secret_tag/key_version`（AES-256-GCM）；`last_error/last_checked_at`。
-  当前 schema v17；`chatbots` 仅 QQ Bot，`chatbot_memory_items`/`chatbot_memory_state` 为结构化记忆权威，`chatbot_group_roles` 保存群聊共享角色卡，`audit_write_failures` 保存审计失败诊断。
+  当前 schema v18；`chatbots` 仅 QQ Bot，`chatbot_memory_items`/`chatbot_memory_state` 为结构化记忆权威，`chatbot_group_roles` 保存群聊共享角色卡，`audit_write_failures` 保存审计失败诊断。
 - `chatbot_targets`：每 Bot 的频道/用户/群组目标，`(chatbot_id, external_id)` 唯一；`allow_commands` 默认 0、`allow_notifications` 默认 1、`allow_chat` 默认 0；
   `quiet_start_minute`/`quiet_end_minute`（0–1439，可空）。`chat_trigger` 列保留但 API/逻辑不读写。
 - `chatbot_deliveries`：通知/回复/发布/测试投递队列，状态 `queued|sending|sent|failed|dead`；`dedupe_key` 唯一（通知按告警事件去重）；`next_attempt_at` 承载静默延后。
@@ -171,7 +171,7 @@ SQLite（WAL）核心表（schema v17）：
   不通过 API/UI 暴露正文，按 AI 会话保留期清理；`/forget confirm` 与管理删除会同时清 DB 行与镜像。
 - `chatbot_inbound_targets`：`(chatbot_id, target_external_id, user_id)` 主键，记录最近入站目标/用户/类型/`is_direct`/`last_seen_at`；不存消息正文，每 Bot 最多 500 条、按事件保留期清理。
 - v0.7.3 上下文文档不在 SQLite：`ChatbotContextStore` 在 `CHATBOT_CONTEXT_DIR` 下按哈希作用域写 `role.md`/`memory.md`（派生数据，不进入备份；`/reset`/`/forget`/删除清理，维护任务回收超期孤儿）；OpenCode 仅按会话 permissions 读取当前作用域两份文档。
-- v0.8.0 mcbot 对接不新增表/列（schema 保持 v17）：告警游标只写入既有 `meta` 表的 `lofii.event_cursor` 键（JSON `{bootId,lastEventId,lastTs}`）；mcbot 事件/聊天缓存只在服务端内存，不落库；mcbot 告警事件复用 `alert_events`（`status='event'`），不写 `alert_state`。
+- mcbot 对接不新增表/列：告警游标写入既有 `meta` 表的 `mcbot.event_cursor` 键（JSON `{bootId,lastEventId,lastTs}`；v1.0.0 迁移自 `lofii.event_cursor`）；mcbot 事件/聊天缓存只在服务端内存，不落库；mcbot 告警事件复用 `alert_events`（`status='event'`），不写 `alert_state`。当前 schema v18。
 
 世界备份/拉取/演练状态不在 SQLite：由 root/PC 脚本写 `/var/lib/antifieldcloud/{world-backup,world-pull,drill}-status.json`（0644，应用只读解析）。
 
@@ -254,9 +254,9 @@ SQLite（WAL）核心表（schema v17）：
 - nftables 默认拒绝入站；22 仅直连/校园网段（新建连接限速 20/min），25565 仅同网段，25575 仅 loopback，DHCP 仅 eth0/wlan0；
   出站不限制。改动前确认当前 SSH 来源在允许网段内。SSH 为仅公钥（`00-` drop-in），旧回滚备份归档在 `/var/backups/antifieldcloud/`。
 - Bot 部署：`bootstrap-env.sh` 生成/复用 `CHATBOT_SECRET_KEY` 并纳管 `CHATBOT_AI_*`、Chat/记忆键、连通性键、回答/图片键、`CHATBOT_MEMORY_*`；
-  `CHATBOT_AI_VISION_ENABLED` 默认 true；`CHATBOT_ENABLED` 默认 false。当前 schema v17；回滚需迁移前 DB 快照；QQ 入站图片需 OpenCode prompt files + 支持 image 的模型；平台仅 QQ 官方 Bot，无 Gateway/平台前置配置。
+  `CHATBOT_AI_VISION_ENABLED` 默认 true；`CHATBOT_ENABLED` 默认 false。当前 schema v18；回滚需迁移前 DB 快照；QQ 入站图片需 OpenCode prompt files + 支持 image 的模型；平台仅 QQ 官方 Bot，无 Gateway/平台前置配置。
   Cloudflare Access 需对 Bot Webhook/health/公开分享路径 bypass（边缘配置，不在仓库内）；`smoke.ps1` 可选用 Access service token。
-- mcbot 部署（v0.8.0 引入，v0.8.1 安全加固；默认关闭）：mcbot v0.6.1（最低 v0.6.0，契约 v1）作为独立服务仅监听 `127.0.0.1:3010`（不经 Cloudflare/nftables 对外）；应用 env 由 `bootstrap-env.sh` 纳管 `MCBOT_*`，Token 由 root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 同步（`--check` 只比较；同目录临时文件 + `mv` 原子替换）；启用顺序为 mcbot 就绪 → 同步 Token → `MCBOT_ENABLED=true` → 重启应用；回滚设 false + 重启，无 schema/DB 变更；`smoke.ps1 -ExpectedMcbotVersion 0.6.1`（最低 0.6.0）/`-SkipMcbot` 覆盖只读检查。**v0.8.1 已于 2026-10-27 部署生产并完成验收**（release `20261027T113055Z`/commit `5405a8d`，mcbot v0.6.1 release `20261027T111640Z`/commit `a0a28da`，Token `--check` match）；v0.8.0 保留为回滚点。
+- mcbot 部署（v0.8.0 引入，v0.8.1 安全加固；默认关闭）：mcbot v1.0.6（最低 v0.6.0，契约 v1）作为独立服务仅监听 `127.0.0.1:3010`（不经 Cloudflare/nftables 对外）；应用 env 由 `bootstrap-env.sh` 纳管 `MCBOT_*`，Token 由 root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 同步（`--check` 只比较；同目录临时文件 + `mv` 原子替换）；启用顺序为 mcbot 就绪 → 同步 Token → `MCBOT_ENABLED=true` → 重启应用；回滚设 false + 重启，无 schema/DB 变更；`smoke.ps1 -ExpectedMcbotVersion 1.0.6`（最低 0.6.0）/`-SkipMcbot` 覆盖只读检查。v0.8.1 曾于 2026-10-27 部署（release `20261027T113055Z`/commit `5405a8d`，当时 mcbot v0.6.1 release `20261027T111640Z`/commit `a0a28da`）。
 - fail2ban：dbfile 持久化封禁；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后以 `systemd-run --collect --on-active=3` 异步重启 fail2ban，从数据库恢复 set；手工 `systemctl reload nftables` 不触发 `ExecStartPost`，仍需 `systemctl restart fail2ban`。
 - 世界备份/健康探针 timer 由 root 运行；世界备份 unit 只读整机、仅 `/var/lib/antifieldcloud` 可写、flock 串行、4h 超时。
 

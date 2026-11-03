@@ -19,7 +19,7 @@ import { audit } from '../../auth/audit.ts'
 import { asRecord, clientIp, parsePositiveInt } from '../util.ts'
 import { csrfGuard, requireAuth } from '../guards.ts'
 
-/** mcbot 支持的 10 种任务名（与上游 /task/start 一致）。 */
+/** mcbot 支持的 11 种任务名（与上游 /task/start 一致，含 clearing）。 */
 export const MCBOT_TASK_NAMES = [
   'fishing',
   'farming',

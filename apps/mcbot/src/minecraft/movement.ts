@@ -234,16 +234,22 @@ export class MovementManager {
     await this.waitForChunks(config.chunkWaitMs)
   }
 
+  /**
+   * 按玩家名传送。实体未加载时无法确认坐标和维度，直接拒绝。
+   * 落点必须在安全区内；安全区外的过来/跟随只走路，不发 /tp。
+   */
   async teleportToPlayer (username: string): Promise<void> {
     const bot = this.requireBot()
     const config = this.requireConfig()
     if (!/^[A-Za-z0-9_]{1,16}$/.test(username)) throw new MovementError('目标名字无效')
     const player = bot.players[username]
     if (!player) throw new MovementError(`${username} 不在线`)
+    const entity = player.entity
+    if (!entity) throw new MovementError(`看不到 ${username}，请靠近一点再试`)
     this.assertSameDimension(username)
-    if (!player.entity) {
-      // The player entity can be unloaded while the player is still online.
-      this.logger.info('movement teleport to unloaded player', { username })
+    const position = entity.position
+    if (!insideSafeZone(config, position.x, position.z)) {
+      throw new MovementError('目标在安全区外，不能传送')
     }
     this.logger.info('movement teleport to player', { username })
     bot.chat(`/tp ${config.botUsername} ${username}`)
@@ -263,7 +269,7 @@ export class MovementManager {
 
   /**
    * 带停滞看门狗的路径执行：pathfinder 在高低差/地形边缘可能一直“原地跳”而不 reject。
-   * 位置 1.8 秒没有有效位移就停止路径并抛错，交给上层水平/安全点/传送兜底。
+   * 位置 3.5 秒没有达到 0.05 格位移就停止路径并抛错，交给上层规划/传送兜底。
    */
   private async runPathWithWatchdog (goal: unknown, timeoutMs: number): Promise<void> {
     const bot = this.requireBot()
@@ -725,10 +731,6 @@ export class MovementManager {
     this.assertSameDimension(username)
     const target = targetFor(bot, username)
     if (!target?.entity) {
-      if (bot.players[username]) {
-        await this.teleportToPlayer(username)
-        return 'arrived'
-      }
       throw new MovementError(`看不到 ${username}，请靠近一点再试`)
     }
     const entity = target.entity
@@ -765,15 +767,6 @@ export class MovementManager {
     }
     const target = targetFor(bot, username)
     if (!target?.entity) {
-      if (bot.players[username]) {
-        void this.teleportToPlayer(username).then(() => {
-          this.follow(username, maxMs)
-        }).catch(error => {
-          this.notify?.(`找不到 ${username}，我先停下。`)
-          this.logger.warn('follow teleport failed', { error: error instanceof Error ? error.message : String(error) })
-        })
-        return
-      }
       throw new MovementError(`看不到 ${username}，请靠近一点再试`)
     }
     this.cancelled = false

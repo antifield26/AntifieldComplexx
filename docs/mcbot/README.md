@@ -35,7 +35,7 @@
 
 - **统一导航层**：`pathfinder` 快速路径失败后，用只读方块采样 + 确定性 A* 重规划；支持 1 格抬高、2 格下落、台阶/楼梯/半砖碰撞形状；目标不可站立时寻找半径 2 内最近落点。
 - **受控执行**：按路点中心行走，只有下一路点抬高 1 格时显式起跳；2 格以上不硬跳；停滞/取消/超时立即释放控制并重规划或明确兜底。
-- **安全边界**：不挖掘、不放置、不跑酷、不开门、不跨维度；任务/目标/自主仍限安全区；`过来/跟随`允许安全区外路径，但安全区外不传送。
+- **安全边界**：不挖掘、不放置、不跑酷、不开门、不跨维度；任务/目标/自主仍限安全区；`过来/跟随`允许安全区外路径，但安全区外不传送。玩家实体未加载时过来、跟随和按名字传送都拒绝。
 - **AI 路点建议**：确定性失败后最多一次；默认在 OpenCode/AI 配置可用时启用；严格 JSON、最多 3 点、边界/可站立校验；AI 不直接控制移动，不能传送。
 - **可见性**：`/status.navigation`（state/source/attempts/lastFailureKind/lastFallback/aiUsed/updatedAt）；兜底同时写 `movement` 事件与聊天提示；app 面板显示寻路 Fact。
 
@@ -137,7 +137,7 @@ systemd restart ─► task-state.json ─► pending_resume ─► 面板确认
 
 - 所有外发聊天统一经过 `sanitizeOutgoing`：**首字符 `/` 会被替换为全角 `／`**，防止 AI 或 HTTP 输入变成 OP 命令。
 - 普通聊天 AI 不执行游戏动作；只有主人显式启动的 v1.0.2/v1.0.3 自主会话可通过 MCP 工具执行受控任务/移动/存箱/观察/只读容器/进食/装备；指令仍只由确定性解析器执行，且仅 `Antifield`（`COMMAND_ALLOWLIST`）有效。
-- 内部 `/tp` 只由移动/任务代码用固定坐标或在线玩家名生成，AI/HTTP 无法触发；传送目标必须在安全区内。
+- 内部 `/tp` 只由移动/任务代码用固定坐标或已加载的在线玩家名生成，AI/HTTP 无法触发；传送目标必须在安全区内。玩家实体未加载时无法确认坐标，不按名字传送。
 - 自动化只修改农田 `x177–183, z432–439`、固定 oak 树场 `x180–193, z455–464`、安全区 `x111–239, z410–474` 内的天然林/裸露矿；保护盒 16 格；越界即停止。
 - 挖矿只挖煤/铁/铜裸露矿，不挖石头隧道；天然林只砍 oak/spruce/birch，逐棵补种；睡觉只右键已有床，不放置新床。
 - 被动防御只攻击任务点 12 格内、安全区内的 zombie/husk/drowned/skeleton/stray/spider/cave_spider；排除 creeper/enderman/witch/玩家；HP/food 低或怪太多撤退。
@@ -147,7 +147,7 @@ systemd restart ─► task-state.json ─► pending_resume ─► 面板确认
 - RCON 只有一个密码；“只读”是 Bot 端白名单（`tps`/`list`/`whitelist list`/`time`），密码泄露仍可执行任意 RCON 命令。密码只在 env/内存，不写日志/URL。
 - 管理/历史接口只用读 Token；没有写管理接口、任意命令执行、`/metrics`、webhook。
 - **HTTP-only 不是强制边界**：v0.3 默认保留游戏内 `Antifield` 与 AI 意图直接触发，同名冒用风险仍在；要严格 HTTP-only 设 `HTTP_ONLY_HIGH_RISK=true`（会关闭游戏内/AI 高风险触发）。
-- 服务以 `lofiibot` 非 root 用户运行；env `0640 root:lofiibot`；记忆文件 `0600`。
+- 服务以 `mcbot` 非 root 用户运行；env `0640 root:mcbot`；记忆文件 `0600`。
 
 ## 快速开始
 
@@ -193,7 +193,7 @@ sudo systemctl restart mcbot
 
 ## 配置
 
-完整变量见 `deploy/env.example`。生产 env 在 `/etc/mcbot/env`（root:lofiibot 0640），由 `deploy/bootstrap-env.sh` 生成；密钥不提交仓库。
+完整变量见 `deploy/env.example`。生产 env 在 `/etc/mcbot/env`（root:mcbot 0640），由 `deploy/bootstrap-env.sh` 生成；密钥不提交仓库。
 
 常用：
 
@@ -267,7 +267,7 @@ npm run smoke     # 连接真实服务器，验证 状态/挥手/AI（需先部�
 
 - 离线服务器按玩家名鉴权，理论上可被同白名单/内网他人冒充 `Antifield`；请保持白名单与 FRP 地址可信，后续可改为 HTTP-only 管理指令。
 - 动态在线意味着空服时服务器会 pause；如要 7×24 保活，设 `FORCE_ONLINE=true`（注意功耗/发热）。
-- `come` / `follow` 依赖 mineflayer-pathfinder 与当前 26.1 方块数据；跨维度/目标实体未加载时会走安全传送，找不到落点则明确失败。
+- `come` / `follow` 依赖 mineflayer-pathfinder 与当前 26.1 方块数据。跨维度直接拒绝。玩家实体未加载时过来、跟随和按名字传送都拒绝，不发 `/tp`。安全区外只走路，不传送。
 - 任务死亡恢复依赖箱子里的备用工具/种子/食物；死亡会掉落当前背包，建议箱内常备 2–3 套鱼竿/锄头与至少 128 个种子。
 - 任务队列在 active 之外最多 3 个；同任务可重复排队；`收工`/失败/恢复超时会清空队列。
 - 砍树只处理固定 oak 树场；树苗/铁斧需常备。树场实际地面块 y=63、原木 y=64；配置见 `TREE_FARM_*`。

@@ -106,7 +106,7 @@ requireText('deploy/tool-versions.json', '"mcbotVersion": "1.0.6"', 'tool-versio
 requireText('deploy/env.example', 'APP_VERSION=1.0.6', 'app-version')
 
 const rootPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
-if (rootPackage.version !== '1.0.6') errors.push(`package.json version 应为 1.0.5，实际 ${rootPackage.version}`)
+if (rootPackage.version !== '1.0.6') errors.push(`package.json version 应为 1.0.6，实际 ${rootPackage.version}`)
 
 const stalePatterns = [
   ['docs/app/API.md', '生产当前 v1.0.1', '旧生产版本'],

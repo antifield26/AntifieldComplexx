@@ -7,7 +7,7 @@
 - **现有服务**：Minecraft（Paper 26.1.2，在线模式关闭、白名单开启）、SakuraFRP、RDP/桌面、opencode。
 - **秘密**：`/etc/antifieldcloud/env`（RCON/opencode 密码、`CHATBOT_SECRET_KEY`、`MCBOT_READ_TOKEN`/`MCBOT_CONTROL_TOKEN`、APP_VERSION）、SQLite（TOTP secret、会话哈希、恢复码哈希、
   Bot 凭据密文）、备份归档（默认明文含 TOTP/会话；开启整包加密后为 age 密文）、密钥包 age 私钥、**备份整包加密独立 age 私钥**（离线 ≥2 份，Pi 只有公钥）。
-- **mcbot Token（v0.8.0 引入，v0.8.1 加固）**：`MCBOT_READ_TOKEN`（`/status`、`/events/recent`、`/history`）与 `MCBOT_CONTROL_TOKEN`（`/task/*`、`/move`、`/say`；v0.8.1 起游戏内聊天必须控制 Token）分离，来自独立服务 mcbot 的 `/etc/mcbot/env`（root:lofiibot 0640），由 root 执行 `scripts/sync-mcbot-tokens.sh` 同步到应用 env（v0.8.1 改为同目录临时文件 + `mv` 原子替换）；应用/文档/日志/前端都不持有或回显 Token；控制 Token 为空即只读（含禁用 `/say`）。应用不读取/复制 mcbot 的 RCON/OpenCode 密钥。
+- **mcbot Token（v0.8.0 引入，v0.8.1 加固）**：`MCBOT_READ_TOKEN`（`/status`、`/events/recent`、`/history`）与 `MCBOT_CONTROL_TOKEN`（`/task/*`、`/move`、`/say`；v0.8.1 起游戏内聊天必须控制 Token）分离，来自独立服务 mcbot 的 `/etc/mcbot/env`（root:mcbot 0640），由 root 执行 `scripts/sync-mcbot-tokens.sh` 同步到应用 env（v0.8.1 改为同目录临时文件 + `mv` 原子替换）；应用/文档/日志/前端都不持有或回显 Token；控制 Token 为空即只读（含禁用 `/say`）。应用不读取/复制 mcbot 的 RCON/OpenCode 密钥。
 - **Bot 凭据**：QQ 官方 Bot AppSecret 由 `CHATBOT_SECRET_KEY`（AES-256-GCM）加密后落库；
   `CHATBOT_SECRET_KEY` 只存在于 env 与加密备份中，丢失后已存 AppSecret 不可解密（只能重新录入）。
 - **数据与状态**：`/var/lib/antifieldcloud`（DB/files/backups/world-backups/secrets/bot-memory）、只读状态文件
@@ -51,7 +51,7 @@
 | mcbot Token 泄露/被引到外部主机 | 攻击者可读状态/控制 mcbot 或伪造告警 | 读/控制 Token 分离；上游仅 loopback + http(s) 且 `MCBOT_URL` 仅根地址（拒绝 userinfo/路径/查询/片段）；客户端 `redirect:'error'`；Token 只在服务端 env/内存，不下发浏览器/日志/API；错误文本大小写不敏感地移除 URL/Token；同步脚本仅 root、不回显、同目录 `mv` 原子替换 |
 | mcbot 控制面被滥用 | 未授权启停任务/移动/游戏内发言/命令注入 | 全部接口需登录；写操作（含 `/say`）CSRF + 控制 Token + 每 IP 限流（控制 20/min、`/say` 10/min）；服务端任务/移动/长度白名单；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符（防切行后的命令注入）；`taskId` 拒绝空白/控制字符；UI 对开始/停止/恢复/发送二次确认；审计只记动作与元数据；未配置控制 Token 即只读 |
 | mcbot 聊天/事件隐私 | 聊天正文落库或进入日志/浏览器 | 事件/聊天仅服务端内存缓存（≤100 条且序列化 ≤512 KiB），不落库、不写日志/审计正文；`/say` 审计只记字符数；事件 `data` 视为不可信 unknown，UI 只读白名单字段（own-property 查表）并纯文本渲染，不展示 Token/URL/内部路径 |
-| mcbot 告警污染/重放 | 重复历史事件或伪造活跃告警 | 上游 alert 映射为 `status='event'`，不写 `alert_state`、不参与 firing/resolved；`meta.lofii.event_cursor`+`bootId` 基线防止重放；details 深度/键数/数组/字符串清洗；`MCBOT_ALERTS_ENABLED=false` 可只推进游标不写 |
+| mcbot 告警污染/重放 | 重复历史事件或伪造活跃告警 | 上游 alert 映射为 `status='event'`，不写 `alert_state`、不参与 firing/resolved；`meta.mcbot.event_cursor`+`bootId` 基线防止重放；details 深度/键数/数组/字符串清洗；`MCBOT_ALERTS_ENABLED=false` 可只推进游标不写 |
 | 供应链/依赖 | 代码执行 | 运行时依赖少；`npm ci --ignore-scripts`；不做服务端构建；CI `npm audit --omit=dev`、gitleaks、Dependabot |
 
 ## 3. 已实现控制
@@ -144,14 +144,14 @@
 - 端点 `/autonomy/mcp` 不得经应用/Cloudflare/nftables 暴露；仅 OpenCode 运行时 loopback 调用。
 ### mcbot（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-- **网络/上游**：mcbot 是独立服务（推荐 v0.6.1，最低 v0.6.0，契约 v1），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `lofii_unavailable` 且不暴露底层 message。
-- **Token 分离**：读 Token 仅用于 `/status`、`/events/recent`、`/history`；控制 Token 仅用于 `/task/*`、`/move`、`/say`（v0.8.1 起 `/say` 是写操作，只读模式返回 `503 lofii_control_disabled`）；控制 Token 为空时控制方法直接 `lofii_control_disabled`（不发请求）。Token 来自独立 env，由 root 的 `scripts/sync-mcbot-tokens.sh` 同步（只读 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，不读取 RCON/OpenCode 密码；写前备份 env、同目录临时文件 + `mv` 原子替换、保持 0640，不回显 Token）。
-- **HTTP 面**：`/api/mcbot/*` 全部 `requireAuth`；写操作额外 `csrfGuard`；控制类共享 20/min/IP、`/say` 10/min/IP 限流；服务端白名单校验任务名（7 种）、移动动作（4 种）、`taskId`（trim 后 1–64、无内部空白/控制字符）、消息（trim 后 1–720、**任意位置禁止 ASCII `/`**、禁止 C0 控制字符/DEL，防上游按 240 字符切行后的命令注入）；`/history` 校验 `kind` 与数组形状，只透传对象行；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留稳定码，其它错误统一映射为固定中文文案，不含上游原文/URL/Token。
-- **审计**：`lofii.task.start/stop/resume`、`lofii.move`、`lofii.control_failed` 记录动作、目标名/动作/taskId 与稳定错误码；`lofii.say` 只记录字符数，**绝不记录聊天正文**；事件/聊天不写审计正文。
-- **告警联动**：`AlertService.recordExternal` 只写 `alert_events(status='event')`，不写 `alert_state`、不参与 firing/resolved；details 只保留清洗后的基础类型（深度≤2、键≤20、数组≤20、字符串≤300，跳过 `__proto__`/`constructor`/`prototype` 键），并附加 `source/lofiiEventId/lofiiType`；异步复用 webhook（可选 HMAC）与 Bot 通知，失败只记脱敏日志；游标 `meta.lofii.event_cursor` 防重放；**告警写入失败时游标停在上一条已处理事件，下一轮重试**（v0.8.1）。
+- **网络/上游**：mcbot 是独立服务（生产 v1.0.6，最低 v0.6.0，契约 v1），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `mcbot_unavailable` 且不暴露底层 message。自 v0.6.1 起上游逐行把行首 `/` 中和为全角 `／`。
+- **Token 分离**：读 Token 仅用于 `/status`、`/events/recent`、`/history`；控制 Token 仅用于 `/task/*`、`/move`、`/say`（v0.8.1 起 `/say` 是写操作，只读模式返回 `503 mcbot_control_disabled`）；控制 Token 为空时控制方法直接 `mcbot_control_disabled`（不发请求）。Token 来自独立 env，由 root 的 `scripts/sync-mcbot-tokens.sh` 同步（只读 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，不读取 RCON/OpenCode 密码；写前备份 env、同目录临时文件 + `mv` 原子替换、保持 0640，不回显 Token）。
+- **HTTP 面**：`/api/mcbot/*` 全部 `requireAuth`；写操作额外 `csrfGuard`；控制类共享 20/min/IP、`/say` 10/min/IP 限流；服务端白名单校验任务名（11 种，含 clearing）、移动动作（4 种）、`taskId`（trim 后 1–64、无内部空白/控制字符）、消息（trim 后 1–720、**任意位置禁止 ASCII `/`**、禁止 C0 控制字符/DEL，防上游按 240 字符切行后的命令注入）；`/history` 校验 `kind` 与数组形状，只透传对象行；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `mcbot_*`，其它错误统一映射为固定中文文案，不含上游原文/URL/Token。
+- **审计**：`mcbot.task.start/stop/resume`、`mcbot.move`、`mcbot.control_failed`、`mcbot.autonomy.start/stop`、`mcbot.presence.set`、`mcbot.goal.*` 记录动作与元数据；`mcbot.say` 只记录字符数，**绝不记录聊天正文**；事件/聊天不写审计正文。
+- **告警联动**：`AlertService.recordExternal` 只写 `alert_events(status='event')`，不写 `alert_state`、不参与 firing/resolved；details 只保留清洗后的基础类型（深度≤2、键≤20、数组≤20、字符串≤300，跳过 `__proto__`/`constructor`/`prototype` 键），并附加 `source`/`mcbotEventId`/`mcbotType`；异步复用 webhook（可选 HMAC）与 Bot 通知，失败只记脱敏日志；游标 `meta.mcbot.event_cursor` 防重放（v1.0.0 迁移自 `lofii.event_cursor`）；**告警写入失败时游标停在上一条已处理事件，下一轮重试**（v0.8.1）。
 - **内存/降级**：每轮上游取最近 200 条；事件缓存 ≤100 条且序列化总字节 ≤512 KiB；`/status` 可达但 `/events/recent`/游标失败时前端展示可见警告（不静默停更）；前端对缺失嵌套段安全读取，不把整页交给 ErrorBoundary。**残余**：快照未下发 `lastSuccessAt`，stale 提示仍用 `lastPollAt`（可能显示“上次成功轮询 3 秒前”而实际已数小时）。
 - **浏览器边界**：前端不接触 mcbot Token/上游地址，不直连 SSE/mcbot；`/api/mcbot/status` 只返回聚合快照与内存事件；事件与聊天纯文本渲染，历史表格只显示白名单字段；控制未启用时全部写操作（含聊天）禁用。
-- **默认关闭/回滚**：`MCBOT_ENABLED=false` 默认；回滚设 false（可选清空 Token）并重启即可，无 schema/DB 变更；生产当前 **v0.8.1** 已启用（`MCBOT_ENABLED=true`，读/控制 Token 均配置且 `--check` match，仅 loopback；v0.8.1 于 2026-10-27 部署、验收并发布）；v0.8.0、v0.8.1 均已发布 Tag+Release。
+- **默认关闭/回滚**：`MCBOT_ENABLED=false` 默认；回滚设 false（可选清空 Token）并重启即可，无 schema/DB 变更；生产当前 **v1.0.6** 已启用（`MCBOT_ENABLED=true`，读/控制 Token 均配置且 `--check` match，仅 loopback；2026-10-30 部署并验收）。v0.8.0、v0.8.1 均已发布 Tag+Release。
 
 ### HTTP
 
@@ -357,7 +357,7 @@
   - AI 主机：`/__af/sso/*` 超限 429、匿名请求 429、审计按 action+IP 去重。
   - 审计：DB 关闭/写入失败不抛错、业务不回滚、诊断计数可见（`audit_write_failures` 持久化）。
   - 配置：`NODE_ENV`/`OPENCODE_URL`/`APP_ORIGIN==AI_ORIGIN`/`CHATBOT_SEARCH_MODE` 非法值拒绝启动；Webhook 未验签/已验签分桶。
-  - mcbot（v0.8.0 引入，v0.8.1 加固）：`MCBOT_URL` 非 loopback/非法协议/含 userinfo/路径/查询/片段拒绝启动；`MCBOT_ENABLED=true` 缺读 Token 拒绝启动；控制 Token 为空时控制接口与 `/say` 均 503 且不发请求；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符（含上游按 240 字符切行后的第二行）；`taskId` 拒绝内部空白/控制字符；`/history` 校验 kind/数组并只透传对象行；上游 401/403→502、4xx 稳定码透传、429→429、5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `lofii_*`、其它 5xx/非 JSON→502、网络/超时/重定向→503，错误文本大小写不敏感脱敏且不含 URL/Token；响应体流式 2 MiB 上限；未认证 401、缺 CSRF 403；控制 20/min、`/say` 10/min 超限 429；`/say` 正文不写审计（只记 chars）；`/events/recent` 404 只降级 `eventsSupported=false`；告警 `status='event'` 不写 `alert_state`、游标基线不重放、写入失败停游标重试；事件缓存 ≤100 条且 ≤512 KiB、轮询 200 条且仅内存；`sync-mcbot-tokens.sh` 同目录临时文件 + `mv` 原子替换。
+  - mcbot（v0.8.0 引入，v0.8.1 加固）：`MCBOT_URL` 非 loopback/非法协议/含 userinfo/路径/查询/片段拒绝启动；`MCBOT_ENABLED=true` 缺读 Token 拒绝启动；控制 Token 为空时控制接口与 `/say` 均 503 且不发请求；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符（含上游按 240 字符切行后的第二行）；`taskId` 拒绝内部空白/控制字符；`/history` 校验 kind/数组并只透传对象行；上游 401/403→502、4xx 稳定码透传、429→429、5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `mcbot_*`、其它 5xx/非 JSON→502、网络/超时/重定向→503，错误文本大小写不敏感脱敏且不含 URL/Token；响应体流式 2 MiB 上限；未认证 401、缺 CSRF 403；控制 20/min、`/say` 10/min 超限 429；`/say` 正文不写审计（只记 chars）；`/events/recent` 404 只降级 `eventsSupported=false`；告警 `status='event'` 不写 `alert_state`、游标基线不重放、写入失败停游标重试；事件缓存 ≤100 条且 ≤512 KiB、轮询 200 条且仅内存；`sync-mcbot-tokens.sh` 同目录临时文件 + `mv` 原子替换。
   - v1.0.6 当前基线（2026-10-30）：`npm run check` 通过；app **603**（602 pass、1 skip）、web **278**（50 文件）、mcbot **139**（139 pass）；`npm run build`、`check-version` 严格 `1.0.6`、`check-naming`、`check:docs` 通过。生产已部署 app `1.0.6`/schema18/OpenCode `2.2.0`（release `/opt/antifieldcloud/releases/20261030T132040Z`）、mcbot `1.0.6`（release `/opt/mcbot/releases/20261030T143538Z`）；核心实机矩阵通过，本机 smoke **29/0/0/2**。
   - 历史基线（v0.8.1，2026-10-27 本地）：`npm run check` 通过；`npm test` **572**（571 pass、1 skip）、`test:web` **256**（48 文件）；服务端覆盖率 **93.04/78.77/88.67**、前端 **55.83/51.29/48.66**（Lines/Branches/Functions）；`npm run build` 通过；`check-version` 严格 `0.8.1`、`check-prod-deps` 通过。生产曾部署 v0.8.1（2026-10-27）。
   - 历史生产（v0.8.1，2026-10-27 部署）：release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17；部署内只读 smoke 26/0/0/2、完整 Access smoke 36/0/0/2；mcbot v0.6.1（release `20261027T111640Z`/commit `a0a28da`）仅 loopback，Token `--check` match。OpenCode v2.1.4，V1–V9/V14 通过；详见历史记录。

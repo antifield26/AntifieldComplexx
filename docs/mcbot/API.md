@@ -10,7 +10,7 @@
 | 读 Token | `HTTP_TOKEN`，用于 `/status`、`/presence`、`/goals`、`/task`、`/events`、`/events/recent`、`/say` |
 | 控制 Token | `HTTP_CONTROL_TOKEN`，用于 `/task/*`、`POST /move`、`/presence`、`/goals*`、`/autonomy/start|stop` |
 | 契约版本 | `CONTRACT_VERSION=1`，由 `/healthz` 与 `/events/recent` 的 `contractVersion` 返回 |
-| Token 位置 | Pi：`/etc/mcbot/env`（root:lofiibot 0640） |
+| Token 位置 | Pi：`/etc/mcbot/env`（root:mcbot 0640） |
 | 数据格式 | JSON / SSE，UTF-8 |
 | 请求体上限 | 8 KiB |
 | 自主 MCP | `/autonomy/mcp` 仅接受当前会话随机 Bearer；由 OpenCode 运行时调用，不暴露给应用/浏览器 |
@@ -548,7 +548,7 @@ v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱
 `/status` 新增可选 `navigation`：`state ∈ idle|planning|executing|fallback`、`source ∈ pathfinder|planner|ai|teleport|stopped|null`、`attempts`、`lastFailureKind`、`lastFallback ∈ teleport|stopped|null`、`aiUsed`、`updatedAt`。旧版缺失时应用隐藏该字段。
 
 - 导航顺序：pathfinder 快速路径 → 确定性 A*（只读现有方块，支持台阶/楼梯/半砖与 1 格抬高、2 格下落）→ 受控执行 → AI 路点建议（默认 OpenCode 配置可用时启用）→ 安全锚点/传送/停止。
-- 不挖掘、不放置、不跑酷、不跨维度；任务/目标/自主只在安全区；`过来/跟随`允许安全区外路径，但不传送出安全区。
+- 不挖掘、不放置、不跑酷、不跨维度；任务/目标/自主只在安全区；`过来/跟随`允许安全区外路径，但不传送出安全区。玩家实体未加载时无法确认坐标，拒绝按名字 `/tp`。
 - 安全传送必须是最后手段，同时写 `movement` 事件与 `navigation.lastFallback='teleport'`，并通过聊天提示。
 - AI 只在确定性失败后单次请求，超时/非法/越界建议一律丢弃；AI 不直接控制移动。
 

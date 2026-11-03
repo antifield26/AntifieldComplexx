@@ -118,8 +118,8 @@ CSS 变量（`web/src/styles/tokens.css`）：
 ### 4.5 Minecraft `/minecraft`（服务器 / mcbot 双标签）
 
 - 页头与内容由当前标签决定：服务器标签标题“Minecraft”、副标题“服务器只读状态与白名单管理”；mcbot 标签标题“mcbot”、副标题“mcbot Bot 运行状态、任务控制、事件流与历史（数据来自本机 mcbot 接口）”。
-- **标签栏**（仅 `/api/version.lofiiEnabled=true` 时显示）：`role=tablist` + 两个 `role=tab` 按钮（“服务器”“mcbot”），`aria-selected`/`aria-controls`/`tabIndex` 随激活标签变化，面板 `role=tabpanel` 与 `aria-labelledby` 联动；左右方向键循环、Home/End 跳转，焦点随选中移动；`?tab=lofii` 或 `#lofii` 深链进入 mcbot 标签，切回服务器清理由 mcbot 标签写入的 `?tab=lofii` 与 `#lofii`。
-- mcbot 未启用（`lofiiEnabled=false` 或旧服务端不下发）时不渲染标签栏，直接展示服务器内容，页面行为与旧版一致。
+- **标签栏**（仅 `/api/version.mcbotEnabled=true` 时显示）：`role=tablist` + 两个 `role=tab` 按钮（“服务器”“mcbot”），`aria-selected`/`aria-controls`/`tabIndex` 随激活标签变化，面板 `role=tabpanel` 与 `aria-labelledby` 联动；左右方向键循环、Home/End 跳转，焦点随选中移动；`?tab=mcbot` 或 `#mcbot` 深链进入 mcbot 标签，切回服务器清理由 mcbot 标签写入的 `?tab=mcbot` 与 `#mcbot`。
+- mcbot 未启用（`mcbotEnabled=false` 或旧服务端不下发）时不渲染标签栏，直接展示服务器内容，页面行为与旧版一致。
 - **服务器标签**（原 `/minecraft` 内容）：
   - 顶部状态卡：在线/离线、版本、MOTD、在线人数、TPS、服务状态、公共地址（复制）；RCON 降级时黄色提示。
   - 玩家列表：在线玩家名（头像用首字母圆形）。
@@ -197,7 +197,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 笔记附件上传/删除/插入、版本查看/恢复可用；Activity 关键词/时间范围筛选与 Alerts 筛选分页可用（详见 §14）。
 - Bot 页：未启用时配置指引、启用后六分区（概览/配置/目标/投递与发布/角色与记忆/诊断）可键盘切换；AppSecret 不回显；目标含 `allowChat` 与最近入站目标登记；
   发布表单含 TOTP + `PUBLISH` 且仅文本（QQ 单条 ≤2000；超过返回 400 `publish_text_too_long`，不静默截断、不服务端分段）；配置页“检查连接”展示 QQ access_token 自检结果（详见 §15）。
-- `/minecraft`：启用 mcbot 时双标签可键盘切换、`?tab=lofii`/`#lofii` 深链生效；服务器标签保持原状态/白名单功能；mcbot 面板状态/任务/移动/聊天/事件/历史可用，开始/停止/恢复/发送有二次确认，禁用/不可达/过期/只读分别降级，不展示 Token/地址（详见 §17）。
+- `/minecraft`：启用 mcbot 时双标签可键盘切换、`?tab=mcbot`/`#mcbot` 深链生效；服务器标签保持原状态/白名单功能；mcbot 面板状态/任务/移动/聊天/事件/历史可用，开始/停止/恢复/发送有二次确认，禁用/不可达/过期/只读分别降级，不展示 Token/地址（详见 §17）。
 - 键盘可完成登录、打开弹窗、关闭弹窗。
 
 ## 10. 知识库与文件界面
@@ -228,7 +228,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 ### 告警
 
 - Dashboard“告警”卡片：当前 active 条件、最近历史、webhook 状态、严重度中文标签。
-- 历史状态含 `firing/resolved/unknown/event`：`event` 显示“已记录”并使用中性色调，表示 mcbot 等外部服务的事件记录，**不当作活跃告警**；状态筛选含“已记录”；`lofii_*` 事件名有中文映射（血量过低/任务失败/断线/箱子已满/防御撤退/告警）。
+- 历史状态含 `firing/resolved/unknown/event`：`event` 显示“已记录”并使用中性色调，表示 mcbot 等外部服务的事件记录，**不当作活跃告警**；状态筛选含“已记录”；`mcbot_*` 事件名有中文映射（血量过低/任务失败/断线/箱子已满/防御撤退/告警）。
 - Settings“监控告警”：只读阈值/检查间隔/webhook 是否配置/最近评估；“测试 Webhook”按钮（POST /api/alerts/test）。
 - 未配置 webhook 时仍显示面板告警，不阻塞。
 
@@ -238,7 +238,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - Files/搜索/Trash 请求可取消，旧响应不会覆盖新目录。
 - 上传逐文件取消/超时（15 分钟）/卸载 abort；恢复码弹窗复制/下载前禁止误关。
 - 改密/恢复码表单含 TOTP；密码 ≥12；429 显示 `details.retryAfterSec`。
-- `/api/version` 元数据驱动域名、回收站天数、上传上限、功能开关与 mcbot 标签/控制显隐（`lofiiEnabled`/`lofiiControlEnabled`）。
+- `/api/version` 元数据驱动域名、回收站天数、上传上限、功能开关与 mcbot 标签/控制显隐（`mcbotEnabled`/`mcbotControlEnabled`）。
 - a11y：移动抽屉焦点陷阱、Dropdown 方向键、FormField aria-required、ConfirmDialog describedby、NotFound 标题。
 - OpenCode Web：不展示自定义“新会话”按钮；代理只接管原生按钮 click/pointerup，并 opt-out Rocket Loader 改写模块脚本。
 
@@ -455,9 +455,9 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 样式集中在 `web/src/styles/v07.css`（在 `main.tsx` 引入），不引入第三方组件库；测试覆盖长任务超时、恢复持久化、
   加密/异地状态卡、prepare 警告、断点 `fileId`、`archive_encrypted` 文案与 MetaContext 降级。
 
-## 17. mcbot 面板（`/minecraft?tab=lofii`，v0.8.0 引入；v0.8.1 安全/健壮性；v1.0.2 自主模式；v1.0.5 在线模式/目标）
+## 17. mcbot 面板（`/minecraft?tab=mcbot`，v0.8.0 引入；v0.8.1 安全/健壮性；v1.0.2 自主模式；v1.0.5 在线模式/目标）
 
-mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbot/status`（5s 轮询，页面隐藏时暂停）与 `GET /api/mcbot/history`；写操作走 `POST /api/mcbot/*`。仅当 `/api/version.lofiiEnabled=true` 时显示入口；`lofiiControlEnabled=false` 时只读（**聊天输入同样禁用**）。状态快照先经 `safemcbotStatus` 归一化，缺失嵌套段显示“—”而不是整页崩溃；面板轮询使用请求序号 + AbortController，旧响应不会覆盖新响应。
+mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbot/status`（5s 轮询，页面隐藏时暂停）与 `GET /api/mcbot/history`；写操作走 `POST /api/mcbot/*`。仅当 `/api/version.mcbotEnabled=true` 时显示入口；`mcbotControlEnabled=false` 时只读（**聊天输入同样禁用**）。状态快照先经 `safemcbotStatus` 归一化，缺失嵌套段显示“—”而不是整页崩溃；面板轮询使用请求序号 + AbortController，旧响应不会覆盖新响应。
 
 ### 入口与布局
 
@@ -468,8 +468,8 @@ mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbo
   - 不可达：`notice-warning`“无法连接 mcbot：<中文错误>。当前显示上次成功轮询的缓存数据，控制操作不可用。”
   - 数据过期：`notice-warning`“mcbot 数据已过期（上次成功轮询 …），请检查 mcbot 进程；新数据恢复前请勿依赖当前状态。”
   - **部分失败**：`notice-warning`“mcbot 状态可达，但事件流/告警游标异常：<中文错误>；事件流可能停止更新，控制仍可尝试。”——`reachable=true` 且 `error≠null` 时必须可见（v0.8.1），不得把“可达”当成“事件正常”。
-  - 控制未启用：`notice-muted`“mcbot 控制未启用：仅展示状态、事件与历史，任务/移动/聊天操作已禁用。”（由 `lofiiControlEnabled` 驱动，不展示 env 名/Token）
-- 集成禁用（`lofiiEnabled=false`）：只显示 `notice-muted` 说明“mcbot 集成未启用（服务端 MCBOT_ENABLED=false）。启用后需要配置 mcbot 地址与 Token 并重启应用；本页不展示任何 Token、内部地址或凭据。”+“重新检测”按钮；不渲染任何数据/控制区。
+  - 控制未启用：`notice-muted`“mcbot 控制未启用：仅展示状态、事件与历史，任务/移动/聊天操作已禁用。”（由 `mcbotControlEnabled` 驱动，不展示 env 名/Token）
+- 集成禁用（`mcbotEnabled=false`）：只显示 `notice-muted` 说明“mcbot 集成未启用（服务端 MCBOT_ENABLED=false）。启用后需要配置 mcbot 地址与 Token 并重启应用；本页不展示任何 Token、内部地址或凭据。”+“重新检测”按钮；不渲染任何数据/控制区。
 
 ### 状态卡
 
@@ -497,7 +497,7 @@ mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbo
 - 事实行：当前任务、任务状态（中文徽章）、已运行、失败次数、排队任务数。
 - “任务进度”：按任务类型展示非零计数（钓鱼/种田/砍树/挖矿/天然林/睡觉/巡逻，含击杀怪物），无数据显示“当前任务没有进度数据。”。
 - “任务队列”：有序列表（序号/任务名/发起相对时间），空队列显示“队列为空。”。
-- 控制行：任务下拉（10 种中文名，含守卫/护送/探索）；“开始任务”（primary，进行中时可入队，最多 3 个；有待恢复任务、任务功能关闭、控制未启用时禁用并给出 hint）、“停止任务”（danger，中断当前任务并清空队列）、“恢复任务”（仅有待恢复时显示）。
+- 控制行：任务下拉（11 种中文名，含守卫/护送/探索/清理安全区）；“开始任务”（primary，进行中时可入队，最多 3 个；有待恢复任务、任务功能关闭、控制未启用时禁用并给出 hint）、“停止任务”（danger，中断当前任务并清空队列）、“恢复任务”（仅有待恢复时显示）。
 - 停止确认文案区分“停止任务”与“放弃待恢复任务”，均说明会清空队列、不可撤销；开始确认说明任务由 mcbot 自动执行。
 
 ### 移动控制
@@ -511,7 +511,7 @@ mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbo
 - 卡片标题“游戏内聊天”，描述“以 mcbot 的身份向游戏内发送聊天；只聊天，绝不执行命令。”
 - `textarea`（`rows=3`、`maxLength=720`、`aria-label`）；字数计数“n/720 · 发送前需要二次确认”；发送按钮在空内容、控制未启用（含只读模式）时禁用。
 - 前端校验：空内容、**任意位置包含 ASCII `/`**（提示“聊天内容不能包含 /（不支持命令，含切分后的命令行）”）、C0 控制字符/DEL、超过 720 字符；错误用 `role="alert"` 展示。
-- **`/say` 是写操作，v0.8.1 起必须启用控制 Token**：只读部署时输入与发送均禁用，服务端返回 `503 lofii_control_disabled`；不得再出现“只读模式仍可聊天”的引导。
+- **`/say` 是写操作，v0.8.1 起必须启用控制 Token**：只读部署时输入与发送均禁用，服务端返回 `503 mcbot_control_disabled`；不得再出现“只读模式仍可聊天”的引导。
 - 发送确认 Modal 展示消息预览与字符数；成功 Toast + 清空输入。
 - 脚注：“内容不能包含 /；本页不会把聊天当作命令执行，也不展示任何 Token 或内部地址。”
 
@@ -528,15 +528,15 @@ mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbo
 - 告警表：时间、类型（中文映射，未知显示原文）、级别（critical/error/warning/info → 中文徽章与色调）、内容（纯文本）；空态“暂无告警记录”。
 - 采样表：时间、连接（在线/离线徽章）、状态（中文）、任务（名称·状态或“—”）、血量/饥饿、TPS、队列、内存/RSS（MB）；空态“暂无采样记录”。
 - 脚注：“最近 24 小时 · 最多 100 条；采样由 mcbot 每 60 秒写入一次，时间按 Asia/Shanghai 展示。”
-- 响应形状异常（`kind` 不匹配/缺数组/服务端 `502 lofii_upstream_error`）显示可见错误与重试，不进入永久骨架屏；只透传对象行。
+- 响应形状异常（`kind` 不匹配/缺数组/服务端 `502 mcbot_upstream_error`）显示可见错误与重试，不进入永久骨架屏；只透传对象行。
 - 只读：不展开 `details`，不提供修改/删除/导出；`details` 中的任意字段不渲染。
 
 ### 确认、降级与隐私
 
 - 二次确认：开始任务、停止/放弃任务、恢复任务、发送游戏内聊天均使用统一 `ConfirmDialog`（危险操作默认焦点“取消”，加载中禁止重复提交）。
 - 降级矩阵：禁用 → 仅说明；首次加载失败 → 卡片错误 + 重试；等待首次轮询 → 提示且控制禁用；不可达 → 缓存数据 + 警告 + 控制禁用；stale → 警告（当前仍用 `lastPollAt`；快照未下发 `lastSuccessAt`，见 AUDIT 残余 ARCH6-03）；**可达但事件/游标失败 → 可见部分失败警告，控制仍可用但提示告警可能停更**；控制未启用 → 只读（聊天也禁用）。
-- 隐私与安全：不展示 mcbot URL/Token/内部路径/记忆正文；事件与聊天纯文本渲染；历史只显示白名单字段；所有控制按钮在 `lofiiControlEnabled=false` 时禁用；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符。
-- 历史错误码/错误提示使用中文映射（含 `lofii_cursor_failed`/`lofii_not_found`/`lofii_history_disabled`），未知码原样显示；查表使用 own-property，不命中原型链。
+- 隐私与安全：不展示 mcbot URL/Token/内部路径/记忆正文；事件与聊天纯文本渲染；历史只显示白名单字段；所有控制按钮在 `mcbotControlEnabled=false` 时禁用；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符。
+- 历史错误码/错误提示使用中文映射（含 `mcbot_cursor_failed`/`mcbot_not_found`/`mcbot_history_disabled`），未知码原样显示；查表使用 own-property，不命中原型链。
 - 响应式/可访问性：390 px 下状态栅格与双列卡片纵向堆叠、不横向滚动；标签键盘可操作；图标按钮有 `aria-label`；表单 label 关联；错误 `role="alert"`；不引入第三方组件库，样式集中在 `web/src/styles/v08.css`。
 - **生产验收状态（v0.8.0，2026-10-27）**：生产部署与只读/API 验收完成；`/minecraft` 生产 UI 视觉确认已完成（Edge 157 headless 经本地 SSH 隧道打开 `/minecraft?tab=lofii`，临时验收会话已清理；状态卡/任务/移动/聊天/事件流/历史/告警均正常渲染，756×900 viewport；用户仍可在自己的浏览器复核，非阻塞）。**v0.8.0 已发布**：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release（publishedAt `2026-10-27T12:02:45Z`）。
 - **v0.8.1（已发布：Tag `v0.8.1` + GitHub Release（2026-10-27）；已部署生产并完成只读/API/安全回归验收）**：`/say` 控制 Token 必需、任意 `/` 与 C0 拒绝；状态快照归一化容错；部分失败可见警告；`eventsSupported`/`contractVersion` 缺失回退；轮询请求序号 + Abort 防竞态；历史形状异常可见错误；列表查表 own-property；Token 脱敏大小写不敏感；服务端响应流式 2 MiB 上限、事件缓存 512 KiB、轮询 200 条、游标失败重试。**v0.8.1 未重新做生产 UI 截图/视觉复验**（v0.8.0 的视觉确认仍有效；用户仍可自行复核）。

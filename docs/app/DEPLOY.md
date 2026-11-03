@@ -170,7 +170,7 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
   - `CHATBOT_AI_IMAGE_MAX_BYTES=10485760`（1–20 MiB）：单张入站图片上限；图片只放行 image mime、QQ CDN 固定域名后缀、不落盘，失败降级为纯文字。
   - `MCBOT_ENABLED=false`：mcbot Minecraft Bot 对接总开关（v0.8.0 引入，v0.8.1 加固，**默认关闭**）；启用时必须配置 `MCBOT_READ_TOKEN`，且 `MCBOT_URL` 为 loopback + http(s) 根地址（拒绝 userinfo/路径/查询/片段），否则拒绝启动。
   - `MCBOT_URL=http://127.0.0.1:3010`：上游仅 loopback（去尾斜杠）；mcbot 是独立服务，不对外、不进入 Cloudflare/nftables。
-  - `MCBOT_READ_TOKEN=`、`MCBOT_CONTROL_TOKEN=`：由 root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN` 同步（64 位 hex）；**不要手工复制 lofii 的 RCON/OpenCode 密码**。控制 Token 为空 = 只读（控制接口与 `/say` 均 503 `lofii_control_disabled`）。
+  - `MCBOT_READ_TOKEN=`、`MCBOT_CONTROL_TOKEN=`：由 root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN` 同步（64 位 hex）；**不要手工复制 mcbot 的 RCON/OpenCode 密码**。控制 Token 为空 = 只读（控制接口与 `/say` 均 503 `mcbot_control_disabled`）。
   - `MCBOT_TIMEOUT_MS=2500`（500–10000）：单次上游请求超时（毫秒）。
   - `MCBOT_POLL_MS=5000`（2000–60000）：`/status` + `/events/recent` 轮询间隔（毫秒）。
   - `MCBOT_ALERTS_ENABLED=true`：是否把上游 `alert` 写成应用告警事件（`status='event'`）；关闭时仍推进游标但不写告警。
@@ -424,19 +424,19 @@ sudo systemctl restart antifieldcloud
 
 ### 3.8 mcbot Bot 对接（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-> 前置：mcbot **v0.6.1（最低 v0.6.0）** 作为独立服务部署，仅监听 `127.0.0.1:3010`，`/healthz` 返回对应 `version`、`contractVersion=1` 且提供 `/events/recent`；应用不修改 mcbot 配置/密钥，也不读取其 RCON/OpenCode 密码。**v0.8.0（2026-10-27）与 v0.8.1（2026-10-27）生产部署均已按本节执行**；生产 mcbot 当前为 **v0.6.1**（release `/opt/mcbot/releases/20261027T111640Z`/commit `a0a28da`），应用 v0.8.1 已部署。
+> 前置：mcbot **v1.0.6（最低 v0.6.0）** 作为独立服务部署，仅监听 `127.0.0.1:3010`，`/healthz` 返回对应 `version`、`contractVersion=1` 且提供 `/events/recent`；应用不修改 mcbot 配置/密钥，也不读取其 RCON/OpenCode 密码。生产 mcbot 当前为 **v1.0.6**（release `/opt/mcbot/releases/20261030T143538Z`），应用 v1.0.6 已部署（`/opt/antifieldcloud/releases/20261030T132040Z`）。v0.8.0 / v0.8.1 的 2026-10-27 验证记录保留在本节末尾。
 
 1. **前置只读检查**（root；不需要 Token）：
    ```bash
    systemctl is-active mcbot                 # active
-   curl -fsS http://127.0.0.1:3010/healthz       # {"status":"ok","version":"0.6.1","contractVersion":1,...}
+   curl -fsS http://127.0.0.1:3010/healthz       # {"status":"ok","version":"1.0.6","contractVersion":1,...}
    curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3010/status   # 无 Token 应为 401（确认仅 loopback 可达）
    ```
-   旧版 mcbot 无 `/events/recent` 时应用仍可用 `/status`，但事件流显示“需升级 v0.6.0”；v0.8.1 应用兼容 v0.6.0，但推荐升级到 v0.6.1 以获得逐行 `/` 中和的纵深防御。
+   旧版 mcbot 无 `/events/recent` 时应用仍可用 `/status`，但事件流显示“需升级 v0.6.0”。自 v0.6.1 起上游逐行把行首 `/` 中和为全角 `／`（防御纵深，应用侧不依赖）。
 
 2. **同步 Token**（root；只读取 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，校验 64 位 hex）：
    ```bash
-   sudo cp -a /etc/antifieldcloud/env /etc/antifieldcloud/env.lofii.bak.$(date -u +%Y%m%dT%H%M%SZ)
+   sudo cp -a /etc/antifieldcloud/env /etc/antifieldcloud/env.bak.$(date -u +%Y%m%dT%H%M%SZ)
    sudo bash scripts/sync-mcbot-tokens.sh --check   # 首次通常 mismatch/缺失
    sudo bash scripts/sync-mcbot-tokens.sh
    sudo bash scripts/sync-mcbot-tokens.sh --check   # read=match control=match
@@ -455,16 +455,16 @@ sudo systemctl restart antifieldcloud
 4. **验证**：
    ```bash
    curl -fsS http://127.0.0.1:3000/healthz
-   journalctl -u antifieldcloud -n 100 --no-pager | grep -i lofii   # 只应出现启动/恢复/不可用等脱敏日志，不含 Token/聊天正文
+   journalctl -u antifieldcloud -n 100 --no-pager | grep -i mcbot   # 只应出现启动/恢复/不可用等脱敏日志，不含 Token/聊天正文
    ```
-   登录后 `GET /api/mcbot/status` 期望 `enabled=true/reachable=true/eventsSupported=true/controlEnabled` 与 Token 配置一致；`/minecraft?tab=lofii` 可打开面板；首次成功轮询后 `meta.lofii.event_cursor` 建立基线（`sqlite3 /var/lib/antifieldcloud/db.sqlite "SELECT value FROM meta WHERE key='lofii.event_cursor';"`），不重放旧告警。
+   登录后 `GET /api/mcbot/status` 期望 `enabled=true/reachable=true/eventsSupported=true/controlEnabled` 与 Token 配置一致；`/minecraft?tab=mcbot` 可打开面板；首次成功轮询后 `meta.mcbot.event_cursor` 建立基线（`sqlite3 /var/lib/antifieldcloud/db.sqlite "SELECT value FROM meta WHERE key='mcbot.event_cursor';"`），不重放旧告警。v1.0.0 迁移把旧键 `lofii.event_cursor` 改名为 `mcbot.event_cursor`。
 
-5. **smoke**：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedMcbotVersion 0.6.1`（校验 `systemctl is-active mcbot`、`/healthz.version`、`contractVersion=1`；兼容 v0.6.0 时可把期望版本改为 0.6.0）；未启用 mcbot 时用 `-SkipMcbot`，不得把跳过项计为 PASS。
+5. **smoke**：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.6 -ExpectedSchemaVersion 18 -ExpectedOpenCodeVersion 2.2.0 -ExpectedMcbotVersion 1.0.6`（校验 `systemctl is-active mcbot`、`/healthz.version`、`contractVersion=1`；最低兼容 v0.6.0）；未启用 mcbot 时用 `-SkipMcbot`，不得把跳过项计为 PASS。
 
 6. **启用模式/回滚**：
-   - **只读模式**：清空 `MCBOT_CONTROL_TOKEN`（`MCBOT_READ_TOKEN` 保留）并重启；`lofiiControlEnabled=false`，面板禁用任务/移动/聊天，`/status`、`/history` 可读，`/say` 返回 `503 lofii_control_disabled`（v0.8.1 起聊天属于写操作）。
-   - **完全禁用**：`MCBOT_ENABLED=false` 并重启；`/api/mcbot/*` 除 `/status` 空壳外返回 503，页面不显示 mcbot 标签；`meta.lofii.event_cursor` 可保留（再次启用时续接）或删除以重建基线；无 schema/DB 变更。
-   - **应用版本回滚**：切回上一 release + 还原 `APP_VERSION`（旧版忽略 `MCBOT_*` env 与 `meta.lofii.event_cursor`）；不需要恢复 DB 快照。
+   - **只读模式**：清空 `MCBOT_CONTROL_TOKEN`（`MCBOT_READ_TOKEN` 保留）并重启；`mcbotControlEnabled=false`，面板禁用任务/移动/聊天，`/status`、`/history` 可读，`/say` 返回 `503 mcbot_control_disabled`（v0.8.1 起聊天属于写操作）。
+   - **完全禁用**：`MCBOT_ENABLED=false` 并重启；`/api/mcbot/*` 除 `/status` 空壳外返回 503，页面不显示 mcbot 标签；`meta.mcbot.event_cursor` 可保留（再次启用时续接）或删除以重建基线；无 schema/DB 变更。
+   - **应用版本回滚**：切回上一 release + 还原 `APP_VERSION`。v1.0.0 起游标键为 `mcbot.event_cursor`；不需要为 mcbot 单独恢复 DB 快照。
    - **Token 轮换**：在 mcbot 侧轮换后重新执行 `sync-mcbot-tokens.sh`（先 `--check`），再重启应用；轮换期间 mcbot 请求会 401/503，属预期。
 
 7. **v0.8.1 安全补丁验证（2026-10-27 已执行）**：
@@ -483,15 +483,15 @@ sudo systemctl restart antifieldcloud
 
    | 现象 | 处理 |
    |---|---|
-   | `/api/mcbot/status` 返回 `lofii_disabled` | `MCBOT_ENABLED=false`；按步骤 3 启用并重启 |
-   | `lofii_unavailable` / `reachable=false` | mcbot 未运行/端口不对/网络被本机策略阻断；`systemctl status mcbot`、核对 `MCBOT_URL` 与 §1 的 loopback 约束 |
-   | `lofii_auth_failed` | 读/控制 Token 与 mcbot 不一致；重跑 `sync-mcbot-tokens.sh --check` 后同步并重启 |
-   | `lofii_control_disabled` | 未配置 `MCBOT_CONTROL_TOKEN`（只读模式）；按需同步控制 Token。v0.8.1 起 `/say` 同样返回该码（聊天属于写操作） |
+   | `/api/mcbot/status` 返回 `mcbot_disabled` | `MCBOT_ENABLED=false`；按步骤 3 启用并重启 |
+   | `mcbot_unavailable` / `reachable=false` | mcbot 未运行/端口不对/网络被本机策略阻断；`systemctl status mcbot`、核对 `MCBOT_URL` 与 §1 的 loopback 约束 |
+   | `mcbot_auth_failed` | 读/控制 Token 与 mcbot 不一致；重跑 `sync-mcbot-tokens.sh --check` 后同步并重启 |
+   | `mcbot_control_disabled` | 未配置 `MCBOT_CONTROL_TOKEN`（只读模式）；按需同步控制 Token。v0.8.1 起 `/say` 同样返回该码（聊天属于写操作） |
    | `eventsSupported=false` | mcbot < v0.6.0 或无 `/events/recent`；升级 mcbot 后重启应用 |
    | `/say` 返回 `message_must_not_start_with_slash` | v0.8.1 起任意位置 ASCII `/` 均拒绝（含上游切行后的命令）；去掉 `/` 或改全角 `／` |
    | `/say` 返回 `invalid_request` 且消息含控制字符 | 移除 C0/DEL 控制字符后重试 |
    | `stale=true` | 连续 3 个轮询周期无成功；检查 mcbot 与日志；恢复后自动清除 |
-   | 面板“控制未启用”但 Token 已配置 | 确认 `MCBOT_ENABLED=true`、Token 非空且已重启；`/api/version.lofiiControlEnabled` 应为 true |
+   | 面板“控制未启用”但 Token 已配置 | 确认 `MCBOT_ENABLED=true`、Token 非空且已重启；`/api/version.mcbotControlEnabled` 应为 true |
    | 告警历史出现 `status='event'` | 预期：mcbot alert 只记录、不参与活跃/恢复；`MCBOT_ALERTS_ENABLED=false` 可停止写入 |
 
 > **验收边界**：别名/端口/Token 只使用占位值。**v0.8.0 生产验证记录（2026-10-27 CST，历史）**：部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`，2 SKIP=加密/异地默认关闭），含 mcbot Bot active/version 0.6.0/contractVersion=1；mcbot v0.6.0（release `/opt/mcbot/releases/20261027T092737Z`）`/healthz` `version=0.6.0`/`contractVersion=1`；读 Token `/events/recent` 200，无 Token/控制 Token 访问读接口 401，`limit=201` 400；`sync-mcbot-tokens.sh --check` 同步前 mismatch/mismatch、同步后 match/match（不回显 Token、自动备份 env）；`MCBOT_ENABLED=true`（读/控制 Token 均配置）重启后 `/healthz` v0.8.0；`meta.lofii.event_cursor` = `{"bootId":"c2135fc2","lastEventId":"c2135fc2-7","lastTs":"2026-10-27T09:47:17.670Z"}`；生产 API 探针 `/api/mcbot/status` 200（enabled/reachable/eventsSupported/controlEnabled 均 true，version 0.6.0/contractVersion 1）、`/api/version` 200（lofiiEnabled/lofiiControlEnabled 均 true）、`/history?kind=samples&limit=2` 200 count=2、无 CSRF POST 403；`/tasks`（patrol）/`/tasks/stop` 200 后 task idle/queue 0/pendingResume 0，审计 `lofii.task.start`/`lofii.task.stop` 且无聊天正文。**边界**：未触发真实 mcbot 告警（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，mcbot 面板正常渲染；临时会话已清理，用户仍可自行复核）；**Windows 每日备份任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新（用户手动步骤/残余，非失败）；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldComplexx v0.8.0：mcbot Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**。

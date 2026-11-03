@@ -22,7 +22,7 @@ import type {
   McbotTaskState,
 } from '../api/types'
 
-/** 10 种可启动任务的中文名与固定顺序（下拉框顺序）。 */
+/** 11 种可启动任务的中文名与固定顺序（下拉框顺序，含清理安全区）。 */
 export const MCBOT_TASK_NAME_LABELS: Record<McbotTaskName, string> = {
   fishing: '钓鱼',
   farming: '种田',

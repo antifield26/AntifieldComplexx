@@ -60,7 +60,7 @@
 - SLP + RCON 只读状态（版本/MOTD/在线玩家/TPS/白名单数/服务状态）；白名单增删并执行后复核。
 - 应用 API 不提供任意 RCON 命令、启停、封禁、OP；仅白名单增删 + 只读状态。
 - 世界一致性备份由 root 脚本 `scripts/backup-world.mjs` 通过固定 `save-off` → `save-all flush` → `save-on`（finally）完成，应用 API 不可触达。
-- `/minecraft` 页为「服务器 / mcbot」两个可键盘操作标签页（`role=tab`、左右方向键/Home/End，`?tab=lofii` 或 `#lofii` 深链）；`/api/version.mcbotEnabled=false` 时不展示 mcbot 标签，页面行为与旧版一致。
+- `/minecraft` 页为「服务器 / mcbot」两个可键盘操作标签页（`role=tab`、左右方向键/Home/End，`?tab=mcbot` 或 `#mcbot` 深链）；`/api/version.mcbotEnabled=false` 时不展示 mcbot 标签，页面行为与旧版一致。
 
 ### mcbot Minecraft Bot（v0.8.0 引入；v1.0.5 常驻/生存/目标；v1.0.6 统一寻路）
 
@@ -175,7 +175,7 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - 诊断只存事件元数据（类型/结果/短码/目标与用户 ID），不存消息正文；角色/记忆管理 API 只返回元数据，正文不进入 Web/API；图片输入不可信：固定平台域名、image mime 白名单、大小上限、不落盘，失败降级为纯文字；长回复/附件 partial 失败不自动重试。
 - Chat 仅对已授权目标/C2C 开放，默认关闭且按用户每分钟/每小时限流；AI 会话新建时使用 deny-all 工具权限，若 OpenCode 明确拒绝该字段则进入 10 分钟重试窗口；启用消息发送工具时 fail-closed（新 Chat 返回 503 `chatbot_ai_tool_isolation_unavailable`，不以默认权限继续），上游恢复后自动恢复隔离。AI 仅把文本回复交给 Bot，不上传文件、不返回 OpenCode 凭据。
 - mcbot 对接只走 loopback：`MCBOT_URL` 启用时必须为 loopback + http(s)，客户端 `redirect: 'error'`、每次请求带超时、响应体上限 2 MiB；读 Token 与控制 Token 分离，控制 Token 为空即只读；Token 不进入浏览器/bundle/API 响应/日志，错误文本移除上游地址与 Token。
-- mcbot 写操作（任务/移动/聊天）全部要求登录 + CSRF，并按 IP 限流（控制 20/min、`/say` 10/min）；服务端路由强制参数白名单（7 种任务/4 种移动/`/` 前缀拒绝/720 字符上限），UI 对开始/停止/恢复/发送二次确认；审计只记动作元数据，`/say` 只记字符数、不记录聊天正文。
+- mcbot 写操作（任务/移动/聊天）全部要求登录 + CSRF，并按 IP 限流（控制 20/min、`/say` 10/min）；服务端路由强制参数白名单（11 种任务/4 种移动/任意位置 ASCII `/` 拒绝/720 字符上限），UI 对开始/停止/恢复/发送二次确认；审计只记动作元数据，`/say` 只记字符数、不记录聊天正文。
 - mcbot 聊天与事件只进内存缓存（最多 100 条），不落库、不写日志；历史接口只读透传；上游告警只作为 `status='event'` 事件记录，不改变本应用主动告警状态。
 - 备份归档校验 SHA-256 与 tar 安全（拒绝路径穿越/链接/设备/超大条目）；Web 恢复只到新目录、不覆盖，整库恢复仅离线 root 流程；加密归档在 Web 一律 409，Web/应用进程不持 age 私钥。
 - 备份加密失败关闭：加密开启时 age 缺失、公钥非法、加密失败或空间不足都让 prepare 失败，不产生 pending、不降级明文；明文临时文件崩溃残留由下次 prepare/维护清理（>24h）。
@@ -204,11 +204,11 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，需 QQ 后台开启接收所有消息并由群主授权获取全部消息。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1，`clockSkew` 状态可见，不自动修正）；Web 导入归档按 90 天保留；告警持续 firing 每 24h 重通知；`.backup.lock` 有 30s 心跳续租。
-- **发布状态**：v1.0.5 已部署生产并发布 Tag/Release（MC Bot 在线模式/自动生存/清怪/多步目标 + 全仓 Debug）；高差路径复杂场景仍可能安全传送，见 [AUDIT](docs/app/AUDIT.md)。v1.0.4 为上一稳定版本。历史发布记录见 [CHANGELOG.md](CHANGELOG.md)。
+- **发布状态**：v1.0.6 已部署生产并发布 Tag/Release（统一寻路层，核心实机矩阵通过）。v1.0.5 为上一稳定版本。5 格垂直墙在禁止挖掘/放置时只做明确兜底。历史发布记录见 [CHANGELOG.md](CHANGELOG.md) 与 [AUDIT](docs/app/AUDIT.md)。
 - **mcbot 告警只有事件语义**：上游 `alert` 映射为 `status='event'` 历史事件，不参与 firing/resolved 状态机，也没有恢复通知/冷却；上游告警状态需在 mcbot 侧查看（本应用只记录与转发）。
 - **mcbot 聊天/事件不持久化**：事件流与聊天只存在进程内存（最多 100 条且序列化 ≤512 KiB），应用或 mcbot 重启即丢失；历史接口只返回 mcbot 自己的 samples/alerts，不保存聊天正文。
 - **mcbot 轮询延迟与单实例**：状态/事件最多滞后一个轮询周期（默认 5s），控制结果最终一致；单进程内存缓存，不支持多实例/多副本；mcbot 不可达/数据过期/部分轮询失败时展示缓存与可见警告并降级。
-- **mcbot 依赖独立服务**：需先部署 mcbot **v1.0.5**（最低 v0.6.0，仅 loopback、契约 v1）并同步 Token；应用不管理 mcbot 生命周期、不读取其 RCON/OpenCode 密钥；旧版无 `/events/recent` 时事件流显示升级提示。
+- **mcbot 依赖独立服务**：需先部署 mcbot **v1.0.6**（最低 v0.6.0，仅 loopback、契约 v1）并同步 Token；应用不管理 mcbot 生命周期、不读取其 RCON/OpenCode 密钥；旧版无 `/events/recent` 时事件流显示升级提示。
 - **mcbot 控制面可写**：启用控制 Token 后本应用可让 mcbot 开始/停止任务、移动与游戏内发言（`/say` 自 v0.8.1 起同样需要控制 Token；真实 Minecraft 操作，仍受 mcbot 自身安全区/权限限制）；误操作需人工在游戏内纠正，控制 Token 应按需配置/轮换。
 
 详细设计与验收标准见 `docs/app/ARCHITECTURE.md`、`docs/app/SECURITY.md`、`docs/app/DEPLOY.md`、`docs/app/BACKUP.md`、`docs/app/CHATBOT.md`、`docs/app/API.md`、`docs/app/UI-SPEC.md`。

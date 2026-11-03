@@ -27,8 +27,8 @@ npm run check
 2. 打包（排除 `node_modules`、`.git`、`data*`）→ SSH/SCP 到 `/tmp` → 校验 SHA-256。
 3. 远端解包到 `/opt/mcbot/releases/<UTC>` → `npm ci --omit=dev --ignore-scripts`。
 4. 首次 `deploy/provision.sh`：
-   - 创建系统用户 `lofiibot`、`/var/lib/mcbot`、`/etc/mcbot`；
-   - `bootstrap-env.sh` 从 `/etc/opencode/opencode.env` 读密码、生成 64 位 `HTTP_TOKEN` 与独立的 `HTTP_CONTROL_TOKEN`，写 `/etc/mcbot/env`（root:lofiibot 0640）；
+   - 创建系统用户 `mcbot`、`/var/lib/mcbot`、`/etc/mcbot`；
+   - `bootstrap-env.sh` 从 `/etc/opencode/opencode.env` 读密码、生成 64 位 `HTTP_TOKEN` 与独立的 `HTTP_CONTROL_TOKEN`，写 `/etc/mcbot/env`（root:mcbot 0640）；
    - 安装并 enable `mcbot.service`；
    - `--server-config`：备份 `server.properties`/`whitelist.json`/`ops.json`，`max-players=6`，重启 Paper，RCON `whitelist add lofii` + `op lofii`。
 5. 原子切换 `/opt/mcbot/current`，重启服务，轮询 `/healthz` 校验版本；失败回滚上一 release。
@@ -79,8 +79,8 @@ curl -fsS http://127.0.0.1:3010/healthz
 ```text
 /opt/mcbot/releases/<UTC>/    # 每次部署一个 release（root:root 只读）
 /opt/mcbot/current -> ...     # 原子切换
-/etc/mcbot/env                # root:lofiibot 0640（含读/控制 Token、OpenCode 密码）
-/var/lib/mcbot/               # lofiibot:lofiibot 0700
+/etc/mcbot/env                # root:mcbot 0640（含读/控制 Token、OpenCode 密码）
+/var/lib/mcbot/               # mcbot:mcbot 0700
 /var/lib/mcbot/memory/        # 0600，按玩家 UUID
 /var/lib/mcbot/task-state.json # 0600，v2 active+queue+pending
 /var/lib/mcbot/audit.jsonl     # 0600，审计元数据，5 MB 轮转
@@ -88,7 +88,7 @@ curl -fsS http://127.0.0.1:3010/healthz
 /etc/systemd/system/mcbot.service
 ```
 
-- 服务用户：`lofiibot`（nologin，非 root）。
+- 服务用户：`mcbot`（nologin，非 root）。
 - 资源限制：`MemoryHigh=384M`、`MemoryMax=512M`、`Nice=5`；`Restart=always`。
 - HTTP 仅监听 `127.0.0.1:3010`；nftables 未改动。
 
@@ -163,7 +163,7 @@ curl -fsS -X POST http://127.0.0.1:3010/move \
 | 连接节流 | Paper 的 *Connection throttled* 属正常；退避会自动重试，避免短时间反复重启 |
 | AI 不回复 | `curl -u opencode:<pw> http://127.0.0.1:4096/api/info`；`/status.ai.lastError`；OpenCode 服务状态 |
 | `/say` 409 | Bot 不在线（动态模式空服）；让玩家上线或临时 `FORCE_ONLINE=true` |
-| 移动失败 | 目标实体未加载/跨维度/无路；`Lofii 状态` 看位置；需要时先 `/tp` |
+| 移动失败 | 目标实体未加载时过来/跟随会拒绝，不按名字传送；跨维度直接拒绝；无路时看 journal。游戏内 `Lofii 状态` 看位置 |
 | 任务不启动 | 箱子/背包是否有鱼竿/锄/种子/铁斧/铁镐/树苗/食物；`/status.task.lastError`；`Lofii 状态` 看位置 |
 | 管理 503/空 | `RCON_ENABLED`、`RCON_PASSWORD`、`RCON_PORT`；`/admin/status` 的 `rcon/lastError`；服务器 RCON 是否开启 |
 | 历史 503/空 | `HISTORY_ENABLED`、`HISTORY_DB` 权限；`/history?kind=samples`；journal `history` |

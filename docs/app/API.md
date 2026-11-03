@@ -14,11 +14,11 @@
 { "error": { "code": "invalid_credentials", "message": "用户名或密码错误", "details": { } } }
 ```
 
-- 常见状态码：`400 invalid_request`、`401 unauthenticated/invalid_password`、`403 csrf_failed`、`404 not_found`、`410 share_expired/share_revoked/share_exhausted`、`409 conflict/quota_exceeded/archive_encrypted/chunk_conflict/backup_busy/restore_busy/plan_expired/archive_exists`、`413 file_too_large`、`415 unsupported_media_type`、`429 rate_limited`、`500 internal_error`、`502 lofii_auth_failed/lofii_upstream_error`、`503 chatbot_disabled/chatbot_key_missing/chatbot_ai_tool_isolation_unavailable/chatbot_ai_context_unavailable/lofii_disabled/lofii_control_disabled/lofii_unavailable/lofii_task_disabled/lofii_history_disabled/lofii_not_found`、`507 insufficient_storage`。`429` 同时带 `Retry-After` 响应头与 `error.details.retryAfterSec`。
+- 常见状态码：`400 invalid_request`、`401 unauthenticated/invalid_password`、`403 csrf_failed`、`404 not_found`、`410 share_expired/share_revoked/share_exhausted`、`409 conflict/quota_exceeded/archive_encrypted/chunk_conflict/backup_busy/restore_busy/plan_expired/archive_exists`、`413 file_too_large`、`415 unsupported_media_type`、`429 rate_limited`、`500 internal_error`、`502 mcbot_auth_failed/mcbot_upstream_error`、`503 chatbot_disabled/chatbot_key_missing/chatbot_ai_tool_isolation_unavailable/chatbot_ai_context_unavailable/mcbot_disabled/mcbot_control_disabled/mcbot_unavailable/mcbot_task_disabled/mcbot_history_disabled/mcbot_not_found`、`507 insufficient_storage`。`429` 同时带 `Retry-After` 响应头与 `error.details.retryAfterSec`。
 - 认证：登录成功后服务端在 **app 主机**下发 host-only `af_session`（HttpOnly）与 `af_csrf`（可读）Cookie（均不设 `Domain`；`ai` 主机使用独立 host-only 会话 Cookie）。除 `GET/HEAD` 外的所有 `/api` 请求必须带 `X-CSRF-Token: <af_csrf>`，并满足 `Origin` 为 `https://app.example.com` / 本机；`ai` 源不再作为 app 写请求的受信 Origin。例外：公开 Bot Webhook `POST /api/chatbot/webhook/:botId` 不挂会话/CSRF，只按平台签名（及时间戳/去重）鉴权（见 §14）；既有公开分享 `POST /api/public/shares/:token/unlock` 也只校验 Origin 与限流。
 - AI 主机 SSO：app 登录/已登录后访问 `GET /api/auth/ai-ticket?next=<ai 完整 URL>`，服务端校验 `next` 必须属于配置的 `AI_ORIGIN`，签发 60 秒一次性 ticket 并 302 到 `https://ai.example.com/__af/sso/<ticket>?next=<ai 相对路径>`；代理校验/消费 ticket 后设置 ai 主机 host-only `af_session` 并 302 到目标路径。ticket 一次性、绑定 aiOrigin、不落库。
 - Bot 功能开关：`CHATBOT_ENABLED=false` 或缺少 `CHATBOT_SECRET_KEY` 时，Webhook 一律 `404 not_found`，`/api/chatbots*` 写操作返回 `503 chatbot_disabled`/`chatbot_key_missing`；`GET /api/chatbots/status` 仍可读。
-- mcbot 功能开关（v0.8.0 引入，v0.8.1 安全加固）：`MCBOT_ENABLED=false` 时 `/api/mcbot/status` 仍返回 `enabled:false` 的空壳快照，其余 `/api/mcbot/*` 返回 `503 lofii_disabled`；`MCBOT_CONTROL_TOKEN` 为空（只读模式）时 `/tasks*`、`/move` **与 `/say`** 均返回 `503 lofii_control_disabled`（`/status`、`/history` 仍可读）。`MCBOT_URL` 只允许 `http(s)://loopback[:port]` 根地址（拒绝 userinfo/路径/查询/片段）。上游未启用/网络不可达返回 `503 lofii_unavailable`；鉴权失败/上游异常返回 `502 lofii_auth_failed`/`lofii_upstream_error`；上游 5xx 的稳定业务码 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `lofii_*`。响应与错误文本不包含 mcbot URL/Token。
+- mcbot 功能开关（v0.8.0 引入，v0.8.1 安全加固）：`MCBOT_ENABLED=false` 时 `/api/mcbot/status` 仍返回 `enabled:false` 的空壳快照，其余 `/api/mcbot/*` 返回 `503 mcbot_disabled`；`MCBOT_CONTROL_TOKEN` 为空（只读模式）时 `/tasks*`、`/move` **与 `/say`** 均返回 `503 mcbot_control_disabled`（`/status`、`/history` 仍可读）。`MCBOT_URL` 只允许 `http(s)://loopback[:port]` 根地址（拒绝 userinfo/路径/查询/片段）。上游未启用/网络不可达返回 `503 mcbot_unavailable`；鉴权失败/上游异常返回 `502 mcbot_auth_failed`/`mcbot_upstream_error`；上游 5xx 的稳定业务码 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `mcbot_*`。响应与错误文本不包含 mcbot URL/Token。
 - 安全响应头：`Cache-Control: no-store`（静态 hash 资源除外）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、CSP（见 docs/app/SECURITY.md）。
 - 登录限制：每 IP 5 次失败/15 分钟；全局 60 次/小时（密码）、120 次/小时（TOTP），loopback 来源不占全局桶。`429` 响应包含 `retryAfterSec`。
 - 单文件上限：普通 multipart **100 MiB**（`MAX_UPLOAD_BYTES=104857600`，匹配 Cloudflare 代理）；更大文件走分片上传。超过返回 `413 file_too_large`，磁盘不足返回 `507 insufficient_storage`。
@@ -31,7 +31,7 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "0.8.0", "schemaVersion": 17, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
+{ "ok": true, "version": "1.0.6", "schemaVersion": 18, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
 ```
 
 - `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
@@ -394,9 +394,9 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "0.8.0", "schemaVersion": 17, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "lofiiEnabled": false, "lofiiControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
+- `GET /api/version`（需要会话）：`{ "version": "1.0.6", "schemaVersion": 18, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
   - `schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。旧服务端不下发时前端按关闭/未配置/null 降级。
-  - `lofiiEnabled`/`lofiiControlEnabled`（v0.8.0）：mcbot 集成是否启用、控制接口是否可用（`MCBOT_ENABLED=true` 且 `MCBOT_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 mcbot 标签与控制操作。两者都不含 mcbot 地址/Token。
+  - `mcbotEnabled`/`mcbotControlEnabled`（v0.8.0）：mcbot 集成是否启用、控制接口是否可用（`MCBOT_ENABLED=true` 且 `MCBOT_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 mcbot 标签与控制操作。两者都不含 mcbot 地址/Token。
   - schema **17**；`audit.persisted` 表示诊断是否来自 DB 持久化行（DB 不可用时 false，回退内存计数）。
   - `backupRestoreEnabled` 与 `deploy/env.example` 默认一致（默认 `false`；Web 文件级恢复需显式开启）。
 - `GET /api/storage`（需要会话；轻量端点，供文件页取配额，避免触发 Dashboard 的 MC/opencode/systemctl 聚合）：`{ "quotaBytes": 10737418240, "usedBytes": 1234, "trashBytes": 0, "fileCount": 3, "freeBytes": 1 }`。字段与 `/api/dashboard.storage` 一致；`usedBytes` 含笔记附件与回收站，`fileCount` 只统计普通文件（`origin='user'`）。
@@ -454,7 +454,7 @@ RCON 不可用：`502 rcon_unavailable`。
 - Webhook 请求体 `{source,version,event,severity,status,title,message,details,at}`；可选 HMAC 头 `x-antifieldcloud-signature: sha256=<hex>`；10s 超时、最多 3 次尝试。
 - 告警条件：磁盘、温度、内存（默认 90%）、服务、备份超期、pending 备份、备份密钥包、MC、欠压（health probe JSON）、世界备份/世界拉取/恢复演练超期与异地副本超期（`offsite_overdue`）；同状态去重/冷却，恢复时发 resolved。`status` 可能为 `unknown`（连续 3 次数据源不可用后降级并产生一次事件）；`alert_events` 保留 90 天。
   `config` 含 `offsiteMaxAgeHours`（小时，0 表示关闭；状态文件缺失/未配置时该条件不进入列表，不误报）；`status` 字段另含世界备份/拉取/演练阈值。
-- 外部事件告警（v0.8.0，mcbot）：上游 `alert` 事件由服务端映射为 `status='event'` 写入 `alert_events`，**不写 `alert_state`、不参与 firing/resolved 状态机、不产生恢复通知**；`severity`：已知类型（low_health/chest_full/defense_retreat → warning，task_failed/disconnected → critical），未知类型上游 `severity='error'` 为 critical，否则 warning；`event` 名为 `lofii_low_health`/`lofii_task_failed`/`lofii_disconnected`/`lofii_chest_full`/`lofii_defense_retreat`/`lofii_alert`（未知），`details` 含 `source:"lofii"`、`lofiiEventId`、`lofiiType` 与清洗后的上游 details（深度≤2、键≤20、数组≤20、字符串≤300）。写入后异步复用 webhook 投递与 Bot 通知，不阻塞请求；`ALERTS_ENABLED=false` 时不写库/不投递。
+- 外部事件告警（v0.8.0，mcbot）：上游 `alert` 事件由服务端映射为 `status='event'` 写入 `alert_events`，**不写 `alert_state`、不参与 firing/resolved 状态机、不产生恢复通知**；`severity`：已知类型（low_health/chest_full/defense_retreat → warning，task_failed/disconnected → critical），未知类型上游 `severity='error'` 为 critical，否则 warning；`event` 名为 `mcbot_low_health`/`mcbot_task_failed`/`mcbot_disconnected`/`mcbot_chest_full`/`mcbot_defense_retreat`/`mcbot_alert`（未知），`details` 含 `source:"mcbot"`、`mcbotEventId`、`mcbotType` 与清洗后的上游 details（深度≤2、键≤20、数组≤20、字符串≤300）。写入后异步复用 webhook 投递与 Bot 通知，不阻塞请求；`ALERTS_ENABLED=false` 时不写库/不投递。
 
 ## 11. 备份管理 / 文件级恢复
 
@@ -745,12 +745,12 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 ### 通用语义
 
 - 启用：`MCBOT_ENABLED=true` 且配置 `MCBOT_READ_TOKEN`（启动校验：`MCBOT_URL` 必须为 `http(s)://loopback[:port]` 根地址，拒绝 userinfo/路径/查询/片段）；控制：`MCBOT_CONTROL_TOKEN` 非空。
-- 关闭：`MCBOT_ENABLED=false` 时除 `GET /api/mcbot/status`（返回 `enabled:false` 空壳）外均返回 `503 lofii_disabled`。
-- 只读：控制 Token 为空时 `/tasks*`、`/move` **与 `/say`** 返回 `503 lofii_control_disabled`（`/say` 是游戏内写操作，v0.8.1 起必须受控制 Token 门控）；`/status`、`/history` 仍可用。
+- 关闭：`MCBOT_ENABLED=false` 时除 `GET /api/mcbot/status`（返回 `enabled:false` 空壳）外均返回 `503 mcbot_disabled`。
+- 只读：控制 Token 为空时 `/tasks*`、`/move` **与 `/say`** 返回 `503 mcbot_control_disabled`（`/say` 是游戏内写操作，v0.8.1 起必须受控制 Token 门控）；`/status`、`/history` 仍可用。
 - 轮询：服务端每 `MCBOT_POLL_MS`（默认 5000，2000–60000）拉一次 `/status` + `/events/recent?limit=200`（覆盖一次突发，避免只看 100 条漏告警）；单飞（不并发/不堆积）；失败只更新 `reachable/stale/error` 并保留上次成功数据。
 - 限流：控制类（tasks/stop/resume/move/autonomy/start/stop 共用）**20 次/分钟/IP**，`/say` **10 次/分钟/IP**；`/status`、`/history`、`/autonomy` GET **60 次/分钟/IP**（v1.0.2；UI 5s 轮询不受影响）；超限 `429 rate_limited` 并带 `Retry-After`。
-- 审计：`lofii.task.start`（target=任务名）、`lofii.task.stop`、`lofii.task.resume`（target=taskId 或 `task`）、`lofii.move`（target=action）、`lofii.say`（只记 `chars`）、`mcbot.autonomy.start/stop`（只记目标/原因字符数）、失败 `lofii.control_failed`（只记稳定错误码）；不记录聊天正文、自主目标/停止原因正文、Token、URL。
-- 错误映射：上游 400/409 保留状态码，`error.code=lofii_<上游稳定码>`（如 `lofii_task_rejected`/`lofii_resume_pending`）；上游 401/403 → `502 lofii_auth_failed`；上游 429 → `429 lofii_rate_limited`；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `503 lofii_<code>`；其它上游错误/非 JSON/超限 → `502 lofii_upstream_error`；禁用/不可达/控制未启用 → `503 lofii_disabled`/`lofii_unavailable`/`lofii_control_disabled`/`lofii_not_found`。`message` 为固定中文兜底，不含上游原文/地址/Token。
+- 审计：`mcbot.task.start`（target=任务名）、`mcbot.task.stop`、`mcbot.task.resume`（target=taskId 或 `task`）、`mcbot.move`（target=action）、`mcbot.say`（只记 `chars`）、`mcbot.autonomy.start/stop`（只记目标/原因字符数）、失败 `mcbot.control_failed`（只记稳定错误码）；不记录聊天正文、自主目标/停止原因正文、Token、URL。
+- 错误映射：上游 400/409 保留状态码，`error.code=mcbot_<上游稳定码>`（如 `mcbot_task_rejected`/`mcbot_resume_pending`）；上游 401/403 → `502 mcbot_auth_failed`；上游 429 → `429 mcbot_rate_limited`；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `503 mcbot_<code>`；其它上游错误/非 JSON/超限 → `502 mcbot_upstream_error`；禁用/不可达/控制未启用 → `503 mcbot_disabled`/`mcbot_unavailable`/`mcbot_control_disabled`/`mcbot_not_found`。`message` 为固定中文兜底，不含上游原文/地址/Token。
 
 ### GET /api/mcbot/status
 
@@ -773,11 +773,11 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 }
 ```
 
-- `status`：上游 `/status` 快照（上游契约为 mcbot v0.6.1，最低兼容 v0.6.0），不含 Token/记忆正文；**不承诺固定字段**，前端对缺失嵌套段（`task`/`admin`/`ai`/`memory`/`minecraft`/`player`/`server`）安全读取并显示“—”，不会整页崩溃。
+- `status`：上游 `/status` 快照（契约 v1，最低兼容 mcbot v0.6.0；示例里的版本号只说明字段形状），不含 Token/记忆正文；**不承诺固定字段**，前端对缺失嵌套段（`task`/`admin`/`ai`/`memory`/`minecraft`/`player`/`server`）安全读取并显示“—”，不会整页崩溃。
 - `stale`：连续 3 个轮询周期无成功或距上次成功超过 3 个周期；`reachable=false` 时保留最后一次成功快照。
 - `eventsSupported`：上游是否提供 `/events/recent`（旧版 404 时 false）；字段缺失/`undefined` 时前端**不把 undefined 当作支持**，回退为按 `contractVersion`（仅 number 有效）或已有事件数组判断；`contractVersion` 仅接受 number（否则显示“—”，不显示 `vundefined`）。
 - `events`：内存环最近事件，**newest-first，最多 100 条且序列化总字节 ≤512 KiB**；服务端重启清空；不写入 DB/日志。
-- `error`：稳定错误码（如 `lofii_unavailable`/`lofii_auth_failed`/`lofii_cursor_failed`/`lofii_upstream_error`），不是上游原文。**`reachable=true` 时 `error` 仍可能非空**（如 `/status` 成功但 `/events/recent` 失败或游标写库失败），前端必须展示可见警告，不得把“可达”等同于“事件/告警正常”。
+- `error`：稳定错误码（如 `mcbot_unavailable`/`mcbot_auth_failed`/`mcbot_cursor_failed`/`mcbot_upstream_error`），不是上游原文。**`reachable=true` 时 `error` 仍可能非空**（如 `/status` 成功但 `/events/recent` 失败或游标写库失败），前端必须展示可见警告，不得把“可达”等同于“事件/告警正常”。
 - `lastPollAt` 为最近一次轮询**尝试**时间；当前快照**未下发** `lastSuccessAt`（残余：stale 提示仍用 `lastPollAt`，持续故障时可能显示误导性“上次成功轮询”时间，见 `docs/app/AUDIT.md` 补审计节 ARCH6-03）。
 - 游标/告警重试：`recordExternal` 写告警失败时游标停在上一条**已完整处理**的事件，下一轮重新处理失败事件；`MCBOT_ALERTS_ENABLED=false` 时仍推进游标但不写告警。
 
@@ -795,7 +795,7 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 }
 ```
 
-`samples` 时返回 `samples` 数组（每 60s 一条，上游保留 30 天）；字段以上游契约为准，不含聊天正文/Token/密码。只读，不写审计。**响应形状校验**：服务端要求 `kind` 与请求一致、对应数组存在，且只透传对象行；不匹配/缺数组返回 `502 lofii_upstream_error`（不把畸形数据交给前端渲染）。
+`samples` 时返回 `samples` 数组（每 60s 一条，上游保留 30 天）；字段以上游契约为准，不含聊天正文/Token/密码。只读，不写审计。**响应形状校验**：服务端要求 `kind` 与请求一致、对应数组存在，且只透传对象行；不匹配/缺数组返回 `502 mcbot_upstream_error`（不把畸形数据交给前端渲染）。
 
 ### GET /api/mcbot/autonomy（v1.0.2）
 
@@ -840,11 +840,11 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 { "name": "fishing" }
 ```
 
-`name` 必须是 `fishing|farming|woodcutting|mining|forest|sleep|patrol|guard|escort|explore|clearing` 之一（v1.0.5 同步 11 种；否则 `400 invalid_request`）。成功 `200 { "ok": true, ...上游响应 }`；上游已 active 时入队（`queued:true`、`position:1..3`）；有 pending → `409 lofii_resume_pending`；队列满 → `409 lofii_queue_full`；任务功能关闭 → `503 lofii_task_disabled`。
+`name` 必须是 `fishing|farming|woodcutting|mining|forest|sleep|patrol|guard|escort|explore|clearing` 之一（v1.0.5 同步 11 种；否则 `400 invalid_request`）。成功 `200 { "ok": true, ...上游响应 }`；上游已 active 时入队（`queued:true`、`position:1..3`）；有 pending → `409 mcbot_resume_pending`；队列满 → `409 mcbot_queue_full`；任务功能关闭 → `503 mcbot_task_disabled`。
 
 ### POST /api/mcbot/tasks/stop
 
-需要会话 + CSRF，body 可为空。成功 `200 { "ok": true, ... }`（中断当前任务并清空队列；只有 pending 时取消 pending 与队列）。无任务 → `409 lofii_no_active_task`。
+需要会话 + CSRF，body 可为空。成功 `200 { "ok": true, ... }`（中断当前任务并清空队列；只有 pending 时取消 pending 与队列）。无任务 → `409 mcbot_no_active_task`。
 
 ### POST /api/mcbot/tasks/resume
 
@@ -854,7 +854,7 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 { "taskId": "46451943-eae1-41c0-8df3-beef3c7b60f4" }
 ```
 
-`taskId` 省略时恢复唯一 pending；提供时必须是 **trim 后 1–64 字符、无内部空白、无 C0 控制字符/DEL**（否则 `400 invalid_request`）。成功 `200 { "ok": true, ... }`；无 pending → `409 lofii_no_pending_task`；过期/不匹配 → `409 lofii_resume_failed`。上游 pending 10 分钟未确认会自动中断。
+`taskId` 省略时恢复唯一 pending；提供时必须是 **trim 后 1–64 字符、无内部空白、无 C0 控制字符/DEL**（否则 `400 invalid_request`）。成功 `200 { "ok": true, ... }`；无 pending → `409 mcbot_no_pending_task`；过期/不匹配 → `409 mcbot_resume_failed`。上游 pending 10 分钟未确认会自动中断。
 
 ### POST /api/mcbot/move
 
@@ -864,21 +864,21 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 { "action": "come", "target": "Steve" }
 ```
 
-`action` 必须是 `home|come|follow|stop`；`target` 可选（trim 后 ≤32 字符，`home`/`stop` 忽略）。成功 `200 { "ok": true, ... }`；任务进行中 → `409 lofii_task_active`；目标不在线 → `409 lofii_target_not_online`；mcbot 未连接 Minecraft → `409 lofii_not_connected`；上游 202 只表示接受，结果通过事件流反映。
+`action` 必须是 `home|come|follow|stop`；`target` 可选（trim 后 ≤32 字符，`home`/`stop` 忽略）。成功 `200 { "ok": true, ... }`；任务进行中 → `409 mcbot_task_active`；目标不在线 → `409 mcbot_target_not_online`；mcbot 未连接 Minecraft → `409 mcbot_not_connected`；上游 202 只表示接受，结果通过事件流反映。
 
 ### POST /api/mcbot/say
 
-需要会话 + CSRF + **控制 Token**（v0.8.1 起 `/say` 是游戏内写操作，只读模式重必须返回 `503 lofii_control_disabled`）。body：
+需要会话 + CSRF + **控制 Token**（v0.8.1 起 `/say` 是游戏内写操作，只读模式重必须返回 `503 mcbot_control_disabled`）。body：
 
 ```json
 { "message": "来自 AntifieldComplexx 的问候" }
 ```
 
-成功 `200 { "ok": true, "lines": 1 }`。约束：trim 后非空、≤**720** 字符、**任意位置不能包含 ASCII `/`**（`400 message_must_not_start_with_slash`；防止“填充字符 + /命令”在上游按 240 字符切行后的第二行命中 mineflayer 命令通道）、不能包含 C0 控制字符/DEL（`400 invalid_request`）；mcbot 未连接 → `409 lofii_not_connected`；上游限流 → `429 lofii_rate_limited`。上游 mcbot v0.6.1 还会逐行把行首 `/` 中和为全角 `／`（防御纵深，应用侧不依赖）。**只聊天、不执行命令；内容不落库、不写日志，审计只记字符数**。
+成功 `200 { "ok": true, "lines": 1 }`。约束：trim 后非空、≤**720** 字符、**任意位置不能包含 ASCII `/`**（`400 message_must_not_start_with_slash`；防止“填充字符 + /命令”在上游按 240 字符切行后的第二行命中 mineflayer 命令通道）、不能包含 C0 控制字符/DEL（`400 invalid_request`）；mcbot 未连接 → `409 mcbot_not_connected`；上游限流 → `429 mcbot_rate_limited`。自 v0.6.1 起上游还会逐行把行首 `/` 中和为全角 `／`（防御纵深，应用侧不依赖）。**只聊天、不执行命令；内容不落库、不写日志，审计只记字符数**。
 
 ### 事件与告警
 
 - `/events/recent` 事件 envelope `{id,type,ts,data}`；`type` 已知 `presence|task|chat|movement|alert`，`data` 形状随类型变化且视为不可信输入，前端只读取白名单字段并纯文本渲染；查表一律 own-property，避免 `__proto__`/`constructor` 命中原型链。
 - 轮询每轮向上游取最近 **200** 条（覆盖一次突发；上游 ring 500），合并进内存缓存时按 id 去重、newest-first、最多 100 条且总字节 ≤512 KiB。
-- `alert` 事件映射为本应用告警事件（`status='event'`），映射与字段见 §10；告警游标保存在 `meta.lofii.event_cursor={bootId,lastEventId,lastTs}`，首次/重启/`bootId` 变化只建基线不重放；`MCBOT_ALERTS_ENABLED=false` 仍推进游标但不写告警；告警写入失败时游标停在上一条已处理事件并在下一轮重试（不静默丢告警）。
+- `alert` 事件映射为本应用告警事件（`status='event'`），映射与字段见 §10；告警游标保存在 `meta.mcbot.event_cursor={bootId,lastEventId,lastTs}`，首次/重启/`bootId` 变化只建基线不重放；`MCBOT_ALERTS_ENABLED=false` 仍推进游标但不写告警；告警写入失败时游标停在上一条已处理事件并在下一轮重试（不静默丢告警）。
 - 聊天事件只进服务端内存事件缓存（≤100 条/≤512 KiB），不提供历史查询、不持久化、不写日志/审计正文；应用重启或 mcbot 重启即丢失。

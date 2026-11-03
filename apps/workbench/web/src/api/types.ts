@@ -1275,7 +1275,7 @@ export interface ChatbotMemoryItemSummary {  id: string
 
 /* ---------- mcbot 集成（v0.8.0，GET /api/mcbot/status 等；v1.0.2 自主模式） ---------- */
 
-/** mcbot 支持的 10 种任务（与 mcbot Bot 的 TaskName 一致）。 */
+/** mcbot 支持的 11 种任务（与 mcbot Bot 的 TaskName 一致，含 clearing）。 */
 export type McbotTaskName =
   | 'fishing'
   | 'farming'
