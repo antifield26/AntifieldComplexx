@@ -1,8 +1,8 @@
 # Changelog
 
-## [v1.0.7] - 2026-11-04（代码完成；OpenCode 2.2.5 已在树莓派运行；应用生产部署待本窗口）
+## [v1.0.7] - 2026-11-04（已部署；OpenCode 2.2.5；Tag/Release 未创建）
 
-v1.0.7 主题是运行时可信：告警可重放、轮询成功时间可见、mcbot 进入服务告警，以及寻路兜底进入自主重决策。app 与 mcbot 同为 1.0.7。schema v18 → v19，只追加可空 `alert_events.dedupe_key`。OpenCode 针为 2.2.5，与应用同一发布窗口升级；本条目不表示生产已切换。
+v1.0.7 主题是运行时可信：告警可重放、轮询成功时间可见、mcbot 进入服务告警，以及寻路兜底进入自主重决策。app 与 mcbot 同为 1.0.7。schema v18 → v19，只追加可空 `alert_events.dedupe_key`。OpenCode 针为 2.2.5，与应用同一发布窗口升级。
 
 ### 修复
 
@@ -18,8 +18,9 @@ v1.0.7 主题是运行时可信：告警可重放、轮询成功时间可见、m
 ### 运维
 
 - `deploy/tool-versions.json`：schema 19、OpenCode 2.2.5、mcbot 1.0.7。升级步骤见 `docs/app/DEPLOY.md` §3.2。回滚 OpenCode 使用本次升级前的 v2.2.0 备份。矩阵失败则恢复该备份并停止应用部署。
-- 本地门禁（2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。应用生产部署仍待本窗口。
-- OpenCode（2026-11-04）：树莓派运行中版本为 2.2.5。备份 timestamp `20261104T062115Z`。矩阵见 `docs/app/DEPLOY.md` §3.2。未改配置。应用与 mcbot 的已部署 release 仍是 v1.0.6。
+- 本地门禁（2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。
+- 生产（2026-11-04，commit `b17102b`）：app `/opt/antifieldcloud/releases/20261104T093100Z`，迁移前 DB 快照 `db-predeploy-20261104T093146763Z.sqlite`（sha256 `1b09c9…fa03`）；mcbot `/opt/mcbot/releases/20261104T092858Z`（契约 v1，仅 `127.0.0.1:3010`）。部署内 smoke **26/0/1/2**；带 mcbot 版本与本机任务/归档旁文件后，经 Pi 出口的完整 Access smoke **36/0/1/2**（WARN=演练 schema 18；SKIP=加密/异地默认关闭）。`service_down` 在停止 mcbot 后 firing「未运行：mcbot」，恢复后 resolved。Minecraft 保持运行。Tag/Release 未创建。
+- OpenCode（2026-11-04）：树莓派运行中版本为 2.2.5。备份 timestamp `20261104T062115Z`。矩阵见 `docs/app/DEPLOY.md` §3.2。未改配置。
 - schema v19 写入后，应用回退到 v1.0.6 必须先恢复迁移前 DB 快照。
 
 ### 本版不修

@@ -1,14 +1,20 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.7（代码与文档已对齐；应用生产部署待本窗口）。OpenCode v2.2.5 已在树莓派运行。应用与 mcbot 的已部署版本仍为 v1.0.6/schema18。
+> 当前版本 v1.0.7（2026-11-04 已部署，commit `b17102b`）。OpenCode v2.2.5 已在树莓派运行。应用 schema 19，mcbot 契约 v1。Tag/Release 未创建。
 
-### v1.0.7 运行时可信（代码完成，生产证据待本窗口回填）
+### v1.0.7 运行时可信（2026-11-04，已部署）
 
 - 范围：schema v19 告警幂等键；`lastSuccessAt`；mcbot 轮询过期或进程不在时的 `service_down`；周度世界拉取安装到 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`；寻路兜底进入自主重决策；OpenCode 2.2.5 与应用同窗口升级。
 - 本地测试覆盖成功与失败路径：同一 `dedupe_key` 不新增行且不重复通知，空键仍各自写入；单次轮询失败不触发 `service_down`，过期后 firing、恢复后 resolved；进程 inactive 直接 firing；传送兜底只重决策一次，第 7 次停止会话；未启动自主会话时兜底不创建会话。
-- 本地门禁（2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**；`check-naming`、`check:docs` 通过。生产 smoke 待本窗口。
+- 本地门禁（2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**；`check-naming`、`check:docs` 通过。部署脚本内再次跑通同一门禁。
 - OpenCode（2026-11-04）：已升到 v2.2.5，运行中 `/api/info` 为 2.2.5，进程 exe 非 deleted。备份 `/var/backups/opencode` timestamp `20261104T062115Z`。矩阵见 `docs/app/DEPLOY.md` §3.2。未改 `opencode.json`。
-- 应用与 mcbot：尚未部署。release 路径、smoke 计数与 5 格墙实机重决策在部署后回填。不把 v1.0.6 的 smoke 记成 v1.0.7。
+- 生产：app `/opt/antifieldcloud/releases/20261104T093100Z`（1.0.7/schema 19），迁移前 DB 快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261104T093146763Z.sqlite`（sha256 `1b09c9…fa03`）。mcbot `/opt/mcbot/releases/20261104T092858Z`（1.0.7/contract 1，仅 `127.0.0.1:3010`）。回滚应用需先恢复该快照再切回 `/opt/antifieldcloud/releases/20261030T132040Z`。mcbot 上一 release 为 `/opt/mcbot/releases/20261030T143538Z`。
+- smoke：部署内只读 **26/0/1/2**。随后 `-ExpectedMcbotVersion 1.0.7` 的 Pi 检查为 **27/0/1/2**。含 Windows 任务标记与本地归档旁文件、并经 Pi 出口访问公网的完整 Access smoke **36/0/1/2**（WARN=演练 schema 18；SKIP=加密与异地默认关闭）。本机直连公网时 Cloudflare 返回 `Cf-Mitigated: challenge`，同一 `/healthz` 从 Pi 出口为 HTTP 200。
+- `service_down`：停止 `mcbot` 后于 `2026-11-04T09:41:48.708Z` firing，文案「未运行：mcbot」；`2026-11-04T09:46:48.709Z` resolved，`alert_state` 回到 ok。`minecraft` 与 `antifieldcloud` 保持 active。评估间隔 300 秒。schema 19 的 `dedupe_key` 列与 `idx_alert_events_dedupe` 已在生产库中。
+- 面板文案：生产前端包含「尚无成功轮询」与「兜底原因」。未登录面板做点击验收。`lastSuccessAt` 只在进程内存里。
+- 5 格墙重决策：验收时服务器 0 人在线，bot `connected=false`、presence `auto`。未改 `FORCE_ONLINE`，未放置方块，未实机触发兜底。该路径由单元测试覆盖。
+- Windows：`backup-task.json` appVersion=1.0.7、installedAt `2026-11-04T09:40:11Z`、backupRoot `D:\Backups`。每日任务与 `AntifieldCloud-World-Pull` 的 `-File` 都在 `%LOCALAPPDATA%\AntifieldCloud`，脚本 SHA 与仓库一致。世界拉取下次 2026-11-08 12:00。未安装异地任务，未再拉世界归档。
+- 残余：演练状态仍是 `20261030T145445Z` / schema 18，下次 `drill.ps1 -ExpectedSchemaVersion 19` 再更新。mcbot 旧 release 清理命令失败，`/opt/mcbot/releases/20261030T120449Z` 与 `20261030T142942Z` 仍在。Tag/Release 未创建。
 - 明确不做：不挖掘/不放置/不跑酷；不新增 Bot 平台；不启用异地副本；不重启 Minecraft。
 
 ### v1.0.6 寻路重构验收（2026-10-30，已部署；核心矩阵通过）

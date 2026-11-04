@@ -2,7 +2,7 @@
 
 > 本文合并原按版本拆分的 `DEBUG-AUDIT-v1.0.5.md`、`DEBUG-AUDIT-v1.0.6.md` 与 `RESOURCE-AUDIT-2026-10-31.md`。v1.0.7 的当前处置见下节。v1.0.6 正文、历史 v1.0.5 Debug、2026-10-31 磁盘审计与文档漂移检查分别见附录 A/B/C/D。v0.8.1 残余表保持当时原文，不把后来修掉的行改写成当时已修。
 
-## v1.0.7 运行时可信（代码完成，生产部署待本窗口）
+## v1.0.7 运行时可信（2026-11-04 已部署）
 
 本版处理的项。下面 v0.8.1 表里的对应行仍是当时记录：
 
@@ -17,7 +17,7 @@ OpenCode 针为 2.2.5。升级步骤在 `docs/app/DEPLOY.md` §3.2。矩阵失�
 
 本版明确不修，不得写成已解决：告警风暴并发上限（SEC6-05）、`lastError` 原样透传（SEC6-06）、`MCBOT_URL` 任意 loopback 端口（SEC6-08）、`stop()` 不取消在途轮询（ARCH6-07）、契约版本无守卫（ARCH6-15）、5 格垂直墙、`http-proxy` 弃用警告。`GET /api/mcbot/status` 与 `/history` 已有每 IP 60 次/分钟限流；历史表里“无 GET 限流”的句子不作为本版待修项。
 
-本地门禁（2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。OpenCode 已升到 2.2.5，矩阵见 `docs/app/DEPLOY.md` §3.2。应用与 mcbot 的生产部署仍待本窗口。
+本地门禁（2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。OpenCode 已升到 2.2.5，矩阵见 `docs/app/DEPLOY.md` §3.2。生产 app `/opt/antifieldcloud/releases/20261104T093100Z`、mcbot `/opt/mcbot/releases/20261104T092858Z`，完整 Access smoke **36/0/1/2**。5 格墙重决策在 0 人在线时未实机触发。mcbot 旧 release 清理失败，两份 2026-10-30 release 仍在磁盘上。
 
 > 本文件补齐 2026-10-20 未落档的第二轮审计记录、第三轮 v0.4.0 与第四轮 v0.4.2/v0.5.0 记录；第一轮 v0.2.0 记录保留在下方。
 
