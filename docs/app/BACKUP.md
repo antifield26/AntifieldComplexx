@@ -322,6 +322,7 @@ cd "$env:USERPROFILE\projects\AntifieldComplexx"
 | 2026-10-25 | 自动演练 | snapshot-20261025T133725908Z-full.tar.gz | 0 | 17 | 通过 | 通过 | drill 报告 `20261025T133743Z`；链连续性/SHA/解包/DB integrity/FK/schema |
 | 2026-10-27 | 自动演练 | snapshot-20261025T133725908Z-full.tar.gz | 5 | 17 | 通过 | 通过 | drill 报告 `20261027T061319Z`；首次 `20261027T061021Z` 因 drill-verify 未返回 `details.since` 误报断链，修复后本报告通过；链连续性/SHA/解包/DB integrity/FK/schema/世界归档 |
 | 2026-10-30 | 自动演练 | snapshot-20261025T133725908Z-full.tar.gz | 14 | 18 | 通过 | 通过 | drill 报告 `20261030T145445Z`；BackupRoot=`D:\Backups`；链连续性/SHA/解包/DB integrity/FK/schema18/世界归档；最新 DB `db-20261030T145409822Z.sqlite`；已回写 Pi `drill-status.json` |
+| 2026-11-04 | 自动演练 | snapshot-20261102T014632977Z-full.tar.gz | 7 | 19 | 通过（SHA/`level.dat` 名，未解包） | 通过 | drill 报告 `20261104T103202Z`；BackupRoot=`D:\Backups`；耗时 18818 ms；链连续性/SHA/解包/DB integrity/FK/schema19；最新 DB `db-20261104T103144405Z.sqlite`；世界归档 `world-20261101T040001Z.tar.gz`；新增量 `snapshot-20261104T103144405Z-inc.tar.gz`（576694 bytes，secrets=ok）；已回写 Pi `drill-status.json`（ok，schemaVersion 19）；未用 `-IncludeWorld` |
 |  |  |  |  |  |  |  | （下一次演练填写） |
 
 - 未填写记录的“演练通过”声明无效；报告文件与 `.local/DR-DRILL.md` 作为证据保存。

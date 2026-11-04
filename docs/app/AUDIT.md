@@ -17,7 +17,7 @@ OpenCode 针为 2.2.5。升级步骤在 `docs/app/DEPLOY.md` §3.2。矩阵失�
 
 本版明确不修，不得写成已解决：告警风暴并发上限（SEC6-05）、`lastError` 原样透传（SEC6-06）、`MCBOT_URL` 任意 loopback 端口（SEC6-08）、`stop()` 不取消在途轮询（ARCH6-07）、契约版本无守卫（ARCH6-15）、5 格垂直墙、`http-proxy` 弃用警告。`GET /api/mcbot/status` 与 `/history` 已有每 IP 60 次/分钟限流；历史表里“无 GET 限流”的句子不作为本版待修项。
 
-本地门禁（2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。OpenCode 已升到 2.2.5，矩阵见 `docs/app/DEPLOY.md` §3.2。生产 app `/opt/antifieldcloud/releases/20261104T093100Z`、mcbot `/opt/mcbot/releases/20261104T092858Z`，完整 Access smoke **36/0/1/2**。5 格墙重决策在 0 人在线时未实机触发。mcbot 旧 release 清理失败，两份 2026-10-30 release 仍在磁盘上。
+本地门禁（2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。OpenCode 已升到 2.2.5，矩阵见 `docs/app/DEPLOY.md` §3.2。生产 app `/opt/antifieldcloud/releases/20261104T093100Z`、mcbot `/opt/mcbot/releases/20261104T092858Z`，完整 Access smoke **36/0/1/2**。管理员在线时，安全区内 5 格密封圆石箱让 `go_home` 走 `no_path`/`exhausted` 后安全传送到 `174.5,64,410.5`，自主会话 `decisionCycles=1`、事件「寻路兜底：已安全传送」。围墙已拆除，墙仍不可走。演练 `20261104T103202Z` 为 schema 19（full + 7 inc，世界归档未解包）。早先 smoke 的 schema-18 WARN 是演练前快照，未重跑。另观察到 `movement.stop()` 不清除 `cancelled`，下一次 `go_home` 会直接「移动已取消」，直到 `come`/`follow` 或进程重启；本提交不修。mcbot 旧 release 清理失败，两份 2026-10-30 release 仍在磁盘上。
 
 > 本文件补齐 2026-10-20 未落档的第二轮审计记录、第三轮 v0.4.0 与第四轮 v0.4.2/v0.5.0 记录；第一轮 v0.2.0 记录保留在下方。
 

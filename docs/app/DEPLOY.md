@@ -15,7 +15,7 @@
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v19**：迁移 19 为 `alert_events.dedupe_key`（可空 TEXT，部分唯一索引；历史行保持 NULL）。此前 v18 的 `audit_write_failures` 保存审计失败诊断；`chatbot_group_roles` 保存群聊共享角色卡；`chatbot_memory_items`/`chatbot_memory_state` 保存结构化记忆；`chatbot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照。schema v19 写入后，回退到 v1.0.6 必须先恢复该快照。
 
-> **v1.0.7 部署（2026-11-04 已完成，commit `b17102b`）**：OpenCode 2.2.5 已按 §3.2 升级，运行中 `/api/info` 为 2.2.5，矩阵见 §3.2，回滚备份 timestamp `20261104T062115Z`。app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19），迁移前 DB 快照 `db-predeploy-20261104T093146763Z.sqlite`（sha256 `1b09c9…fa03`）。mcbot `/opt/mcbot/releases/20261104T092858Z`。完整 Access smoke **36/0/1/2**。回退应用必须先恢复该快照。不重启 Minecraft，不启用异地副本。Tag/Release 未创建。
+> **v1.0.7 部署（2026-11-04 已完成，commit `b17102b`）**：OpenCode 2.2.5 已按 §3.2 升级，运行中 `/api/info` 为 2.2.5，矩阵见 §3.2，回滚备份 timestamp `20261104T062115Z`。app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19），迁移前 DB 快照 `db-predeploy-20261104T093146763Z.sqlite`（sha256 `1b09c9…fa03`）。mcbot `/opt/mcbot/releases/20261104T092858Z`。完整 Access smoke **36/0/1/2**。同日实机：5 格密封箱触发区内安全传送与一次自主重决策。演练 `20261104T103202Z` 通过（schema 19，full + 7 inc，世界归档未解包）。早先 smoke 的 schema-18 WARN 是演练前快照，未重跑 smoke。回退应用必须先恢复该快照。不重启 Minecraft，不启用异地副本。Tag/Release 未创建。
 
 > **v1.0.6 部署（2026-10-30，已实施）**：MC Bot 统一寻路层（确定性 A* + 受控执行 + AI 路点 + 安全兜底）、`navigation` 状态与 app 面板显示；app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`；核心矩阵通过。回滚：mcbot `/opt/mcbot/releases/20261030T120449Z`、app `/opt/antifieldcloud/releases/20261030T110436Z`，并可先关闭 `PATH_PLANNER_ENABLED`/`PATH_AI_ENABLED`。mcbot 部署脚本默认保留最新 3 个 release 并保护 current/previous；2026-10-31 已清理历史 release，详见 [AUDIT 附录 B](AUDIT.md)。
 
@@ -207,7 +207,7 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 
 1. **本地发布前校验**（PC）：`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格模式，含 schema/OpenCode 交叉校验）、
    `node scripts/check-prod-deps.mjs`。check-version 期望 app/mcbot `1.0.7`、schema `19`、OpenCode `2.2.5`。
-   本地门禁（v1.0.7，2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）、`test:web` **279**（50 文件）、mcbot **144**。上一已测基线（2026-10-30 v1.0.6）：app **603**（602 pass、1 skip）、`test:web` **278**（50 文件）、mcbot **139**。已部署 commit `b17102b`。生产 app `/opt/antifieldcloud/releases/20261104T093100Z`、mcbot `/opt/mcbot/releases/20261104T092858Z`。完整 Access smoke **36/0/1/2**。
+   本地门禁（v1.0.7，2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）、`test:web` **279**（50 文件）、mcbot **144**。上一已测基线（2026-10-30 v1.0.6）：app **603**（602 pass、1 skip）、`test:web` **278**（50 文件）、mcbot **139**。已部署 commit `b17102b`。生产 app `/opt/antifieldcloud/releases/20261104T093100Z`、mcbot `/opt/mcbot/releases/20261104T092858Z`。完整 Access smoke **36/0/1/2**。同日演练 `20261104T103202Z` 为 schema 19。
 2. **部署前只读检查**：`backup.mjs --pending` 无异常、PC 最新 `.sha256` 可校验、`secretsOk=true`；`df -hT /` 余量充足（开启加密后按 2× 归档空间预留）；
    记录当前 `/healthz` 与 OpenCode 运行中版本；`deploy/tool-versions.json` 为期望 schema/OpenCode 来源。
 3. **OpenCode 2.2.5**：按 §3.2 先备份当前 v2.2.0，再升级并 `systemctl restart opencode`。在运行中进程上完成矩阵（含 deny-all 对 `bash`/`shell` 的负路径）。失败则恢复本次备份并停止，不部署应用。

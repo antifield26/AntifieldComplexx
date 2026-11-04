@@ -3,7 +3,7 @@
 面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台：统一登录与单一入口，整合云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、mcbot Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、opencode AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
 > 状态：v1.0.7（2026-11-04 已部署）。schema **v19**；OpenCode **v2.2.5** 已在树莓派运行（`/api/info`，备份 `/var/backups/opencode` timestamp `20261104T062115Z`）。本版补告警幂等、轮询成功时间、mcbot 服务告警，并把寻路兜底送进自主重决策。生产 app `/opt/antifieldcloud/releases/20261104T093100Z`、mcbot `/opt/mcbot/releases/20261104T092858Z`。详见 [AUDIT](docs/app/AUDIT.md)。
-> 本地门禁（v1.0.7，2026-11-04）：root `npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。上一版本基线（v1.0.6）：app **603**（602 pass、1 skip）+ web **278**（50 文件）+ mcbot **139**。生产 smoke **36/0/1/2**。
+> 本地门禁（v1.0.7，2026-11-04）：root `npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。上一版本基线（v1.0.6）：app **603**（602 pass、1 skip）+ web **278**（50 文件）+ mcbot **139**。生产 smoke **36/0/1/2**。同日演练 `20261104T103202Z` 通过（schema 19）。
 > 命名：2026-10-27 起项目更名为 **AntifieldComplexx**（原 AntifieldCloud）；GitHub 仓库为 [antifield26/AntifieldComplexx](https://github.com/antifield26/AntifieldComplexx)，旧仓库地址由 GitHub 自动重定向。生产运行时标识符（服务用户、systemd 单元、数据路径、Windows 计划任务）保持不变，详见 [AGENTS.md](AGENTS.md) §0.1。
 > 部署与运维见 [docs/app/DEPLOY.md](docs/app/DEPLOY.md)，备份/恢复见 [docs/app/BACKUP.md](docs/app/BACKUP.md)，契约见 [docs/app/API.md](docs/app/API.md)，路线与验收记录见 [docs/app/ROADMAP.md](docs/app/ROADMAP.md) 与 [docs/app/ACCEPTANCE.md](docs/app/ACCEPTANCE.md)。
 

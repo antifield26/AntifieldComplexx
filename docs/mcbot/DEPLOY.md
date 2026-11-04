@@ -1,6 +1,6 @@
 # 部署与运维（mcbot）
 
-> 目标 Pi：`antifield@169.254.77.10`（Raspberry Pi 5，Debian 13，Node `/usr/local/bin/node` v26.12.1）。v1.0.6 已部署 release `/opt/mcbot/releases/20261030T143538Z`，核心实机矩阵通过；回滚目标为 v1.0.5 release `/opt/mcbot/releases/20261030T120449Z`，并可关闭 `PATH_PLANNER_ENABLED`/`PATH_AI_ENABLED` 恢复旧路径。
+> 目标 Pi：`antifield@169.254.77.10`（Raspberry Pi 5，Debian 13，Node `/usr/local/bin/node` v26.12.1）。v1.0.7 已部署 release `/opt/mcbot/releases/20261104T092858Z`；回滚目标为 v1.0.6 release `/opt/mcbot/releases/20261030T143538Z`。
 > 服务器：Paper 26.1.2，`~/minecraft-server`，RCON 已启用。
 > 所有操作从 Windows 工作区通过 SSH/SCP 执行；不使用 Docker。
 
