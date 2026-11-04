@@ -8,6 +8,7 @@ import { join } from 'node:path'
 /**
  * 周度世界拉取安装：DryRun 必须指向 LocalAppData 副本。
  * 缺少 world-pull.ps1 时在注册任务前失败。不注册真实计划任务。
+ * 两条用例依赖 powershell.exe，非 Windows 环境跳过。
  */
 
 const INSTALLER = join(import.meta.dirname, '..', 'install-backup-task.ps1')
@@ -20,7 +21,7 @@ function runInstaller(scriptPath, extraArgs = []) {
   )
 }
 
-test('DryRun 把世界拉取任务指向 LocalAppData 副本', () => {
+test('DryRun 把世界拉取任务指向 LocalAppData 副本', { skip: process.platform !== 'win32' && 'requires Windows PowerShell' }, () => {
   const backupRoot = 'C:\\Users\\Public\\AntifieldCloudBackups'
   const result = runInstaller(INSTALLER, [
     '-DryRun',
@@ -41,7 +42,7 @@ test('DryRun 把世界拉取任务指向 LocalAppData 副本', () => {
   assert.doesNotMatch(output, /已注册计划任务/)
 })
 
-test('缺少 world-pull.ps1 时安装脚本在修改前失败', () => {
+test('缺少 world-pull.ps1 时安装脚本在修改前失败', { skip: process.platform !== 'win32' && 'requires Windows PowerShell' }, () => {
   const root = mkdtempSync(join(tmpdir(), 'antifield-install-'))
   const scripts = join(root, 'scripts')
   mkdirSync(scripts)
