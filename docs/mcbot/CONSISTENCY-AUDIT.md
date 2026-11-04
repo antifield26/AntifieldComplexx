@@ -2,6 +2,8 @@
 
 本审计以**代码/实际安全行为为真相**，覆盖根 README、AGENTS、docs/mcbot、docs/app/API 与 mcbot 环境模板。自动检查脚本：`scripts/check-mcbot-claims.mjs`（根 `npm run check:docs`，纳入 `npm run check`）。历史发布记录、`docs/legacy` 与已冻结的验收文本标为 `historical`，不回写历史，但会标注当前事实。
 
+> 2026-11-04 起当前生产是 v1.0.7 / schema v19 / OpenCode v2.2.5，并已发布 Tag/Release。下面的矩阵是 v1.0.6 审计快照。`check-mcbot-claims.mjs` 现在要求文档声明 1.0.7。
+
 ## 1. 声明矩阵
 
 | 文档声明 | 位置 | 代码/测试证据 | 状态 | 动作 |

@@ -16,8 +16,8 @@
 - 服务端：Node.js >= 26（生产 v26.12.1；原生 TypeScript，无编译步骤）+ Fastify + `node:sqlite`（WAL）
 - 前端：React 19 + TypeScript + Vite，中文暗色界面，PWA（离线壳，不缓存 API）
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用；当前结论为**暂不升级、保留双 alias**
-- Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI，结构化长期记忆落 DB（schema v18；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback，孤儿镜像由维护任务清理）；v0.7.3 文档模式把角色卡与记忆写为只读文档，角色卡只在会话创建时发送，后续轮由模型按需 `read`（默认关闭；生产读范围矩阵 7/7 通过后已显式启用）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`CHATBOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
-- mcbot：Minecraft 附属 Bot（独立服务，仅 loopback `127.0.0.1:3010`）的只读/控制对接：读 Token（`/status`/`/events/recent`/`/history`）与控制 Token（`/task/*`/`/move`/`/say`）分离，控制 Token 为空即只读（`/say` 也 503）；服务端每 5s 轮询 `/status` 与 `/events/recent?limit=200`（生产 v1.0.6，最低 v0.6.0，契约 v1），事件环最多缓存 100 条且 ≤512 KiB；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符；上游 `alert` 映射为本应用告警事件 `status='event'`；浏览器不直连 mcbot、不经手 Token
+- Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI，结构化长期记忆落 DB（自 schema v18，当前 v19；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback，孤儿镜像由维护任务清理）；v0.7.3 文档模式把角色卡与记忆写为只读文档，角色卡只在会话创建时发送，后续轮由模型按需 `read`（默认关闭；生产读范围矩阵 7/7 通过后已显式启用）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`CHATBOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
+- mcbot：Minecraft 附属 Bot（独立服务，仅 loopback `127.0.0.1:3010`）的只读/控制对接：读 Token（`/status`/`/events/recent`/`/history`）与控制 Token（`/task/*`/`/move`/`/say`）分离，控制 Token 为空即只读（`/say` 也 503）；服务端每 5s 轮询 `/status` 与 `/events/recent?limit=200`（生产 v1.0.7，最低 v0.6.0，契约 v1），事件环最多缓存 100 条且 ≤512 KiB；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符；上游 `alert` 映射为本应用告警事件 `status='event'`；浏览器不直连 mcbot、不经手 Token
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
 - 测试：`node --test`（服务端 + 运维脚本 **608**，607 pass / 1 skip）+ Vitest/jsdom（**279**，50 文件），ESLint，`tsc --noEmit`，覆盖率门禁；mcbot 独立 **144** 项
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
@@ -148,7 +148,7 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC，本窗口目标 v1.0.7）：先按 [DEPLOY §3.2](docs/app/DEPLOY.md) 把 OpenCode 升到 2.2.5 并完成矩阵，再 `.\scripts\deploy.ps1 -PiHost <直连 IP>`。冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.7 -ExpectedSchemaVersion 19 -ExpectedOpenCodeVersion 2.2.5 -ExpectedMcbotVersion 1.0.7`（最低兼容 v0.6.0；配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 mcbot 时用 `-SkipMcbot`）。
+部署（PC，当前 v1.0.7 已部署）：先按 [DEPLOY §3.2](docs/app/DEPLOY.md) 把 OpenCode 升到 2.2.5 并完成矩阵，再 `.\scripts\deploy.ps1 -PiHost <直连 IP>`。冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.7 -ExpectedSchemaVersion 19 -ExpectedOpenCodeVersion 2.2.5 -ExpectedMcbotVersion 1.0.7`（最低兼容 v0.6.0；配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 mcbot 时用 `-SkipMcbot`）。
 Pi 上同步/校验 mcbot Token（root，本版 mcbot v1.0.7，最低 v0.6.0）：`sudo bash scripts/sync-mcbot-tokens.sh`、`sudo bash scripts/sync-mcbot-tokens.sh --check`（只比较不写盘，不回显 Token；失败会原子替换 env）。
 
 ## 目录
@@ -205,7 +205,7 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，需 QQ 后台开启接收所有消息并由群主授权获取全部消息。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1，`clockSkew` 状态可见，不自动修正）；Web 导入归档按 90 天保留；告警持续 firing 每 24h 重通知；`.backup.lock` 有 30s 心跳续租。
-- **发布状态**：v1.0.7 已于 2026-11-04 部署（commit `b17102b`）。Tag/Release 尚未创建。已发布的上一稳定版本是 v1.0.6（统一寻路层，核心实机矩阵通过）。5 格垂直墙在禁止挖掘/放置时只做明确兜底。历史发布记录见 [CHANGELOG.md](CHANGELOG.md) 与 [AUDIT](docs/app/AUDIT.md)。
+- **发布状态**：v1.0.7 已于 2026-11-04 部署（commit `b17102b`）。已发布 annotated Tag `v1.0.7` 与 GitHub Release。上一稳定版本是 v1.0.6（统一寻路层，核心实机矩阵通过）。5 格垂直墙在禁止挖掘/放置时只做明确兜底。历史发布记录见 [CHANGELOG.md](CHANGELOG.md) 与 [AUDIT](docs/app/AUDIT.md)。
 - **mcbot 告警只有事件语义**：上游 `alert` 映射为 `status='event'` 历史事件，不参与 firing/resolved 状态机，也没有恢复通知/冷却；上游告警状态需在 mcbot 侧查看（本应用只记录与转发）。
 - **mcbot 聊天/事件不持久化**：事件流与聊天只存在进程内存（最多 100 条且序列化 ≤512 KiB），应用或 mcbot 重启即丢失；历史接口只返回 mcbot 自己的 samples/alerts，不保存聊天正文。
 - **mcbot 轮询延迟与单实例**：状态/事件最多滞后一个轮询周期（默认 5s），控制结果最终一致；单进程内存缓存，不支持多实例/多副本；mcbot 不可达/数据过期/部分轮询失败时展示缓存与可见警告并降级。

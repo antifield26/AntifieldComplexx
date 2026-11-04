@@ -1,6 +1,6 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.7（2026-11-04 已部署，commit `b17102b`）。OpenCode v2.2.5 已在树莓派运行。应用 schema 19，mcbot 契约 v1。Tag/Release 未创建。
+> 当前版本 v1.0.7（2026-11-04 已部署，commit `b17102b`）。OpenCode v2.2.5 已在树莓派运行。应用 schema 19，mcbot 契约 v1。已发布 annotated Tag `v1.0.7` 与 GitHub Release。
 
 ### v1.0.7 运行时可信（2026-11-04，已部署）
 
@@ -15,7 +15,8 @@
 - 5 格墙重决策（2026-11-04，管理员在线，2 人）：安全区内临时 5 格密封圆石箱，中心 `135,64,425`，体积 x134–136 / y64–68 / z424–426。目标只要求调用一次 `go_home`，并禁止 `finish` 与 `start_task`。规划器 `no_path` / `exhausted`，安全传送落到 `174.5,64,410.5`（安全区内）。会话仍在运行时 `decisionCycles=1`，`lastEvent=寻路兜底：已安全传送`，`lastFallback=teleport`，`lastFallbackReason=exhausted`。围墙已拆除，抽查 `134 64 424` 为空气。bot 回到 `183.5,64,435.5` 后只重启了 mcbot，清掉 `movement.stop()` 留下的 `cancelled`。Minecraft 未重启，`FORCE_ONLINE` 未改，presence 仍为 `auto`。5 格墙仍不可走，这次只确认兜底与重决策。更早一轮里模型在同一回合调用了 `finish`，`decisionCycles` 停在 0，不作为本次通过记录。
 - Windows：`backup-task.json` appVersion=1.0.7、installedAt `2026-11-04T09:40:11Z`、backupRoot `D:\Backups`。每日任务与 `AntifieldCloud-World-Pull` 的 `-File` 都在 `%LOCALAPPDATA%\AntifieldCloud`，脚本 SHA 与仓库一致。世界拉取下次 2026-11-08 12:00。未安装异地任务，未再拉世界归档。
 - 演练（2026-11-04）：schema 19 迁移后手拉增量 `snapshot-20261104T103144405Z-inc.tar.gz`（576694 bytes，secrets=ok）。`drill.ps1 -ExpectedSchemaVersion 19` 报告 `20261104T103202Z` 通过：full `snapshot-20261102T014632977Z-full.tar.gz` + 7 inc，最新 DB `db-20261104T103144405Z.sqlite` schema 19，`integrity_check` ok，外键违规 0。世界归档 `world-20261101T040001Z.tar.gz` 只做 SHA 与 `level.dat` 文件名校验，未解包。Pi `drill-status.json` 为 ok、schemaVersion 19。未再拉世界归档。
-- 残余：mcbot 旧 release 清理命令失败，`/opt/mcbot/releases/20261030T120449Z` 与 `20261030T142942Z` 仍在。Tag/Release 未创建。`movement.stop()` 不清除 `cancelled`，下一次 `go_home` 会直接「移动已取消」，直到 `come`/`follow` 或进程重启。这是观察，本提交不修。
+- 发布：annotated Tag `v1.0.7` 与 GitHub Release 指向本发布记录。生产进程仍是 commit `b17102b`。
+- 残余：mcbot 旧 release 清理命令失败，`/opt/mcbot/releases/20261030T120449Z` 与 `20261030T142942Z` 仍在。`movement.stop()` 不清除 `cancelled`，下一次 `go_home` 会直接「移动已取消」，直到 `come`/`follow` 或进程重启。这是观察，本版不修。
 - 明确不做：不挖掘/不放置/不跑酷；不新增 Bot 平台；不启用异地副本；不重启 Minecraft。
 
 ### v1.0.6 寻路重构验收（2026-10-30，已部署；核心矩阵通过）

@@ -1,6 +1,6 @@
 # AntifieldComplexx 文档索引
 
-> 版本：v1.0.6（2026-10-30 已部署，核心实机矩阵通过）：MC Bot 统一寻路层（确定性 A* + 受控执行 + AI 路点 + 安全兜底）、`navigation` 状态/app 显示；生产 app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`；schema18/OpenCode 2.2.0；已发布 Tag/Release `v1.0.6`。
+> 版本：v1.0.7（2026-11-04 已部署并发布 Tag/Release）：告警幂等、轮询成功时间、mcbot 服务告警、寻路兜底进入自主重决策；生产 app `/opt/antifieldcloud/releases/20261104T093100Z`、mcbot `/opt/mcbot/releases/20261104T092858Z`；schema v19 / OpenCode v2.2.5。v1.0.6 统一寻路层仍是上一稳定版本。
 > 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
 
 ## 应用（apps/workbench，Web 端）
@@ -15,9 +15,9 @@
 | [BACKUP](app/BACKUP.md) | 应用归档、世界备份、恢复演练 |
 | [SECURITY](app/SECURITY.md) | 安全模型、边界与加固 |
 | [CHATBOT](app/CHATBOT.md) | QQ chatbot 子系统（原 bot，schema v18 更名） |
-| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.0.6 核心矩阵通过与历史版本结果） |
+| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.0.7 实机兜底、演练与历史版本结果） |
 | [ROADMAP](app/ROADMAP.md) | 版本边界与后续路线 |
-| [AUDIT](app/AUDIT.md) | 审计与修复总记录（含 v1.0.6 寻路、v1.0.5 Debug、磁盘审计附录） |
+| [AUDIT](app/AUDIT.md) | 审计与修复总记录（含 v1.0.7、v1.0.6 寻路、v1.0.5 Debug、磁盘审计附录） |
 
 ## Minecraft bot（apps/mcbot）
 

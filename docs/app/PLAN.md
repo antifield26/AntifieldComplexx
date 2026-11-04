@@ -1,10 +1,18 @@
-# AntifieldComplexx v1.0.6 实施计划（当前状态）
+# AntifieldComplexx v1.0.7 实施计划（当前状态）
 
-本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`；v1.0.6 寻路重构见 `docs/app/AUDIT.md`。
+本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`；v1.0.7 审计见 `docs/app/AUDIT.md`。
 
 > 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
 
-## v1.0.6 当前状态（已部署，核心矩阵通过）
+## v1.0.7 当前状态（已部署，已发布 Tag/Release）
+
+- **版本**：**v1.0.7**；schema **v19**；OpenCode **v2.2.5**；mcbot **v1.0.7**（契约 v1）。
+- **范围**：`alert_events.dedupe_key`；mcbot `lastSuccessAt`；mcbot 进程或轮询过期进入 `service_down`；周度世界拉取安装到 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`；寻路兜底进入自主重决策。
+- **边界**：不挖掘/不放置/不跑酷；不新增 MCP 工具；5 格垂直墙仍只做兜底。应用从本版退回 v1.0.6 必须先恢复迁移前 DB 快照。
+- **状态**：app `/opt/antifieldcloud/releases/20261104T093100Z`、mcbot `/opt/mcbot/releases/20261104T092858Z`；管理员在线时 5 格密封箱触发区内安全传送与一次重决策；演练 `20261104T103202Z` 为 schema 19；已发布 Tag/Release `v1.0.7`。
+- **测试基线**：app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。
+
+## v1.0.6 已部署状态（历史）
 
 - **版本**：**v1.0.6**（已部署）；schema **v18**；OpenCode **v2.2.0**；mcbot **v1.0.6**（契约 v1）。
 - **范围**：统一寻路层（pathfinder → 确定性 A* → 受控执行 → AI 路点 → 安全兜底）；1–5 级逐级台阶、1 格矮墙、2 格墙绕行；5 格垂直墙明确兜底；`navigation` 状态/事件/app 显示；`PATH_*` 九键。

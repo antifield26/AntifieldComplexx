@@ -15,13 +15,13 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
  │   ├─ Host app.* → React SPA + /api（含 /api/metrics、/api/shares、/api/storage、/api/chatbots、/api/mcbot）
  │   ├─ Host ai.*  → 会话校验 + Origin 校验 + 反向代理 → 127.0.0.1:4096 (opencode)
  │   ├─ 公开 Bot Webhook /api/chatbot/webhook/:botId → QQ Ed25519 验签 + 去重 + 命令/Chat（只读/AI）/入队
- │   ├─ mcbot 对接 v0.8.0（v0.8.1 安全加固）→ 127.0.0.1:3010（mcbot v1.0.6，最低 v0.6.0，仅 loopback）：每 5s 轮询 /status + /events/recent?limit=200；
+ │   ├─ mcbot 对接 v0.8.0（v0.8.1 安全加固）→ 127.0.0.1:3010（mcbot v1.0.7，最低 v0.6.0，仅 loopback）：每 5s 轮询 /status + /events/recent?limit=200；
  │   │   快照/最近 100 条（≤512 KiB）事件仅内存；任务/移动/聊天控制代理（聊天需控制 Token）；上游 alert → 本应用告警 status='event'
  │   ├─ QQ 入站图片（默认开启）→ 固定域名后缀下载（.qpic.cn/.qq.com/.qq.com.cn/.gtimg.cn，实际图床如 multimedia.nt.qq.com.cn）→ OpenCode prompt files → 模型 provider（不落盘）
  │   ├─ Bot 出站 → chatbots.qq.com / api.sgroup.qq.com（固定上游，15s 超时）
  │   ├─ Bot AI → 127.0.0.1:4096 OpenCode 本地 API（仅普通消息 Chat，默认关闭；无 /ask）
  │   ├─ Bot 记忆 → SQLite chatbot_memory_items/chatbot_memory_state（7 类结构化条目）；legacy chatbot_ai_memories + DATA_DIR/bot-memory/memory-<uuid>.md（0700/0600）
- │   ├─ SQLite /var/lib/antifieldcloud/db.sqlite（schema v18）
+ │   ├─ SQLite /var/lib/antifieldcloud/db.sqlite（schema v19）
  │   ├─ 文件   /var/lib/antifieldcloud/files/<xx>/<id>（files.origin=user|note|system）
  │   ├─ 应用备份 /var/lib/antifieldcloud/backups（pending/acked/imports/secrets/db-predeploy-*）
  │   ├─ 世界备份 /var/lib/antifieldcloud/world-backups（world-<UTC>.tar.gz，保留 4 份）
@@ -136,7 +136,7 @@ Bot 出站为 Pi 直连；PC 无代理隧道脚本/计划任务，生产 env 不
 
 ## 4. 数据模型
 
-SQLite（WAL）核心表（schema v18）：
+SQLite（WAL）核心表（schema v19）：
 
 - `users`：单管理员；scrypt 哈希 + salt；TOTP secret；`totp_last_step` 防重放；恢复码哈希 JSON。
 - `auth_challenges`：密码通过后的 5 分钟一次性挑战（只存 token 哈希）。
@@ -155,7 +155,7 @@ SQLite（WAL）核心表（schema v18）：
 - `alert_events`、`alert_state`：告警历史/去重冷却；`alert_events` 保留 90 天。
 - `metrics_samples`：60s 主机指标样本（`ts/ts_epoch/cpu/mem/temp/disk/load`），按 `ts_epoch` 索引，30 天保留。
 - `chatbots`：平台/名称/启用/公开配置 + `secret_ciphertext/secret_iv/secret_tag/key_version`（AES-256-GCM）；`last_error/last_checked_at`。
-  当前 schema v18；`chatbots` 仅 QQ Bot，`chatbot_memory_items`/`chatbot_memory_state` 为结构化记忆权威，`chatbot_group_roles` 保存群聊共享角色卡，`audit_write_failures` 保存审计失败诊断。
+  当前 schema v19；`chatbots` 仅 QQ Bot，`chatbot_memory_items`/`chatbot_memory_state` 为结构化记忆权威，`chatbot_group_roles` 保存群聊共享角色卡，`audit_write_failures` 保存审计失败诊断，`alert_events.dedupe_key` 可空并有部分唯一索引。
 - `chatbot_targets`：每 Bot 的频道/用户/群组目标，`(chatbot_id, external_id)` 唯一；`allow_commands` 默认 0、`allow_notifications` 默认 1、`allow_chat` 默认 0；
   `quiet_start_minute`/`quiet_end_minute`（0–1439，可空）。`chat_trigger` 列保留但 API/逻辑不读写。
 - `chatbot_deliveries`：通知/回复/发布/测试投递队列，状态 `queued|sending|sent|failed|dead`；`dedupe_key` 唯一（通知按告警事件去重）；`next_attempt_at` 承载静默延后。
@@ -171,7 +171,7 @@ SQLite（WAL）核心表（schema v18）：
   不通过 API/UI 暴露正文，按 AI 会话保留期清理；`/forget confirm` 与管理删除会同时清 DB 行与镜像。
 - `chatbot_inbound_targets`：`(chatbot_id, target_external_id, user_id)` 主键，记录最近入站目标/用户/类型/`is_direct`/`last_seen_at`；不存消息正文，每 Bot 最多 500 条、按事件保留期清理。
 - v0.7.3 上下文文档不在 SQLite：`ChatbotContextStore` 在 `CHATBOT_CONTEXT_DIR` 下按哈希作用域写 `role.md`/`memory.md`（派生数据，不进入备份；`/reset`/`/forget`/删除清理，维护任务回收超期孤儿）；OpenCode 仅按会话 permissions 读取当前作用域两份文档。
-- mcbot 对接不新增表/列：告警游标写入既有 `meta` 表的 `mcbot.event_cursor` 键（JSON `{bootId,lastEventId,lastTs}`；v1.0.0 迁移自 `lofii.event_cursor`）；mcbot 事件/聊天缓存只在服务端内存，不落库；mcbot 告警事件复用 `alert_events`（`status='event'`），不写 `alert_state`。当前 schema v18。
+- mcbot 对接不新增表/列：告警游标写入既有 `meta` 表的 `mcbot.event_cursor` 键（JSON `{bootId,lastEventId,lastTs}`；v1.0.0 迁移自 `lofii.event_cursor`）；mcbot 事件/聊天缓存只在服务端内存，不落库；mcbot 告警事件复用 `alert_events`（`status='event'`），不写 `alert_state`。当前 schema v19，这些事件带可空 `dedupe_key`。
 
 世界备份/拉取/演练状态不在 SQLite：由 root/PC 脚本写 `/var/lib/antifieldcloud/{world-backup,world-pull,drill}-status.json`（0644，应用只读解析）。
 
@@ -254,9 +254,9 @@ SQLite（WAL）核心表（schema v18）：
 - nftables 默认拒绝入站；22 仅直连/校园网段（新建连接限速 20/min），25565 仅同网段，25575 仅 loopback，DHCP 仅 eth0/wlan0；
   出站不限制。改动前确认当前 SSH 来源在允许网段内。SSH 为仅公钥（`00-` drop-in），旧回滚备份归档在 `/var/backups/antifieldcloud/`。
 - Bot 部署：`bootstrap-env.sh` 生成/复用 `CHATBOT_SECRET_KEY` 并纳管 `CHATBOT_AI_*`、Chat/记忆键、连通性键、回答/图片键、`CHATBOT_MEMORY_*`；
-  `CHATBOT_AI_VISION_ENABLED` 默认 true；`CHATBOT_ENABLED` 默认 false。当前 schema v18；回滚需迁移前 DB 快照；QQ 入站图片需 OpenCode prompt files + 支持 image 的模型；平台仅 QQ 官方 Bot，无 Gateway/平台前置配置。
+  `CHATBOT_AI_VISION_ENABLED` 默认 true；`CHATBOT_ENABLED` 默认 false。当前 schema v19；从 v1.0.7 退回 v1.0.6 必须先恢复迁移前 DB 快照；QQ 入站图片需 OpenCode prompt files + 支持 image 的模型；平台仅 QQ 官方 Bot，无 Gateway/平台前置配置。
   Cloudflare Access 需对 Bot Webhook/health/公开分享路径 bypass（边缘配置，不在仓库内）；`smoke.ps1` 可选用 Access service token。
-- mcbot 部署（v0.8.0 引入，v0.8.1 安全加固；默认关闭）：mcbot v1.0.6（最低 v0.6.0，契约 v1）作为独立服务仅监听 `127.0.0.1:3010`（不经 Cloudflare/nftables 对外）；应用 env 由 `bootstrap-env.sh` 纳管 `MCBOT_*`，Token 由 root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 同步（`--check` 只比较；同目录临时文件 + `mv` 原子替换）；启用顺序为 mcbot 就绪 → 同步 Token → `MCBOT_ENABLED=true` → 重启应用；回滚设 false + 重启，无 schema/DB 变更；`smoke.ps1 -ExpectedMcbotVersion 1.0.6`（最低 0.6.0）/`-SkipMcbot` 覆盖只读检查。v0.8.1 曾于 2026-10-27 部署（release `20261027T113055Z`/commit `5405a8d`，当时 mcbot v0.6.1 release `20261027T111640Z`/commit `a0a28da`）。
+- mcbot 部署（v0.8.0 引入，v0.8.1 安全加固；默认关闭）：mcbot v1.0.7（最低 v0.6.0，契约 v1）作为独立服务仅监听 `127.0.0.1:3010`（不经 Cloudflare/nftables 对外）；应用 env 由 `bootstrap-env.sh` 纳管 `MCBOT_*`，Token 由 root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 同步（`--check` 只比较；同目录临时文件 + `mv` 原子替换）；启用顺序为 mcbot 就绪 → 同步 Token → `MCBOT_ENABLED=true` → 重启应用；关闭对接设 `MCBOT_ENABLED=false` 并重启，不单独改 schema；`smoke.ps1 -ExpectedMcbotVersion 1.0.7`（最低 0.6.0）/`-SkipMcbot` 覆盖只读检查。v0.8.1 曾于 2026-10-27 部署（release `20261027T113055Z`/commit `5405a8d`，当时 mcbot v0.6.1 release `20261027T111640Z`/commit `a0a28da`）。
 - fail2ban：dbfile 持久化封禁；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后以 `systemd-run --collect --on-active=3` 异步重启 fail2ban，从数据库恢复 set；手工 `systemctl reload nftables` 不触发 `ExecStartPost`，仍需 `systemctl restart fail2ban`。
 - 世界备份/健康探针 timer 由 root 运行；世界备份 unit 只读整机、仅 `/var/lib/antifieldcloud` 可写、flock 串行、4h 超时。
 
@@ -309,8 +309,8 @@ SQLite（WAL）核心表（schema v18）：
 8. **既有环境限制**：单管理员、`antifield` NOPASSWD sudo、RCON 监听 0.0.0.0、单 SD/无 LUKS、Cloudflare 明文、`http-proxy` 弃用警告、
    内存态限流、`Intl` 开销、迁移无校验和、健康检查为轻量就绪（非全量依赖探测）等按 `docs/app/SECURITY.md` §4 管理。
 9. **已收口项**：审计失败计数持久化、Bot 镜像孤儿清理、导入归档保留、告警 24h 重通知、备份锁心跳、DR-1 `clockSkew` 状态。
-10. **mcbot 事件告警语义（v0.8.0，v0.8.1 仍保持）**：外部 `alert` 仅以 `status='event'` 记录，不进入 firing/resolved 状态机，无恢复通知/冷却/去重（由上游负责）；告警只在轮询时发现，最多滞后一个 `MCBOT_POLL_MS` 周期；告警写入失败停游标重试但**无事件幂等键**（DB 恢复/多实例可能重复通知，计划 schema v18 下一 minor）。
+10. **mcbot 事件告警语义（v0.8.0，v0.8.1 仍保持）**：外部 `alert` 仅以 `status='event'` 记录，不进入 firing/resolved 状态机，无恢复通知/冷却/去重（由上游负责）；告警只在轮询时发现，最多滞后一个 `MCBOT_POLL_MS` 周期；告警写入失败停游标重试。v1.0.7 的 schema v19 为这些事件增加可空 `dedupe_key`，同一键不重复写入。
 11. **mcbot 聊天/事件不持久化（v0.8.0）**：事件与聊天只存在服务端内存（≤100 条且 ≤512 KiB），应用/mcbot 重启即丢失；不提供历史查询、导出或搜索。
-12. **mcbot 单实例与轮询延迟（v0.8.0）**：单进程内存缓存、单 mcbot 上游；控制结果最终一致，状态/事件最多滞后一个轮询周期；mcbot 不可达时仅展示缓存并降级；`stop()` 不取消在途轮询、mcbot 进程未纳入 `service_down` 监控（v0.8.1 残余）。
+12. **mcbot 单实例与轮询延迟（v0.8.0）**：单进程内存缓存、单 mcbot 上游；控制结果最终一致，状态/事件最多滞后一个轮询周期；mcbot 不可达时仅展示缓存并降级；`stop()` 仍不取消在途轮询。v1.0.7 起 mcbot 进程不在或轮询快照过期走 `service_down`。
 13. **v0.8.0 生产验收边界**：生产部署与只读/API 验收已完成（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`，当时任务标记未重装），mcbot token 匹配、`meta.lofii.event_cursor` 已建立、patrol start/stop 已验证）；生产 UI 视觉确认已完成（Edge headless 经 SSH 隧道截图、mcbot 面板正常渲染、临时会话已清理；用户仍可自行复核）；真实 mcbot 告警联动未触发（单元/集成覆盖）；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldComplexx v0.8.0：mcbot Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**。
 14. **v0.8.1 安全补丁与生产验收（2026-10-27）**：本地实现与门禁完成（`npm run check` 通过；`npm test` 572、`test:web` 256；服务端覆盖率 93.04/78.77/88.67、前端 55.83/51.29/48.66；build 通过）；**生产已于 2026-10-27 部署 v0.8.1 并完成只读/API/安全回归验收**（release `20261027T113055Z`/commit `5405a8d`，smoke 26/0/0/2 + 完整 Access **36/0/0/2**（含任务标记检查），`/say` 任意 `/` 与 C0 均 400，mcbot v0.6.1 已部署且 Token match）；**v0.8.1 已发布：annotated Tag `v0.8.1` + GitHub Release `AntifieldComplexx v0.8.1：mcbot 安全补丁与稳定性修复`（2026-10-27）**；Windows 备份任务已重装并验证（appVersion=0.8.1、installedAt 2026-10-27T12:11:23Z、scriptSha256 一致、任务 Ready）；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效），只读 `/say` 503 仅单测/集成覆盖；残余见 `docs/app/AUDIT.md` v0.8.0 Minor 补审计节。
