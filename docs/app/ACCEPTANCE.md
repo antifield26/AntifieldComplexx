@@ -16,7 +16,7 @@
 - Windows：`backup-task.json` appVersion=1.0.7、installedAt `2026-11-04T09:40:11Z`、backupRoot `D:\Backups`。每日任务与 `AntifieldCloud-World-Pull` 的 `-File` 都在 `%LOCALAPPDATA%\AntifieldCloud`，脚本 SHA 与仓库一致。世界拉取下次 2026-11-08 12:00。未安装异地任务，未再拉世界归档。
 - 演练（2026-11-04）：schema 19 迁移后手拉增量 `snapshot-20261104T103144405Z-inc.tar.gz`（576694 bytes，secrets=ok）。`drill.ps1 -ExpectedSchemaVersion 19` 报告 `20261104T103202Z` 通过：full `snapshot-20261102T014632977Z-full.tar.gz` + 7 inc，最新 DB `db-20261104T103144405Z.sqlite` schema 19，`integrity_check` ok，外键违规 0。世界归档 `world-20261101T040001Z.tar.gz` 只做 SHA 与 `level.dat` 文件名校验，未解包。Pi `drill-status.json` 为 ok、schemaVersion 19。未再拉世界归档。
 - 发布：annotated Tag `v1.0.7` 与 GitHub Release 指向本发布记录。生产进程仍是 commit `b17102b`。
-- 残余：mcbot 旧 release 清理命令失败，`/opt/mcbot/releases/20261030T120449Z` 与 `20261030T142942Z` 仍在。`movement.stop()` 不清除 `cancelled`，下一次 `go_home` 会直接「移动已取消」，直到 `come`/`follow` 或进程重启。这是观察，本版不修。
+- 残余：`movement.stop()` 不清除 `cancelled`，下一次 `go_home` 会直接「移动已取消」，直到 `come`/`follow` 或进程重启。这是观察，本版不修。mcbot 已删除超出保留数的 `/opt/mcbot/releases/20261030T120449Z` 与 `20261030T142942Z`（各 538 MiB）。仍保留 `20261104T092858Z`、`20261030T143538Z`、`20261030T143306Z`。
 - 明确不做：不挖掘/不放置/不跑酷；不新增 Bot 平台；不启用异地副本；不重启 Minecraft。
 
 ### v1.0.6 寻路重构验收（2026-10-30，已部署；核心矩阵通过）
