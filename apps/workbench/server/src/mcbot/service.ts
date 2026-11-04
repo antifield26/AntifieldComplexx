@@ -11,6 +11,8 @@
  * - 告警游标持久化在 meta `mcbot.event_cursor`（{bootId,lastEventId,lastTs}）：
  *   首次/无游标/bootId 变化只建立基线，不重放 ring 内旧告警；之后只处理游标之后的 alert，
  *   并按游标去重。MCBOT_ALERTS_ENABLED=false 时仍推进游标但不写告警。
+ * - 告警写入带幂等键 `mcbot:<bootId>:<eventId>`。同一键再次 recordExternal 不插入、不通知。
+ * - 快照 `lastSuccessAt` 只在拿到完整 /status 时更新；失败轮询只推进 `lastPollAt`。
  * - 聊天事件只进内存缓存（最多 100 条，newest-first），不落库、不写日志。
  * - 控制成功后立即刷新一次；start()/stop() 的定时器 unref，不阻止进程退出。
  * - stop() 为异步收口：置停止标记 → 中止在途请求 → await 在途轮询；停止后不再写状态/事件/
@@ -69,7 +71,10 @@ export interface McbotSnapshot {
   eventsSupported: boolean
   version: string | null
   contractVersion: number | null
+  /** 最近一次轮询尝试时间，失败也会更新。 */
   lastPollAt: string | null
+  /** 最近一次完整 /status 成功时间。从未成功为 null。 */
+  lastSuccessAt: string | null
   error: string | null
   status: Record<string, unknown> | null
   /** AI 自主模式快照；旧版 mcbot 或尚未启用时 null（前端隐藏/降级）。 */
@@ -136,6 +141,23 @@ function sanitizeDetailValue(value: unknown, depth: number): unknown {
 
 function sanitizeDetails(value: Record<string, unknown>): Record<string, unknown> {
   return sanitizeDetailValue(value, 0) as Record<string, unknown>
+}
+
+/** C0 与 DEL。用码点判断，避免正则里的控制字符。 */
+function hasControlChars(value: string): boolean {
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0
+    if (code <= 0x1f || code === 0x7f) return true
+  }
+  return false
+}
+
+/** mcbot 告警幂等键。bootId/eventId 空白或含控制字符时返回 null，调用方仍写告警但不去重。 */
+export function mcbotAlertDedupeKey(bootId: string, eventId: string): string | null {
+  const boot = bootId.trim().slice(0, 80)
+  const id = eventId.trim().slice(0, 80)
+  if (!boot || !id || hasControlChars(boot) || hasControlChars(id)) return null
+  return `mcbot:${boot}:${id}`
 }
 
 /**
@@ -497,8 +519,11 @@ export class McbotService {
       if (event.type === 'alert' && this.config.mcbotAlertsEnabled) {
         const input = mapLofiiAlert(event)
         if (input) {
+          const dedupeKey = mcbotAlertDedupeKey(recent.bootId, event.id)
+          const recorded = dedupeKey ? { ...input, dedupeKey } : input
           try {
-            if (this.alerts.recordExternal(input) !== null) count += 1
+            // 幂等命中也算已处理，游标可以前进；通知只在首次插入时发出。
+            if (this.alerts.recordExternal(recorded) !== null) count += 1
           } catch (cause) {
             this.log('warn', 'mcbot 告警写入失败', {
               error: errorCodeOf(cause),
@@ -557,6 +582,7 @@ export class McbotService {
         version: null,
         contractVersion: null,
         lastPollAt: null,
+        lastSuccessAt: null,
         error: null,
         status: null,
         autonomy: null,
@@ -573,6 +599,7 @@ export class McbotService {
       version: this.version,
       contractVersion: this.contractVersion,
       lastPollAt: this.lastPollAt,
+      lastSuccessAt: this.lastSuccessAt === null ? null : new Date(this.lastSuccessAt).toISOString(),
       error: this.error,
       status: this.statusSnapshot,
       autonomy: this.autonomySnapshot,

@@ -402,6 +402,15 @@ export class AutonomyService {
         if (typeof type === 'string' && EVENT_TRIGGERS.alert.has(type)) {
           this.queueDecision(run, `alert:${type}`)
         }
+      } else if (event.type === 'movement') {
+        const data = asRecord(event.data)
+        const fallback = data?.fallback
+        if (data?.action !== 'fallback') return
+        if (fallback !== 'teleport' && fallback !== 'stopped') return
+        // 只告诉模型兜底结果。原始原因可能含坐标，不放进 prompt，也不写入审计。
+        const label = fallback === 'teleport' ? '寻路兜底：已安全传送' : '寻路兜底：已停止、没有路径'
+        this.emit('fallback', label)
+        this.queueDecision(run, label)
       }
     })
   }

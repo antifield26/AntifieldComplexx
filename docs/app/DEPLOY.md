@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.6）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.7）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -13,7 +13,9 @@
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
-- 当前 schema **v18**：`audit_write_failures` 保存审计失败诊断；`chatbot_group_roles` 保存群聊共享角色卡；`chatbot_memory_items`/`chatbot_memory_state` 保存结构化记忆；`chatbot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照，回滚必须使用该快照。
+- 当前 schema **v19**：迁移 19 为 `alert_events.dedupe_key`（可空 TEXT，部分唯一索引；历史行保持 NULL）。此前 v18 的 `audit_write_failures` 保存审计失败诊断；`chatbot_group_roles` 保存群聊共享角色卡；`chatbot_memory_items`/`chatbot_memory_state` 保存结构化记忆；`chatbot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照。schema v19 写入后，回退到 v1.0.6 必须先恢复该快照。
+
+> **v1.0.7 部署（应用尚未实施；OpenCode 已升级）**：2026-11-04 已按 §3.2 把 OpenCode 升到 2.2.5，运行中 `/api/info` 为 2.2.5，矩阵见 §3.2。回滚备份 timestamp `20261104T062115Z`。应用与 mcbot 仍待部署。完成前生产应用仍是 v1.0.6：app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`、schema 18。不重启 Minecraft，不启用异地副本。
 
 > **v1.0.6 部署（2026-10-30，已实施）**：MC Bot 统一寻路层（确定性 A* + 受控执行 + AI 路点 + 安全兜底）、`navigation` 状态与 app 面板显示；app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`；核心矩阵通过。回滚：mcbot `/opt/mcbot/releases/20261030T120449Z`、app `/opt/antifieldcloud/releases/20261030T110436Z`，并可先关闭 `PATH_PLANNER_ENABLED`/`PATH_AI_ENABLED`。mcbot 部署脚本默认保留最新 3 个 release 并保护 current/previous；2026-10-31 已清理历史 release，详见 [AUDIT 附录 B](AUDIT.md)。
 
@@ -201,29 +203,92 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 - 手工等价步骤（仅在脚本不可用时）：解包 → `npm ci --omit=dev --ignore-scripts` → 先跑
   `node scripts/backup.mjs --snapshot-db` → 写入/校验 `APP_VERSION` → `ln -sfn` → `systemctl restart antifieldcloud` → `curl /healthz`。
 
-### 3.0 应用部署步骤（当前版本 v1.0.6；schema v18）
+### 3.0 应用部署步骤（当前版本 v1.0.7；schema v19）
 
 1. **本地发布前校验**（PC）：`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格模式，含 schema/OpenCode 交叉校验）、
-   `node scripts/check-prod-deps.mjs`；2026-10-30 v1.0.6 本地实测：app **603**（602 pass、1 skip）、`test:web` **278**（50 文件）、mcbot **139**、check-version 期望 `1.0.6`、check-prod-deps 通过。工作树干净后记录 commit。
+   `node scripts/check-prod-deps.mjs`。check-version 期望 app/mcbot `1.0.7`、schema `19`、OpenCode `2.2.5`。
+   本地门禁（v1.0.7，2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）、`test:web` **279**（50 文件）、mcbot **144**。上一已测基线（2026-10-30 v1.0.6）：app **603**（602 pass、1 skip）、`test:web` **278**（50 文件）、mcbot **139**。提交前记录 commit。生产部署仍待本窗口。
 2. **部署前只读检查**：`backup.mjs --pending` 无异常、PC 最新 `.sha256` 可校验、`secretsOk=true`；`df -hT /` 余量充足（开启加密后按 2× 归档空间预留）；
-   记录当前 `/healthz` 与 OpenCode 版本；`deploy/tool-versions.json` 为期望 schema/OpenCode 来源。
-3. **OpenCode 2.2.0**：当前已升级并验收（按 §3.2）；本版本不重复升级。
+   记录当前 `/healthz` 与 OpenCode 运行中版本；`deploy/tool-versions.json` 为期望 schema/OpenCode 来源。
+3. **OpenCode 2.2.5**：按 §3.2 先备份当前 v2.2.0，再升级并 `systemctl restart opencode`。在运行中进程上完成矩阵（含 deny-all 对 `bash`/`shell` 的负路径）。失败则恢复本次备份并停止，不部署应用。
 4. **部署**：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；脚本执行预检/构建/上传 tar SHA-256 校验/`npm ci --omit=dev`/迁移前 DB 快照/
-   `APP_VERSION=1.0.4` 注入/切换 current/restart（失败进入回滚）/健康检查/只读 smoke；成功后写 `release.json`/`deploy-history.log`。
-   **4.1 mcbot**：先部署 mcbot v1.0.6（最低 v0.6.0；新增统一导航/`navigation` 状态，HTTP 契约仍 v1），确认仅监听 `127.0.0.1:3010`（`/healthz.contractVersion=1`），再部署应用并验证 `/api/mcbot/status`（含可选 `navigation`）、`/api/mcbot/presence`、`/api/mcbot/goals`。2026-10-30 按“mcbot 1.0.6 → app 1.0.6”执行。
-5. **验证**：预期 `/healthz` = `{"ok":true,"version":"1.0.4","schemaVersion":18,...}`；smoke 使用
-   `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.4 -ExpectedSchemaVersion 18 -ExpectedOpenCodeVersion 2.2.0 -ExpectedMcbotVersion 1.0.4`
-   （未启用 mcbot 时追加 `-SkipMcbot`；带 Access token 再跑完整版）。新检查包括 OpenCode 版本/MCP 进程/`/api/mcp`/fail2ban/unit 漂移/env 漂移/加密配置/异地状态/mcbot 服务与版本/本地任务安装标记；
+   `APP_VERSION=1.0.7` 注入/切换 current/restart（失败进入回滚）/健康检查/只读 smoke；成功后写 `release.json`/`deploy-history.log`。
+   **4.1 mcbot**：先部署 mcbot v1.0.7（最低 v0.6.0，契约仍 v1），确认仅监听 `127.0.0.1:3010`（`/healthz.contractVersion=1`），再部署应用并验证 `/api/mcbot/status`（含 `lastSuccessAt` 与可选 `navigation.lastFallbackReason`）、`/api/mcbot/presence`、`/api/mcbot/goals`。
+5. **验证**：预期 `/healthz` = `{"ok":true,"version":"1.0.7","schemaVersion":19,...}`；smoke 使用
+   `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.7 -ExpectedSchemaVersion 19 -ExpectedOpenCodeVersion 2.2.5 -ExpectedMcbotVersion 1.0.7`
+   （未启用 mcbot 时追加 `-SkipMcbot`；带 Access token 再跑完整版）。检查包括 OpenCode `/api/info` 与进程 exe 非 deleted、MCP 进程、`/api/mcp`、fail2ban、unit 漂移、env 漂移、加密配置、异地状态、mcbot 服务与版本、本地任务安装标记；
    缺状态文件返回 `SKIP:` 不计入 PASS。
 6. **加密/异地（默认关闭，按需）**：按 §9.10 启用备份整包加密（先私钥解密演练）、§9.11 启用异地副本；默认不启用时状态卡显示“未启用/未配置”。
 7. **部署后备份与证据**：完成 `snapshot-*.tar.gz`（或 `.age` + `.meta.json`）+ 密钥包，PC 拉取/ack；回填 `docs/app/ACCEPTANCE.md` 待填清单、
    CHANGELOG/README/AGENTS/DEPLOY 证据；用户验收后再 Tag/GitHub Release。
-8. **回滚**：切回上一 release + 还原同版本 `APP_VERSION`；若 DB 需回退，使用本次部署前快照。
-   OpenCode 回滚见 §3.2；备份加密回滚=关闭开关恢复明文（已生成 `.age` 保留）；异地回滚=禁用 offsite 任务；mcbot 回滚=设 `MCBOT_ENABLED=false` 并重启（见 §3.8）。
+8. **回滚**：切回上一 release + 还原同版本 `APP_VERSION`。schema v19 已经写入时，回退到 v1.0.6 必须先恢复本次迁移前 DB 快照。
+   OpenCode 回滚见 §3.2（本次窗口的回滚目标是升级前的 v2.2.0 备份）；备份加密回滚=关闭开关恢复明文（已生成 `.age` 保留）；异地回滚=禁用 offsite 任务；mcbot 回滚=设 `MCBOT_ENABLED=false` 并重启（见 §3.8）。
 
-## 3.2 OpenCode v2.2.0 升级与兼容性复核（本机执行，发布门禁）
+## 3.2 OpenCode v2.2.5 升级与兼容性复核（本机执行，发布门禁）
 
-本版目标 **OpenCode v2.2.0**（当前基线 v2.1.4）。2.2.0 为 minor：桌面/插件体验、MCP legacy codemode 迁移、session/media API 增强；**Breaking changes** 仅涉及 `@opencode/ai` 包根 Promise API、OpenCode GitHub Action 移除、TUI 插件 OpenTUI 0.7。应用使用原生 HTTP API + 本地 MCP 脚本，不使用上述 SDK/Action/TUI 插件，**无需业务改造**；仍必须按矩阵验收，失败按回滚步骤切回 v2.1.4。
+本窗口目标 **OpenCode v2.2.5**（升级前生产为 v2.2.0，2026-10-30 发布）。与应用相关的变化：工具调用名 `bash` 映射为 `shell`（真实插件工具名仍为 bash 时优先）；MCP stdio 单条消息超过 10 MiB 不再断开连接；空闲地点不再立刻重启 MCP；compaction 提示限制在模型上下文内。**Breaking**：TUI 插件需要 OpenTUI 0.8。应用使用原生 HTTP API 与本地 MCP，不使用 `@opencode/ai`、TUI 插件或 OpenTUI，无需业务改造。
+
+升级前只读查看 Pi 上的 `opencode.json`。没有把托管策略 `integration.use` 拆成 `mcp.use`/`skill.use`/`plugin.use` 时，不改配置，也不改 `compaction.buffer`。不要预先加入显式 `bash`/`shell` deny；只有矩阵证明 `deny *` 被绕过时才加。
+
+必须先完成本节，再部署应用。矩阵失败则恢复**本次** v2.2.0 备份并停止。回滚目标不是 2026-10-28 的 v2.1.4 备份。不重启 Minecraft。
+
+```bash
+# 0) 备份（root）：二进制、data、env、unit、MCP 配置。记下 TS，回滚用这一份。
+TS=$(date -u +%Y%m%dT%H%M%SZ); BK=/var/backups/opencode
+sudo install -d -o root -g root -m 0700 "$BK"
+sudo tar -C /var/lib/opencode -czf "$BK/opencode-bin-$TS.tar.gz" .opencode/bin/opencode
+sudo tar -C /var/lib/opencode --exclude='.opencode/bin' -czf "$BK/opencode-data-$TS.tar.gz" .
+sudo cp -a /etc/opencode/opencode.env "$BK/opencode.env.$TS"
+sudo cp -a /etc/systemd/system/opencode.service "$BK/opencode.service.$TS"
+sudo cp -a /var/lib/opencode/.config/opencode "$BK/opencode-config-$TS" 2>/dev/null || true
+sudo cp -a /opt/antifieldcloud/current/scripts/*-mcp.mjs "$BK/" 2>/dev/null || true
+
+# 1) 升级并重启。upgrade 只替换磁盘二进制，必须显式 restart。
+sudo -u opencode env HOME=/var/lib/opencode /var/lib/opencode/.opencode/bin/opencode upgrade 2.2.5 --method curl
+sudo -u opencode /var/lib/opencode/.opencode/bin/opencode --version   # 只代表磁盘二进制
+sudo systemctl restart opencode && systemctl is-active opencode
+
+# 2) 校验运行中服务。/proc/<pid>/exe 不得含 (deleted)；/api/info 期望 "version":"2.2.5"。
+PID=$(systemctl show opencode -p MainPID --value)
+sudo readlink -f /proc/$PID/exe
+AUTH=$(printf '%s' "opencode:$(sudo grep -E '^OPENCODE_PASSWORD=' /etc/opencode/opencode.env | head -n1 | cut -d= -f2-)" | base64 -w0)
+curl -fsS -H "Authorization: Basic $AUTH" http://127.0.0.1:4096/api/info
+```
+
+### 本窗口矩阵（在运行中的 2.2.5 上执行，通过前不部署应用）
+
+| 编号 | 检查 | 结果 |
+|---|---|---|
+| V1 | 运行中 `/api/info` 为 2.2.5，进程 exe 非 deleted，Basic `/api/session` | PASS（2026-11-04，`/api/info=2.2.5`，exe 非 deleted，会话列表 200） |
+| V2 | 会话列表 | PASS（200，`data` 为数组） |
+| V3 | deny-all 创建会话；名为 `bash` 与 `shell` 的工具调用均被拒绝 | PASS（会话 200，存下的规则为 `*:deny`。生产模型 `opencode-go/deepseek-v4.1-flash` 没有发出可执行的工具调用：要求 `bash` 时回复该工具不可用；要求 `shell` 时把 DSML 文本留在 assistant 正文，没有工具结果。未观察到 `deny *` 被绕过，未加显式 bash/shell deny） |
+| V4 | prompt → assistant content/finish | PASS（同一模型，`finish=stop`，正文 `OK`） |
+| V5 | `/api/experimental/session/:id/wait` | PASS（204） |
+| V6 | 会话列表形状/清理 | PASS（`data` 数组加 cursor；测试会话已删除） |
+| V7 | 图片 prompt files | PASS（1×1 PNG data URL，200；assistant `finish=stop`，正文 `IMAGE`） |
+| V8 | botmsg 与 searxng 各 1 个进程且 connected；自主会话只放行 `mcbot_autonomy_*` | PASS（`/api/mcp` 中 botmsg 与 searxng 均为 connected，MCP 进程各 1；searxng 服务进程另有 2 个。自主规则创建为 `*:deny` 加 `mcbot_autonomy_*:allow`。内置 `opencode_console` 为 needs_auth，本次未改配置） |
+| V9 | 会话删除/清理 | PASS（DELETE 204，随后 GET 404） |
+| V14 | 资源余量 | PASS（可用内存约 4.0 GiB，OpenCode RSS 约 456 MiB，根分区可用 35G、已用 38%） |
+
+V10–V13（真实 QQ）沿用既有验收，本次不重跑。2026-11-04 的备份 timestamp 是 `20261104T062115Z`。`opencode.json` 没有把 `integration.use` 拆成 `mcp.use`/`skill.use`/`plugin.use`，本次未改配置，也未改 `compaction.buffer`。默认不带模型的新会话会落到 `opencode/crouton-alpha-free`，该模型在当前地区返回 403；应用与 mcbot 显式使用 `opencode-go/deepseek-v4.1-flash`，矩阵 V3–V7 用的是这个模型。
+
+### 回滚（本窗口失败即执行）
+
+```bash
+sudo systemctl stop opencode
+sudo tar -C /var/lib/opencode -xzf /var/backups/opencode/opencode-bin-<TS>.tar.gz
+sudo tar -C /var/lib/opencode -xzf /var/backups/opencode/opencode-data-<TS>.tar.gz
+sudo cp -a /var/backups/opencode/opencode.env.<TS> /etc/opencode/opencode.env
+sudo cp -a /var/backups/opencode/opencode.service.<TS> /etc/systemd/system/opencode.service
+sudo systemctl daemon-reload && sudo systemctl start opencode
+# 期望运行中 /api/info 回到 2.2.0，且 exe 不含 (deleted)
+```
+
+恢复后不要部署 1.0.7。`deploy/tool-versions.json` 在仓库里仍指向 2.2.5 时，未升级的机器不能用严格 smoke 的 `2.2.5` 期望值宣称通过。
+
+### 历史：OpenCode v2.2.0（2026-10-28，自 v2.1.4 升级）
+
+本节是 2026-10-28 的记录。当时目标 **OpenCode v2.2.0**（基线 v2.1.4）。2.2.0 为 minor：桌面/插件体验、MCP legacy codemode 迁移、session/media API 增强；**Breaking changes** 仅涉及 `@opencode/ai` 包根 Promise API、OpenCode GitHub Action 移除、TUI 插件 OpenTUI 0.7。应用使用原生 HTTP API + 本地 MCP 脚本，不使用上述 SDK/Action/TUI 插件。当时矩阵通过后才验收。失败时的回滚目标是 v2.1.4 备份 `/var/backups/opencode/20261028T020723Z`。
 
 ```bash
 # 0) 备份（root）：二进制、data、env、unit、MCP 配置（升级前必须做）
@@ -424,7 +489,7 @@ sudo systemctl restart antifieldcloud
 
 ### 3.8 mcbot Bot 对接（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-> 前置：mcbot **v1.0.6（最低 v0.6.0）** 作为独立服务部署，仅监听 `127.0.0.1:3010`，`/healthz` 返回对应 `version`、`contractVersion=1` 且提供 `/events/recent`；应用不修改 mcbot 配置/密钥，也不读取其 RCON/OpenCode 密码。生产 mcbot 当前为 **v1.0.6**（release `/opt/mcbot/releases/20261030T143538Z`），应用 v1.0.6 已部署（`/opt/antifieldcloud/releases/20261030T132040Z`）。v0.8.0 / v0.8.1 的 2026-10-27 验证记录保留在本节末尾。
+> 前置：mcbot **v1.0.7（最低 v0.6.0）** 作为独立服务部署，仅监听 `127.0.0.1:3010`，`/healthz` 返回对应 `version`、`contractVersion=1` 且提供 `/events/recent`；应用不修改 mcbot 配置/密钥，也不读取其 RCON/OpenCode 密码。本窗口部署前，生产进程仍为 mcbot **v1.0.6**（release `/opt/mcbot/releases/20261030T143538Z`）与应用 v1.0.6（`/opt/antifieldcloud/releases/20261030T132040Z`）。v0.8.0 / v0.8.1 的 2026-10-27 验证记录保留在本节末尾。
 
 1. **前置只读检查**（root；不需要 Token）：
    ```bash
@@ -779,20 +844,21 @@ ls -lh /var/lib/antifieldcloud/world-backups/
 ### 9.4 世界拉取（Windows 周任务，已安装）
 
 ```powershell
-# 先手动跑一次（直连网线可达；脚本在仓库 scripts/ 下，也可自行复制到固定路径）
+# 手动跑一次仍用仓库脚本（直连网线可达；占位地址与默认备份根）
 cd "$env:USERPROFILE\projects\AntifieldComplexx"
 .\scripts\world-pull.ps1 -PiHost 192.0.2.10 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups"
-# 创建周任务：每周日 12:00（路径/参数按实际替换）
+# 计划任务不要指向仓库路径。install-backup-task.ps1 会把脚本复制到下面的固定副本再注册。
+# 任务名保持 AntifieldCloud-World-Pull。-BackupRoot 与每日任务相同。
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
-  -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\<user>\projects\AntifieldComplexx\scripts\world-pull.ps1" -PiHost 192.0.2.10 -BackupRoot "%USERPROFILE%\AntifieldCloudBackups"'
+  -Argument '-NoProfile -ExecutionPolicy Bypass -File "%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1" -PiHost 192.0.2.10 -BackupRoot "%USERPROFILE%\AntifieldCloudBackups"'
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 12:00
 Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Trigger $trigger -Description "AntifieldComplexx 世界备份周度拉取"
 ```
 
 - 两阶段：scp `.part` → 远端 `.sha256` 比对 → 原子改名 → 删除远端归档/旁文件（ack）；**失败不 ack、不动远端**，退出码 1。
 - 本地保留最新 4 份；日志 `%LOCALAPPDATA%\AntifieldCloud\world-pull.log`；远端状态写 `world-pull-status.json`。
-- 回滚/停用：`Unregister-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Confirm:$false`；已拉取归档保留。
-- `install-backup-task.ps1` **只安装每日应用归档任务**，不会创建世界拉取/演练任务。已通过管理员 UAC 安装 `AntifieldCloud-World-Pull`（周日 12:00，Pi 直连 + `D:\Backups\AntifieldCloud`），手动运行成功拉取 3.2 GB 世界归档；恢复演练仍按 §9.5 手动/季度执行。
+- 回滚/停用：`Unregister-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Confirm:$false`；已拉取归档保留。已安装的脚本副本可留在 `%LOCALAPPDATA%\AntifieldCloud\`。
+- `install-backup-task.ps1` 安装每日应用归档任务时，同时安装世界拉取：把 `scripts\world-pull.ps1` 复制到 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`，注册 `AntifieldCloud-World-Pull`（周日 12:00，时限 3 小时）。`-PiHost`/`-PiUser`/`-BackupRoot` 与每日任务相同。本机每日任务的备份根是 `D:\Backups`，世界归档在 `world\`。缺源文件时安装脚本在复制和注册之前失败，DryRun 也不写任务。恢复演练仍按 §9.5 手动/季度执行。重装需要管理员 PowerShell，且不要为了改路径再拉一份世界归档。
 
 ### 9.5 恢复演练（drill.ps1，季度/升级前）
 
@@ -918,7 +984,7 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
    一次图片识别成功与一次降级；Chat 至少一条真实模型回复；`/help` 非管理员/管理员差异与 `/ask` 被拒/管理员回帮助不调用 AI；`/reset`、`/forget confirm` 实际发送；诊断分区有事件/中文错误提示；角色与记忆分区启停/删除（仅元数据）。
    记录 `chatbot_deliveries` 状态与平台消息 id（不记录 AppSecret/记忆正文）。未完成联调前保持 `CHATBOT_ENABLED=false`/`CHATBOT_AI_ENABLED=false`；
    未配置 AI/图片时在 `docs/app/ACCEPTANCE.md` 标“待配置/待验证”。
-   **真实 QQ 正向验收（v0.7.2 已通过）**：C2C 文本命令/自助命令/权限拒绝/文本 Chat/真实图片端到端均有生产证据；诊断/角色记忆面板与文本发布按用户确认整体通过。当前生产 **v1.0.6/schema18**（v0.7.3 历史证据见 `docs/app/ACCEPTANCE.md`）；v1.0.6 smoke 与 mcbot 验证见 §6/§3.8，v0.7.3 文档模式验收记录见 §3.7。
+   **真实 QQ 正向验收（v0.7.2 已通过）**：C2C 文本命令/自助命令/权限拒绝/文本 Chat/真实图片端到端均有生产证据；诊断/角色记忆面板与文本发布按用户确认整体通过。本窗口部署前生产仍为 **v1.0.6/schema18**，目标为 v1.0.7/schema19（v0.7.3 历史证据见 `docs/app/ACCEPTANCE.md`）；v1.0.6 smoke 与 mcbot 验证见 §6/§3.8，v0.7.3 文档模式验收记录见 §3.7。
 生产 env 迁移已完成（命令 120/AI 120/Chat 30、删除 `CHATBOT_AI_TASK_PROMPT`/`CHATBOT_AI_CHAT_PROMPT`、权限 640、APP_VERSION=0.5.9，原 env 备份 `/var/lib/antifieldcloud/env-backup-v058-20261022223449.bak`）；回滚切回 `20261022T134852Z` + 还原 env 备份（20/10/6）。用户已实发验收通过（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户确认；22:41 原话“验收通过”）。
 
 ### 9.9 Bot 队列/发布故障排查
@@ -1049,7 +1115,7 @@ sudo systemctl daemon-reload && sudo systemctl restart cloudflared
 
 ```bash
 ls -1dt /opt/antifieldcloud/releases/*
-# 优先使用 deploy.ps1 的自动回滚；手工回滚按以下顺序（schema v18 只向上）
+# 优先使用 deploy.ps1 的自动回滚；手工回滚按以下顺序（schema v19 只向上）
 sudo systemctl stop antifieldcloud
 sudo cp -a /var/lib/antifieldcloud/backups/db-predeploy-<最新>.sqlite /var/lib/antifieldcloud/db.sqlite
 sudo rm -f /var/lib/antifieldcloud/db.sqlite-wal /var/lib/antifieldcloud/db.sqlite-shm
@@ -1063,10 +1129,10 @@ curl -fsS http://127.0.0.1:3000/healthz
 ```
 
 - 每次部署在切换前生成 `/var/lib/antifieldcloud/backups/db-predeploy-*.sqlite`（0600，**保留最新 2 个**：`MAX_PREDEPLOY_SNAPSHOTS=2`，供自动回滚；明文快照属威胁模型明确豁免项，见 `docs/app/SECURITY.md` §4）。
-- **schema 只向上（当前 v18）**（迁移 5 结构、迁移 6 孤儿 shares 修复、迁移 7 Bot 表、迁移 8 重建 Bot 表/静默列/AI 会话、
+- **schema 只向上（当前 v19）**（迁移 5 结构、迁移 6 孤儿 shares 修复、迁移 7 Bot 表、迁移 8 重建 Bot 表/静默列/AI 会话、
   迁移 9 `allow_chat`/`chatbot_ai_memories`/`chatbot_inbound_targets`、迁移 10 `chatbot_ai_sessions.mode`、迁移 11 `chatbot_chat_roles`、
   迁移 12 `chat_trigger`/`chatbot_events` 诊断列、迁移 13 删除非 QQ Bot 及级联数据、迁移 14 结构化记忆两表、迁移 15 `qq_number` 兼容列、
-  迁移 16 群聊角色卡 `chatbot_group_roles`、迁移 17 审计失败诊断表、迁移 18 chatbot 全量改名；当前 schema v18）：迁移前会清理不可达孤儿 shares 并做 `PRAGMA foreign_key_check`，
+  迁移 16 群聊角色卡 `chatbot_group_roles`、迁移 17 审计失败诊断表、迁移 18 chatbot 全量改名、迁移 19 `alert_events.dedupe_key`；当前 schema v19）：迁移前会清理不可达孤儿 shares 并做 `PRAGMA foreign_key_check`，
   其它外键不一致会拒绝启动；旧代码遇到更高 schema 会拒绝启动。迁移单向、无 down；回滚旧 release 前必须恢复对应迁移前快照
   （`stop → 复制快照为 db.sqlite → 删除 -wal/-shm → 还原 APP_VERSION → 切 release → start`）。
   回滚旧 release 前必须恢复对应迁移前快照并同步还原 `APP_VERSION`；生产数据变更以快照为准。

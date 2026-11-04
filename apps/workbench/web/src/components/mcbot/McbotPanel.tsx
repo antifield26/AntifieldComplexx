@@ -227,6 +227,9 @@ function McbotStatusCard({
               {status.navigation.source
                 ? ` · ${NAVIGATION_SOURCE_LABELS[status.navigation.source] ?? status.navigation.source}`
                 : ''}
+              {status.navigation.lastFallbackReason ? (
+                <span className="mcbot-fact-sub">兜底原因：{status.navigation.lastFallbackReason}</span>
+              ) : null}
             </Fact>
           ) : null}
           <Fact label="mcbot 版本">
@@ -1006,7 +1009,7 @@ export function McbotPanel() {
       {snapshot.stale ? (
         <div className="notice notice-warning">
           <span>
-            mcbot 数据已过期（上次成功轮询 <RelativeTime ts={snapshot.lastPollAt} fallback="未知时间" />
+            mcbot 数据已过期（上次成功轮询 <RelativeTime ts={snapshot.lastSuccessAt ?? null} fallback="尚无成功轮询" />
             ），请检查 mcbot 进程；新数据恢复前请勿依赖当前状态。
           </span>
         </div>

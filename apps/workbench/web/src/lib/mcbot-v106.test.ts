@@ -20,9 +20,23 @@ describe('mcbot v1.0.6 寻路状态展示', () => {
       attempts: 2,
       lastFailureKind: 'no_path',
       lastFallback: 'teleport',
+      lastFallbackReason: null,
       aiUsed: true,
       updatedAt: '2026-10-30T00:00:00.000Z',
     })
+  })
+
+  it('保留兜底原因短文本', () => {
+    const status = safeLofiiStatus({
+      navigation: {
+        state: 'fallback',
+        source: 'stopped',
+        attempts: 1,
+        lastFallback: 'stopped',
+        lastFallbackReason: '走不过去：墙太高',
+      },
+    })
+    expect(status?.navigation?.lastFallbackReason).toBe('走不过去：墙太高')
   })
 
   it('旧 mcbot 缺少 navigation 时不报错、不伪造状态', () => {

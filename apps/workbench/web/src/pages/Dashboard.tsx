@@ -53,6 +53,7 @@ const SERVICE_LABELS: Record<keyof ServicesStatus, string> = {
   minecraft: 'Minecraft',
   cloudflared: 'Cloudflare Tunnel',
   opencode: 'opencode',
+  mcbot: 'mcbot',
 }
 
 const SERVICE_STATE_LABELS: Record<ServiceState, string> = {

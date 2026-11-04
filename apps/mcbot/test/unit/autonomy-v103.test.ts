@@ -335,3 +335,45 @@ test('v1.0.3 task events trigger an event-driven re-prompt', async () => {
   f.session.finishWait()
   await waitFor(() => !f.service.isActive())
 })
+
+test('v1.0.7 teleport fallback redecides once and ignores a repeat inside the debounce window', async () => {
+  const f = fixture({ AUTONOMY_EVENT_DEBOUNCE_MS: '30000' })
+  const { runId, token } = await startRun(f)
+  await call(f, token, 'start_task', { run_id: runId, task: 'fishing', reason: '开始任务' })
+  f.session.finishWait()
+  f.events.emit('movement', { action: 'fallback', fallback: 'teleport', reason: 'wall at 10,64,20' })
+  await waitFor(() => f.session.prompts.length === 2)
+  assert.match(f.session.prompts[1] ?? '', /寻路兜底：已安全传送/)
+  assert.doesNotMatch(f.session.prompts[1] ?? '', /10,64,20/)
+  f.events.emit('movement', { action: 'fallback', fallback: 'teleport', reason: 'wall at 10,64,20' })
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  assert.equal(f.session.prompts.length, 2)
+  await f.service.stop('test')
+})
+
+test('v1.0.7 stops asking after six fallback redecisions', async () => {
+  const f = fixture({ AUTONOMY_EVENT_DEBOUNCE_MS: '0', AUTONOMY_MAX_REPROMPTS: '6' })
+  const { runId, token } = await startRun(f)
+  await call(f, token, 'start_task', { run_id: runId, task: 'fishing', reason: '开始任务' })
+  f.session.finishWait()
+  for (let index = 0; index < 6; index += 1) {
+    f.events.emit('movement', { action: 'fallback', fallback: 'stopped', reason: 'no path' })
+    await waitFor(() => f.session.prompts.length === index + 2)
+    assert.match(f.session.prompts[index + 1] ?? '', /寻路兜底：已停止、没有路径/)
+    f.session.finishWait()
+  }
+  assert.equal(f.session.prompts.length, 7)
+  f.events.emit('movement', { action: 'fallback', fallback: 'stopped', reason: 'no path' })
+  await waitFor(() => !f.service.isActive())
+  assert.equal(f.session.prompts.length, 7)
+})
+
+test('v1.0.7 fallback does not create a session when autonomy has not started', async () => {
+  const f = fixture({ PATH_AI_ENABLED: 'false', AUTONOMY_ENABLED: 'true' })
+  f.events.emit('movement', { action: 'fallback', fallback: 'teleport', reason: 'wall' })
+  f.events.emit('movement', { action: 'fallback', fallback: 'stopped', reason: 'wall' })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.equal(f.session.registered, 0)
+  assert.equal(f.session.prompts.length, 0)
+  assert.equal(f.service.isActive(), false)
+})

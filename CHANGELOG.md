@@ -1,5 +1,31 @@
 # Changelog
 
+## [v1.0.7] - 2026-11-04（代码完成；OpenCode 2.2.5 已在树莓派运行；应用生产部署待本窗口）
+
+v1.0.7 主题是运行时可信：告警可重放、轮询成功时间可见、mcbot 进入服务告警，以及寻路兜底进入自主重决策。app 与 mcbot 同为 1.0.7。schema v18 → v19，只追加可空 `alert_events.dedupe_key`。OpenCode 针为 2.2.5，与应用同一发布窗口升级；本条目不表示生产已切换。
+
+### 修复
+
+- schema v19：`alert_events.dedupe_key` 可空，部分唯一索引允许多个 NULL。mcbot 告警键为 `mcbot:<bootId>:<eventId>`。同一键再次写入不新增行、不重复 webhook、不重复入队 Bot 通知。空键与纯空白键不参与去重。
+- `GET /api/mcbot/status` 下发 `lastSuccessAt`。只有完整上游 `/status` 成功才更新；失败轮询只推进 `lastPollAt`。面板过期文案用成功时间，从未成功时显示“尚无成功轮询”。
+- `MCBOT_ENABLED=true` 时，mcbot 进程不在或轮询快照过期走既有 `service_down` 的 firing/resolved。单次失败且未过期不触发。上游 `alert` 仍为 `status='event'`，不写入 `alert_state`。Dashboard 服务卡显示 mcbot。
+- `install-backup-task.ps1` 在安装每日任务的同时，把 `scripts/world-pull.ps1` 复制到 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`，并注册周任务 `AntifieldCloud-World-Pull`（周日 12:00）。任务名与 `%LOCALAPPDATA%\AntifieldCloud` 不变。缺源文件时在 DryRun 之前失败。
+
+### 特性
+
+- 寻路兜底进入自主会话重决策。安全传送的提示为“寻路兜底：已安全传送”，停止且没有路径为“寻路兜底：已停止、没有路径”。沿用 30 秒去重与每会话最多 6 次，不新增 MCP 工具，模型不能调用传送。面板在寻路 Fact 下显示 `lastFallbackReason` 短文本；该原文不进入自主提示。
+
+### 运维
+
+- `deploy/tool-versions.json`：schema 19、OpenCode 2.2.5、mcbot 1.0.7。升级步骤见 `docs/app/DEPLOY.md` §3.2。回滚 OpenCode 使用本次升级前的 v2.2.0 备份。矩阵失败则恢复该备份并停止应用部署。
+- 本地门禁（2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。应用生产部署仍待本窗口。
+- OpenCode（2026-11-04）：树莓派运行中版本为 2.2.5。备份 timestamp `20261104T062115Z`。矩阵见 `docs/app/DEPLOY.md` §3.2。未改配置。应用与 mcbot 的已部署 release 仍是 v1.0.6。
+- schema v19 写入后，应用回退到 v1.0.6 必须先恢复迁移前 DB 快照。
+
+### 本版不修
+
+- `stop()` 不取消在途轮询、契约版本无守卫、`lastError` 原样透传、告警风暴并发上限、5 格垂直墙、`http-proxy` 弃用警告。这些仍是审计残余。
+
 ## [v1.0.6] - 2026-10-30（已部署，核心实机矩阵通过；已发布 Tag/Release）
 
 v1.0.6 聚焦 MC Bot 已知寻路局限：新增统一导航层（pathfinder 快速路径 → 确定性 A* → 受控路点执行 → 受控 AI 路点建议 → 安全兜底），覆盖 1–5 级逐级台阶、1 格矮墙、2 格墙绕行；5 格垂直墙/断崖明确失败，不伪造到达。不挖掘、不放置、不跑酷、不跨维度；任务/目标/自主仍限安全区。

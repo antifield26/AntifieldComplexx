@@ -222,7 +222,7 @@
    密钥包 use age 加密，私钥丢失将无法恢复密钥包。
 8. **世界备份依赖 RCON 与 Minecraft 运行**：服务器未运行时备份失败（状态 JSON 可见）；`save-off` 期间若进程崩溃，
    `save-on` 会重试/需人工恢复保存。`minecraft-backups` legacy 归档已清理，旧 cron 保持停用。
-9. **opencode 自身认证/UI 行为随版本变化**：当前生产 **v2.2.0**（2026-10-28 已按 `docs/app/DEPLOY.md` §3.2 备份 v2.1.4 二进制/data/env/unit/MCP 配置后升级并验收兼容矩阵），通过注入 Basic 实现 SSO；
+9. **opencode 自身认证/UI 行为随版本变化**：当前生产 **v2.2.5**（2026-11-04 已升级并在运行中进程上完成 §3.2 矩阵；回滚备份 timestamp `20261104T062115Z`。2026-10-28 的 v2.1.4 备份只作更早回滚点），通过注入 Basic 实现 SSO；
    升级后按 `docs/app/DEPLOY.md` §3.2 复验 Basic/session/垫片注入/公开入口/MCP 进程/compaction。原生新建按钮在部分版本仍有缺陷，
    失败时保留最小隐藏点击接管（无可见 UI）；UI/WS 实时事件需浏览器复测。
 10. **无 WAF/DDoS 防护**：Cloudflare 默认防护有限；大文件上传/登录仍可能消耗资源（有配额/限流）。
@@ -233,7 +233,7 @@
 14. **scrypt 仍为 N=2^15**：升级到 2^16/2^17 需要密码哈希版本迁移，列入后续。
 15. **`http-proxy` 在 Node 26 有 `util._extend` 弃用警告**：Node 27 前需评估替换。
 16. **Cloudflare 约 100 MiB/100s 限制**：普通上传仍受单请求限制；分片承载 5 GiB 文件，但总时长仍受 Cloudflare/网络影响。
-17. **Windows 世界拉取/演练任务**：`AntifieldCloud-World-Pull` 周任务（周日 12:00）已安装并手动验证；恢复演练 `drill.ps1` 保持手动/季度；异地副本保持关闭、未配置 remote。任务以当前用户运行，依赖直连网线与 SSH 公钥；未安装/未运行时状态 unknown、告警可能触发。
+17. **Windows 世界拉取/演练任务**：`AntifieldCloud-World-Pull` 周任务（周日 12:00）由 `install-backup-task.ps1` 与每日任务一起安装。计划任务 `-File` 使用 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`（安装时从仓库复制）。任务名与该目录名不变。恢复演练 `drill.ps1` 保持手动/季度；异地副本保持关闭、未配置 remote。任务以当前用户运行，依赖直连网线与 SSH 公钥；未安装/未运行时状态 unknown、告警可能触发。
 18. **Bot 测试为 mock-only**：QQ 适配器/队列/发布/Chat/记忆/文本分段/图片下载/自检/诊断/角色与记忆管理仅用进程内假平台、夹具与假 HTTP，未对真实 QQ 平台做限流、签名漂移、平台故障的负路径验收；
     上线前必须在 QQ 开放平台完成回调地址/事件订阅并联调（`docs/app/DEPLOY.md` §9.8）。QQ 真实回调与真实模型已验证；AI 仅 Chat；图片/自助命令等真实消息已由用户实发验收通过（图片端到端成功）；诊断/角色记忆面板按用户确认整体通过。
 19. **Bot 仅文本、单平台**：QQ 官方 Bot 只支持文本（单条 ≤2000），无媒体/附件/按钮/引用；平台收敛后不再有 Telegram/Discord/Slack 备选通道，QQ 平台故障时 Bot 不可用；无多管理员审批流；发布仅有单管理员 TOTP + `PUBLISH` 双确认。
@@ -241,7 +241,7 @@
 20. **`CHATBOT_SECRET_KEY` 丢失/轮换**：DB 中已有 QQ AppSecret 将不可解密，必须重新录入；轮换需先备份 DB + 旧密钥并接受一次性重录，
     不做在线密钥版本迁移。`bootstrap-env.sh --force` 会复用旧 key，不会自动轮换。
 21. **AI 工具隔离依赖 OpenCode 版本**：Chat 新建会话传 deny-all 的 `permissions`；启用消息发送工具时仅额外放行 `botmsg_*`（搜索启用时放行 `searxng_*`）；文档模式再放行当前作用域 `external_directory` 与精确 `read` 两份文档。若 OpenCode 明确以 400 拒绝该字段，进入 10 分钟重试窗口并记录状态/审计，启用发送工具或文档模式时**拒绝新 Chat**（503 `chatbot_ai_tool_isolation_unavailable` + 固定提示），不再以默认权限继续；窗口到点放行一次重试，上游恢复后自动恢复。
-    当前生产 OpenCode **v2.2.0** 的 OpenAPI 声明支持该字段（升级矩阵已验证创建会话 200、模型 assistant text 正常与 deny-all 负路径无 tool）；仍不把 Chat 当作强隔离沙箱，模型行为非强保证。
+    v2.2.0 的 OpenAPI 已声明支持该字段（2026-10-28 矩阵验证创建会话 200、模型 assistant text 正常与 deny-all 负路径无 tool）。v2.2.5 把名为 `bash` 的工具调用映射为 `shell`，本窗口必须在运行中的 2.2.5 上重测 deny-all，含 `bash`/`shell` 负路径；矩阵未通过前不部署应用，也不预先加显式 bash/shell deny。仍不把 Chat 当作强隔离沙箱，模型行为非强保证。
     **文档模式残余**：read 范围依赖 OpenCode 对 session `permissions` 资源的实际匹配语义；生产已于 2026-10-27 用真实 OpenCode 完成作用域内/外负路径矩阵 **7/7 通过**（作用域外/env/DB/其他作用域/shell/注入全部拒绝），随后才启用；首轮角色卡仍存在于 OpenCode 会话历史，后续请求不再发送正文；OpenCode 进程本身仍是信任边界（其可读全部上下文作用域）。
     产品代价：隔离不可用期间 Bot Chat 暂停，属明确取舍（可用性让位于安全）。
 22. **fail2ban 持久化依赖 drop-in**：dbfile 已持久化，`nftables.service` drop-in 会在启动后异步重启 fail2ban 恢复 set；手工 `systemctl reload nftables` 不触发，仍需手动 restart。

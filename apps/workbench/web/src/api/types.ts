@@ -247,6 +247,8 @@ export interface ServicesStatus {
   minecraft: ServiceState
   cloudflared: ServiceState
   opencode: ServiceState
+  /** 启用 mcbot 时由服务端加入；未启用时省略。 */
+  mcbot?: ServiceState
 }
 
 export interface AuditItem {
@@ -1438,6 +1440,8 @@ export interface McbotNavigation {
   attempts: number
   lastFailureKind: string | null
   lastFallback: 'teleport' | 'stopped' | null
+  /** 最近一次兜底原因。旧版 mcbot 不下发时为 null。 */
+  lastFallbackReason?: string | null
   aiUsed: boolean
   updatedAt: string | null
 }
@@ -1575,6 +1579,8 @@ export interface McbotSnapshot {
   /** 旧版 mcbot 没有 /events/recent 时为 false：UI 显示“需升级 v0.6.0”提示。 */
   eventsSupported: boolean
   lastPollAt: string | null
+  /** 最近一次完整状态成功时间。旧快照缺省时按尚无成功轮询处理。 */
+  lastSuccessAt?: string | null
   error: string | null
   status: McbotStatus | null
   /** 旧版 mcbot 不返回该字段（可选）；缺失时为 null/undefined，UI 隐藏自主控制。 */

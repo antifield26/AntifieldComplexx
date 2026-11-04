@@ -4,7 +4,7 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.0.6（2026-10-30 已部署，核心实机矩阵通过）**：MC Bot 统一寻路层（pathfinder 快速路径 → 确定性 A* → 受控路点执行 → AI 路点建议 → 安全兜底），1–5 级台阶、1 格矮墙、2 格墙绕行、安全区外路径与 5 格垂直墙明确兜底均通过；`navigation` 状态/事件/面板可见；不挖掘/不放置/不跑酷。v1.0.5 的在线模式/自动生存/清怪/多步目标已发布。app schema 保持 v18，mcbot 本地 `presence.json`/`goals.db` 为 additive；生产 app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`；OpenCode **v2.2.0**；npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
+**当前版本 v1.0.7（代码与文档已对齐，应用生产部署待本窗口）**：schema v19 为 `alert_events.dedupe_key`；mcbot 快照下发 `lastSuccessAt`；mcbot 进程不在或轮询过期走 `service_down`；寻路兜底进入自主重决策（不新增 MCP 工具，不挖掘/不放置/不跑酷）。OpenCode **v2.2.5** 已在树莓派运行，回滚备份 timestamp `20261104T062115Z`。应用与 mcbot 的已部署版本仍是 v1.0.6：app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`、schema 18。npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
 权威文档：
 - `docs/app/PLAN.md`：范围、决策、阶段与验收
@@ -59,7 +59,7 @@ npm run check:docs     # mcbot 文档声明/代码实现一致性检查
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v1.0.6，2026-10-30 已部署并验收）：`npm run check` 通过；app **603**（602 pass、1 skip）+ web **278**（50 文件）+ mcbot **139**；`npm run build`、`check-version`（严格 1.0.6）、`check-naming`、`check:docs` 通过。生产 app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`；核心实机矩阵通过。
+本地门禁（v1.0.7，2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**；`check-naming`、`check:docs` 通过。上一已部署基线（v1.0.6，2026-10-30）：app **603**（602 pass、1 skip）+ web **278**（50 文件）+ mcbot **139**；生产 app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`；核心实机矩阵通过。v1.0.7 生产部署仍待本窗口。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 
@@ -70,7 +70,7 @@ apps/workbench/server/src/
   main.ts            进程入口：配置、DB、Fastify、信号退出、启动指标采样
   config.ts          环境变量解析与校验（非法值/不安全组合失败即退出）
   logger.ts          Fastify/pino 日志与脱敏
-  db.ts              SQLite 打开、迁移（当前 schema v18）、事务辅助
+  db.ts              SQLite 打开、迁移（当前 schema v19）、事务辅助
   auth/              scrypt、TOTP、会话、CSRF、限流、恢复码、审计（字段截断 + 失败诊断）、Bot 发布 TOTP 再认证
   files/             存储、上传、配额、搜索、预览、回收站、files.origin 可见性、物理孤儿回收
   uploads/           分片上传会话/块索引、配额预留、拼接、过期与终态清理
@@ -89,14 +89,14 @@ apps/workbench/server/src/
                      client.ts（读/控制 Token 分离、redirect:error、超时、流式 2 MiB 上限、5xx 稳定业务码、
                      大小写不敏感 URL/Token 脱敏、history 形状校验）、service.ts（单飞轮询 status/recent?limit=200、
                      100 条且 ≤512 KiB 事件内存缓存、stale、告警游标 meta.mcbot.event_cursor、alert→status='event'、
-                     告警写失败停游标重试、控制成功后刷新）；不持久化聊天/事件，无 schema 变更
+                     告警写失败停游标重试、控制成功后刷新、dedupe_key）；不持久化聊天/事件。告警幂等列在 schema v19
   backups/           归档导入/校验、文件级恢复（skippedMissing）、Web 对加密归档的 409 边界、状态只读
   dashboard/         主机指标、服务状态、备份状态（含加密/异地）、Bot 开关、轻量存储用量
   metrics/           60s 主机指标采样、按范围分桶聚合、30 天保留清理
   notes/             笔记/书签、标签、FTS5、附件（origin=note）、版本历史
   shares/            单文件/多文件分享、密码/过期/次数/原子计数、公开逐项下载、吊销
   alerts/            告警条件/状态机/webhook（含世界备份/拉取/演练/异地超期）与 Bot 通知入队；
-                     recordExternal（v0.8.0 外部事件 status='event'，不写 alert_state，异步 webhook/Bot 通知）
+                     recordExternal（外部事件 status='event'，不写 alert_state；同一 dedupe_key 不重复通知）
   cli/               backup.mjs 对应 CLI（backup.ts）与 backup-encryption.ts（age 加密/公钥/sidecar）
   http/              路由注册、错误处理、静态资源、安全头、requestMeta 信任模型、Cloudflare Access 说明；
                      chatbots.ts 管理 API、bot-webhook.ts 公开入口、mcbot.ts 只读/控制路由
@@ -142,7 +142,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 ## 6. 数据库与数据
 
-- schema 迁移集中在 `server/src/db.ts` 的 `MIGRATIONS`，启动时按 `meta.schema_version` 顺序执行；迁移只追加，当前 schema **v18**（`audit_write_failures` 单行诊断表，不改既有表）。
+- schema 迁移集中在 `server/src/db.ts` 的 `MIGRATIONS`，启动时按 `meta.schema_version` 顺序执行；迁移只追加，当前 schema **v19**（v18 为 `audit_write_failures`；v19 追加可空 `alert_events.dedupe_key` 与部分唯一索引，不改既有列）。
   备份加密/异地副本通过归档名后缀、sidecar 与 `manifest_json` 识别，不修改列/表；群共享记忆归属迁移复用现有 `chatbot_memory_items` 行（一次性 meta 标记 `chatbot_group_memory_owner_migrated_v1`）。
   数据库 schema 高于程序支持版本时拒绝启动。
 - 时间统一存 ISO 8601 UTC 字符串；展示用 `Asia/Shanghai`。
@@ -157,7 +157,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   `chatbot_memory_items` 按 `(chatbot_id,user_id,kind,mem_key)` 唯一保存结构化记忆（群 scope 为 `group:<targetExternalId>`，群 key 前缀为稳定 `<member_openid>:`，显示名只存 value；无法映射的旧键加 `legacy:`）、`chatbot_memory_state` 按 `(chatbot_id,user_id)` 保存 `memory_enabled` 与 `legacy_migrated_at`；
   `chatbot_group_roles` 按 `target_id` 保存群聊目标共享角色卡（名字 1–32、正文 1–1000，可停用；FK 级联删除）；
   `chatbot_inbound_targets` 按 `(chatbot_id,target_external_id,user_id)` 记录最近入站目标/用户名/类型/时间（不存正文）。QQ AppSecret 不落在日志/API 响应。
-- v0.8.0/v0.8.1 mcbot 不新增表/列（schema v18）：告警游标只写 `meta.mcbot.event_cursor`（`{bootId,lastEventId,lastTs}`）；mcbot 事件/聊天只在服务端内存（≤100 条且 ≤512 KiB，不落库）；mcbot 告警事件复用 `alert_events`（`status='event'`），不写 `alert_state`；告警写入失败时游标停在上一条已处理事件并在下一轮重试（v0.8.1），**无事件幂等键**（残余，计划 schema v18 下一 minor）。
+- v0.8.0/v0.8.1 mcbot 不新增表/列（当时 schema v18）：告警游标只写 `meta.mcbot.event_cursor`（`{bootId,lastEventId,lastTs}`）；mcbot 事件/聊天只在服务端内存（≤100 条且 ≤512 KiB，不落库）；mcbot 告警事件复用 `alert_events`（`status='event'`），不写 `alert_state`；告警写入失败时游标停在上一条已处理事件并在下一轮重试。v1.0.7 的 schema v19 为这些事件补上 `dedupe_key`。
 - 审计只记录元数据，不记录文件内容、密码、TOTP、Cookie、Authorization；单条 actor≤64、target≤256、detail≤4 KiB。
 
 ## 7. 完成定义（DoD）
@@ -182,7 +182,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 - Pi：`antifield@192.0.2.10` 直连（TEST-NET 占位；实际值见 `.local/DEPLOYMENT.md`）；WiFi 示例 `198.51.100.10` 与 PC 不通（AP 隔离）；直连 SSH 偶发超时，脚本需重试。
 - 校园网有 Portal 认证（占位 `https://portal.<domain>`；实际端点见 `.local`）；树莓派重启后认证可能失效，表现为 Cloudflare 7844 出站阻断、tunnel 1033/公网 530；需从 Pi 出口重新完成认证，再 `systemctl reset-failed cloudflared && systemctl restart cloudflared`。
 - Pi 上 Node 为 `/usr/local/bin/node`（v26.12.1，世界可执行；旧二进制保留 `/usr/local/bin/node.v26.11.1`）；npm 指向 `/home/antifield/.nvm`（12.2.0），部署时以 root 使用。
-- OpenCode **v2.2.0**（v1.0.2；升级/回滚/兼容矩阵见 `docs/app/DEPLOY.md` §3.2；升级前必须备份 v2.1.4 二进制/data/env/unit/MCP 配置）：`127.0.0.1:4096`，Basic 用户名 `opencode`，密码来自 `/etc/opencode/opencode.env` 的 `OPENCODE_PASSWORD`（应用 env 同名键必须同步；轮换后重启 OpenCode 与 antifieldcloud）。**版本以运行中 `/api/info` 为准，不以 CLI `--version` 为准**：`opencode upgrade` 只替换磁盘二进制，不重启服务；v2.2.0 升级曾出现 CLI 2.2.0、Web/API 仍 2.1.4（`/proc/<pid>/exe` 标记 deleted），`systemctl restart opencode` 后修正；`smoke.ps1` 已校验 `/api/info` 版本与进程 exe 非 deleted。
+- OpenCode 运行中版本为 **v2.2.5**（2026-11-04，`/api/info`，进程 exe 非 deleted）。升级、矩阵与回滚见 `docs/app/DEPLOY.md` §3.2。回滚目标是本次升级前的 v2.2.0 备份 timestamp `20261104T062115Z`，不是 2026-10-28 的 v2.1.4 备份。`opencode.json` 没有 `integration.use` 拆分，本次未改配置，也未改 `compaction.buffer`；全局 `permission.bash/edit/webfetch/write` 仍为 `ask`。监听 `127.0.0.1:4096`，Basic 用户名 `opencode`，密码来自 `/etc/opencode/opencode.env` 的 `OPENCODE_PASSWORD`（应用 env 同名键必须同步；轮换后重启 OpenCode 与 antifieldcloud）。**版本以运行中 `/api/info` 为准，不以 CLI `--version` 为准**：`opencode upgrade` 只替换磁盘二进制，不重启服务；2.2.0 升级曾出现 CLI 已新、Web/API 仍旧（`/proc/<pid>/exe` 标记 deleted），`systemctl restart opencode` 后修正；`smoke.ps1` 校验 `/api/info` 版本与进程 exe 非 deleted。2.2.5 把名为 `bash` 的工具调用映射为 `shell`。本次矩阵未观察到 `deny *` 被绕过，未加显式 bash/shell deny。
 - Minecraft：Paper 26.1.2，RCON `127.0.0.1:25575`，密码在 `server.properties`（32 位随机），服务器语言中文，输出含 `§` 颜色码需剥离；RCON 仍监听所有接口，nftables 仅放行 loopback。
 - Pi 已启用 memory cgroup；`antifieldcloud-health.timer` 每 60s 写 `/run/antifieldcloud/pi-health.json`；`age` 与（启用异地副本时）`rclone` 已安装；`unattended-upgrades` 已安装。
 - 备份：应用归档为两阶段 pending/ack（未确认不删）；PC 任务参数为实际 `-PiHost/-BackupRoot`，ACL 收紧；密钥包 Pi 端 `KEEP=2` 滚动保留，PC 不再立即删除远端密钥包。
@@ -205,13 +205,13 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   **连续外发：生产固定 1000ms 最小间隔（按 Bot/AppID 串行，代码内 `DEFAULT_SEND_INTERVAL_MS`；无 env 开关；测试注入 0）。**
   搜索：`CHATBOT_SEARCH_ENABLED/URL/AUTO/MODE/MAX_RESULTS/TIMEOUT_SECONDS/MAX_SNIPPET_CHARS/LANGUAGE/SAFESEARCH/ENGINES/RATE_PER_HOUR`（`CHATBOT_SEARCH_MODE` 仅 mcp/prefetch，非法值拒绝启动）。
   上述键均纳入 `bootstrap-env.sh` MANAGED_KEYS；生产 env 的废弃键清理用 `--force --prune-unknown`（先 `cp -a` 备份）。`CHATBOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 QQ AppSecret 只能重新录入。
-- mcbot 环境变量（v0.8.0 引入，v0.8.1 加固；默认关闭）：`MCBOT_ENABLED=false`、`MCBOT_URL=http://127.0.0.1:3010`（启用时必须 loopback + http(s) 且仅根地址，拒绝 userinfo/路径/查询/片段）、`MCBOT_READ_TOKEN=`、`MCBOT_CONTROL_TOKEN=`（root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN` 同步，`--check` 只比较；同目录临时文件 + `mv` 原子替换；控制为空 = 只读，`/say` 也 503）、`MCBOT_TIMEOUT_MS=2500`（500–10000）、`MCBOT_POLL_MS=5000`（2000–60000）、`MCBOT_ALERTS_ENABLED=true`；上述键均纳入 `bootstrap-env.sh` MANAGED_KEYS。mcbot **v1.0.6**（最低 v0.6.0，契约 v1，独立 systemd 服务，仅 `127.0.0.1:3010`，不经 Cloudflare/nftables 对外；v0.6.1 逐行中和行首 `/`）；`smoke.ps1 -ExpectedMcbotVersion 1.0.6`（最低兼容 0.6.0）校验服务 active + `/healthz.version` + `contractVersion=1`，未启用用 `-SkipMcbot`。v1.0.6 新增 `PATH_*` 九键：`PATH_PLANNER_ENABLED`、`PATH_PLANNER_MAX_NODES`、`PATH_PLANNER_TIMEOUT_MS`、`PATH_MAX_REPLANS`、`PATH_TELEPORT_FALLBACK`、`PATH_OUTSIDE_SAFE_RADIUS`、`PATH_AI_ENABLED`、`PATH_AI_TIMEOUT_MS`、`PATH_AI_COOLDOWN_MS`。
-- v1.0.2/v1.0.3 AI 自主环境变量（默认关闭）：`AUTONOMY_ENABLED=false`、`AUTONOMY_MAX_MINUTES=20`、`AUTONOMY_MAX_TOOL_CALLS=12`、`AUTONOMY_MAX_FAILURES=2`、`AUTONOMY_GOAL_MAX_CHARS=200`、`AUTONOMY_DECISION_TIMEOUT_MS=180000`、`AUTONOMY_MCP_WARMUP_MS=3000`、`AUTONOMY_SCAN_RADIUS=16`、`AUTONOMY_SCAN_MAX_BLOCKS=48`、`AUTONOMY_SCAN_BLOCKS=chest,trapped_chest,barrel,ender_chest,*_bed,water,crafting_table,furnace,blast_furnace,smoker,wheat,carrots,potatoes,beetroots,*_log,*_ore`、`AUTONOMY_CHEST_READ_ENABLED=true`、`AUTONOMY_CHEST_PATH_TIMEOUT_MS=12000`、`AUTONOMY_EAT_BELOW=18`、`AUTONOMY_ACTION_COOLDOWN_MS=5000`、`AUTONOMY_EVENT_DEBOUNCE_MS=30000`、`AUTONOMY_MAX_REPROMPTS=6`、`AUTONOMY_TASKS=fishing,farming,woodcutting,mining,forest,sleep,patrol,guard,escort,explore,clearing`；生产当前为 v1.0.6，自主会话已启用（仅主人显式启动；代码默认仍为 false）；v1.0.6 的寻路 AI 默认在 OpenCode 配置可用时开启，可用 `PATH_AI_ENABLED=false` 单独关闭。
+- mcbot 环境变量（v0.8.0 引入，v0.8.1 加固；默认关闭）：`MCBOT_ENABLED=false`、`MCBOT_URL=http://127.0.0.1:3010`（启用时必须 loopback + http(s) 且仅根地址，拒绝 userinfo/路径/查询/片段）、`MCBOT_READ_TOKEN=`、`MCBOT_CONTROL_TOKEN=`（root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN` 同步，`--check` 只比较；同目录临时文件 + `mv` 原子替换；控制为空 = 只读，`/say` 也 503）、`MCBOT_TIMEOUT_MS=2500`（500–10000）、`MCBOT_POLL_MS=5000`（2000–60000）、`MCBOT_ALERTS_ENABLED=true`；上述键均纳入 `bootstrap-env.sh` MANAGED_KEYS。mcbot **v1.0.7**（最低 v0.6.0，契约 v1，独立 systemd 服务，仅 `127.0.0.1:3010`，不经 Cloudflare/nftables 对外；v0.6.1 逐行中和行首 `/`）；`smoke.ps1 -ExpectedMcbotVersion 1.0.7`（最低兼容 0.6.0）校验服务 active + `/healthz.version` + `contractVersion=1`，未启用用 `-SkipMcbot`。生产进程在本窗口部署前仍为 v1.0.6。v1.0.6 新增 `PATH_*` 九键：`PATH_PLANNER_ENABLED`、`PATH_PLANNER_MAX_NODES`、`PATH_PLANNER_TIMEOUT_MS`、`PATH_MAX_REPLANS`、`PATH_TELEPORT_FALLBACK`、`PATH_OUTSIDE_SAFE_RADIUS`、`PATH_AI_ENABLED`、`PATH_AI_TIMEOUT_MS`、`PATH_AI_COOLDOWN_MS`。
+- v1.0.2/v1.0.3 AI 自主环境变量（默认关闭）：`AUTONOMY_ENABLED=false`、`AUTONOMY_MAX_MINUTES=20`、`AUTONOMY_MAX_TOOL_CALLS=12`、`AUTONOMY_MAX_FAILURES=2`、`AUTONOMY_GOAL_MAX_CHARS=200`、`AUTONOMY_DECISION_TIMEOUT_MS=180000`、`AUTONOMY_MCP_WARMUP_MS=3000`、`AUTONOMY_SCAN_RADIUS=16`、`AUTONOMY_SCAN_MAX_BLOCKS=48`、`AUTONOMY_SCAN_BLOCKS=chest,trapped_chest,barrel,ender_chest,*_bed,water,crafting_table,furnace,blast_furnace,smoker,wheat,carrots,potatoes,beetroots,*_log,*_ore`、`AUTONOMY_CHEST_READ_ENABLED=true`、`AUTONOMY_CHEST_PATH_TIMEOUT_MS=12000`、`AUTONOMY_EAT_BELOW=18`、`AUTONOMY_ACTION_COOLDOWN_MS=5000`、`AUTONOMY_EVENT_DEBOUNCE_MS=30000`、`AUTONOMY_MAX_REPROMPTS=6`、`AUTONOMY_TASKS=fishing,farming,woodcutting,mining,forest,sleep,patrol,guard,escort,explore,clearing`；生产进程在本窗口部署前仍为 v1.0.6，自主会话已启用（仅主人显式启动；代码默认仍为 false）。v1.0.7 把寻路兜底送进既有重决策（30 秒去重、每会话最多 6 次），不新增工具。寻路 AI 默认在 OpenCode 配置可用时开启，可用 `PATH_AI_ENABLED=false` 单独关闭。
 - 备份/灾备 env：`BACKUP_IMPORT_RETENTION_DAYS=90`（0=永久）、`ALERT_REPEAT_HOURS=24`（0=关闭；兼容键 `ALERT_COOLDOWN_MINUTES` 仍可解析）。
 - Bot 公开入口：`POST /api/chatbot/webhook/:botId`（无 session/CSRF，按平台签名鉴权）；Cloudflare Access 必须对 `/api/chatbot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` 做 bypass，否则平台回调/健康检查/公开分享会被边缘拦截。`CHATBOT_ENABLED=false` 时该路径返回 404。
 - Bot 平台注册（QQ 开放平台）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；仅 QQ 官方 Bot。
 - 测试证据边界：平台适配/Chat/记忆/图片/自检/诊断/备份 tar/告警投递以进程内 mock/夹具为主，未做真实 QQ 平台限流/签名漂移/故障负路径；真实 QQ 消息验收记录见 `docs/app/ACCEPTANCE.md`。
-- Windows 世界拉取（`scripts/world-pull.ps1`，周度）已安装 `AntifieldCloud-World-Pull`（周日 12:00）并手动验证成功；恢复演练（`scripts/drill.ps1`）保持手动/季度；异地副本按用户决定保持关闭、未配置 remote。`install-backup-task.ps1` 安装每日应用归档拉取任务（可选 offsite）。
+- Windows 世界拉取（`scripts/world-pull.ps1`，周度）任务名 `AntifieldCloud-World-Pull`（周日 12:00）。`install-backup-task.ps1` 把脚本复制到 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1` 再注册，`-File` 指向该副本。`-BackupRoot` 与每日任务相同（本机 `D:\Backups`，世界归档在 `world\`）。任务名与 `%LOCALAPPDATA%\AntifieldCloud` 不改。恢复演练（`scripts/drill.ps1`）保持手动/季度；异地副本按用户决定保持关闭、未配置 remote。现有任务在本窗口本地门禁通过后用管理员权限改到副本路径，不为改路径再拉世界归档。
 - Cloudflare：zone 使用占位 `example.com`；tunnel 名称 `pi`；`mc.<domain>` CNAME 到 SakuraFRP，**不要改**；`app/ai` 的 DNS 由用户手动添加；Access 主应用 + 4 个 bypass + service token 已在生产配置（见 `docs/app/DEPLOY.md` §5.2），`ai` 主机另有 Access 应用（Owner allow + Smoke service token；Free 套餐无自定义 WAF），service token 只保存在 gitignored `.local/cf-access.env`；严格 CSP 会拦截 Web Analytics/Challenge 注入，需后台关闭自动注入或接受报错。
 - 旧项目 PiForge 的残留（sudoers 注释、禁用的计划任务）保持原样，不继承、不清理。
 - 公开仓库中的域名/IP/网段/备份路径均为示例/占位值；本机实际部署信息见 `.local/DEPLOYMENT.md`（gitignored，不提交）。
@@ -222,7 +222,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 2. 交互式运行 provisioning，设置密码、扫描 TOTP、保存恢复码。
 3. 安装/重装 Windows 每日应用归档计划任务（`install-backup-task.ps1`，需管理员 PowerShell）；仓库更新后必须重装一次，刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记。**当前现状（已完成，2026-10-30 v1.0.6）**：已通过 UAC 提权重装——`backup-task.json` appVersion=1.0.6、installedAt `2026-10-30T14:53:50Z`、backupRoot `D:\Backups`、scriptSha256 与仓库一致、任务 Ready；手动运行 `LastTaskResult=0`，拉取 `snapshot-20261030T145409822Z-inc.tar.gz`（463351 bytes，secrets=ok）；恢复演练 `20261030T145445Z` 通过（full + 14 inc，schema 18）；smoke 29/0/0/2。
 4. 离线保存 age 私钥（密钥包与备份整包加密各一套，互不复用）；把 `ALERT_WEBHOOK_URL` 写入 env 后重启应用。
-5. Windows 周度世界拉取任务（`scripts/world-pull.ps1`）已安装 `AntifieldCloud-World-Pull`（周日 12:00）并手动验证；恢复演练仍按 `scripts/drill.ps1` 手动/季度执行（schema 期望值默认来自 `deploy/tool-versions.json`）；异地副本按用户决定保持关闭。
+5. Windows 周度世界拉取与每日任务一起由 `install-backup-task.ps1` 安装（需管理员 PowerShell）。任务名 `AntifieldCloud-World-Pull`（周日 12:00），`-File` 为 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`，`BackupRoot` 与每日任务相同（本机 `D:\Backups`）。恢复演练仍按 `scripts/drill.ps1` 手动/季度执行（schema 期望值默认来自 `deploy/tool-versions.json`）；异地副本按用户决定保持关闭。
 6. 应用新 nftables 规则前，确认当前 SSH 来源在允许网段内（模板为 TEST-NET 占位，先替换为实际网段，否则会锁死）；保留物理键鼠/已建立 SSH 作为回滚通道。
 7. 备份整包加密启用（默认关闭）：离线生成独立 age 密钥 → Pi 写公钥（root、组/其他不可写）→ 用私钥完成一次 `age -d` 解密与 `drill.ps1 -AgeIdentityPath` 演练 → 设 `BACKUP_ARCHIVE_ENCRYPTION=true` 并重启 → 下一次 prepare 生成 `.age` → PC 拉取/ack → 再演练。回滚：关开关恢复明文，已生成 `.age` 保留（仅 PC 可解密）。
 8. 异地副本启用（默认关闭）：PC 安装配置 rclone remote/凭据 → `install-backup-task.ps1 -InstallOffsiteTask -OffsiteRemote …` → 手跑一次确认状态 JSON 回写与 `plaintextSkipped=0` → 确认告警阈值 `ALERT_OFFSITE_MAX_AGE_HOURS`。

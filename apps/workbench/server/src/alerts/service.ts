@@ -78,6 +78,11 @@ export interface AlertDeps {
   serviceUnits?: Record<string, string>
   /** unknown 连续评估阈值（默认 3，测试可调小）。 */
   unknownThreshold?: number
+  /**
+   * mcbot 轮询健康。进程已退出仍由 systemd 单元判断；
+   * 进程在但 stale 时把服务状态覆盖为 inactive。未注入时不改 systemd 结果。
+   */
+  mcbotHealth?: () => McbotHealth | null
   /** 事件落库后通知 Chatbot 平台（不阻塞/不影响告警主流程）。 */
   notifyEvent?: (event: {
     id: number
@@ -266,12 +271,48 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10
 }
 
+/** mcbot 轮询健康：只用于 service_down，不把上游 alert 事件升成 firing。 */
+export interface McbotHealth {
+  enabled: boolean
+  reachable: boolean
+  /** 连续失败已超过 3 个轮询周期。单次失败为 false，不触发告警。 */
+  stale: boolean
+}
+
 export interface ExternalAlertInput {
   event: string
   severity: AlertSeverity
   title: string
   message: string
   details: Record<string, unknown>
+  /**
+   * 外部事件幂等键。同一非空键只插入一次，不再 webhook、不再入 Bot 队列。
+   * 空值保持 NULL，与历史行一样不参与唯一约束。
+   */
+  dedupeKey?: string | null
+}
+
+const DEDUPE_KEY_MAX = 200
+
+/** C0 与 DEL。用码点判断，避免正则里的控制字符触发 lint。 */
+function hasControlChars(value: string): boolean {
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0
+    if (code <= 0x1f || code === 0x7f) return true
+  }
+  return false
+}
+
+/** 规范化幂等键：空白/控制字符视为无键，超长截断。不拒绝告警本身。 */
+export function normalizeDedupeKey(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed || hasControlChars(trimmed)) return null
+  return trimmed.slice(0, DEDUPE_KEY_MAX)
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return error instanceof Error && /UNIQUE constraint failed/i.test(error.message)
 }
 
 export class AlertService {
@@ -448,6 +489,7 @@ export class AlertService {
     } catch {
       return this.unknown('service_down', '服务状态', '无法读取服务状态')
     }
+    states = this.applyMcbotPollHealth(states)
     const entries = Object.entries(states)
     const known = entries.filter(([, state]) => state !== 'unknown')
     const down = known.filter(([, state]) => state === 'inactive').map(([name]) => name)
@@ -461,6 +503,18 @@ export class AlertService {
       message: firing ? `未运行：${down.join('、')}` : '所有受监控服务运行正常',
       details: { services: states, down },
     }
+  }
+
+  /**
+   * 轮询已过期时把 mcbot 标为未运行，与 systemd inactive 走同一条 service_down。
+   * stale=false（含从未成功的启动宽限、单个轮询间隔内的失败）不覆盖，避免抖动。
+   * 不新增事件名，也不把上游 alert 写入 alert_state。
+   */
+  private applyMcbotPollHealth(states: Record<string, ServiceState>): Record<string, ServiceState> {
+    const health = this.deps.mcbotHealth?.() ?? null
+    if (!health?.enabled || !health.stale) return states
+    if (states.mcbot === 'inactive') return states
+    return { ...states, mcbot: 'inactive' }
   }
 
   private async defaultServiceStates(): Promise<Record<string, ServiceState>> {
@@ -1163,6 +1217,11 @@ export class AlertService {
    */
   recordExternal(input: ExternalAlertInput): number | null {
     if (!this.config.alertsEnabled) return null
+    const dedupeKey = normalizeDedupeKey(input.dedupeKey)
+    if (dedupeKey) {
+      const existing = this.findExternalByDedupe(dedupeKey)
+      if (existing !== null) return existing
+    }
     const createdAt = this.deps.now().toISOString()
     const event: AlertEventRow = {
       id: 0,
@@ -1176,15 +1235,31 @@ export class AlertService {
       delivered_at: null,
       delivery_error: null,
     }
-    const result = this.db
-      .prepare(
-        `INSERT INTO alert_events (event, severity, status, title, message, details_json, created_at, delivered_at, delivery_error)
-         VALUES (?, ?, 'event', ?, ?, ?, ?, NULL, NULL)`,
-      )
-      .run(event.event, event.severity, event.title, event.message, event.details_json, event.created_at)
-    event.id = Number(result.lastInsertRowid)
+    try {
+      const result = this.db
+        .prepare(
+          `INSERT INTO alert_events (event, severity, status, title, message, details_json, created_at, delivered_at, delivery_error, dedupe_key)
+           VALUES (?, ?, 'event', ?, ?, ?, ?, NULL, NULL, ?)`,
+        )
+        .run(event.event, event.severity, event.title, event.message, event.details_json, event.created_at, dedupeKey)
+      event.id = Number(result.lastInsertRowid)
+    } catch (error) {
+      if (dedupeKey && isUniqueViolation(error)) {
+        const existing = this.findExternalByDedupe(dedupeKey)
+        if (existing !== null) return existing
+      }
+      throw error
+    }
     void this.deliverExternal(event)
     return event.id
+  }
+
+  /** 同一幂等键的已有事件 id；没有则 null。命中时不得再次投递。 */
+  private findExternalByDedupe(dedupeKey: string): number | null {
+    const row = this.db.prepare('SELECT id FROM alert_events WHERE dedupe_key = ?').get(dedupeKey) as
+      | { id: number }
+      | undefined
+    return row ? Number(row.id) : null
   }
 
   /** 外部事件的后台投递：webhook 与 Chatbot 通知互不阻断，失败只记录脱敏日志。 */

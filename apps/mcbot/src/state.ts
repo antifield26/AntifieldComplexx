@@ -235,6 +235,7 @@ export class RuntimeState {
     attempts: 0,
     lastFailureKind: null,
     lastFallback: null,
+    lastFallbackReason: null,
     aiUsed: false,
     updatedAt: null
   }

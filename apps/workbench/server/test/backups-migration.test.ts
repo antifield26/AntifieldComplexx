@@ -71,6 +71,19 @@ test('schema v2 旧库升级到 v5：追加列、旧行 origin=pi、restore_plan
       );
       INSERT INTO backup_archives (name, mode, created_at, sha256, size, file_count, pulled_at, acked_at, deleted_at)
         VALUES ('snapshot-20260101T000000Z-full.tar.gz', 'full', '2026-01-01T00:00:00.000Z', '${'a'.repeat(64)}', 1024, 1, NULL, NULL, NULL);
+      -- schema 2 已包含告警表（建表在更早的迁移）。夹具补上，供 v19 追加 dedupe_key。
+      CREATE TABLE alert_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        status TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        details_json TEXT,
+        created_at TEXT NOT NULL,
+        delivered_at TEXT,
+        delivery_error TEXT
+      );
     `)
     old.close()
 
@@ -78,6 +91,7 @@ test('schema v2 旧库升级到 v5：追加列、旧行 origin=pi、restore_plan
     try {
       const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
       assert.equal(version.value, String(SUPPORTED_SCHEMA_VERSION))
+      assert.ok(columnsOf(db, 'alert_events').includes('dedupe_key'))
       const columns = columnsOf(db, 'backup_archives')
       for (const column of ['verified_at', 'origin', 'manifest_json', 'last_error']) {
         assert.ok(columns.includes(column), `backup_archives 缺少列 ${column}`)

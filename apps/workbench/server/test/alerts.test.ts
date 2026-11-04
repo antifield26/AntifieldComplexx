@@ -706,3 +706,123 @@ test('recordExternal：ALERTS_ENABLED=false 时不写库、不投递、不通知
     fx.close()
   }
 })
+
+test('recordExternal：同一 dedupe_key 不新增行、不重复通知；空键仍各自写入', async () => {
+  const notified: number[] = []
+  const fx = alertFixture({
+    deps: { notifyEvent: (event) => notified.push(event.id) },
+  })
+  const base = {
+    event: 'mcbot_low_health',
+    severity: 'warning' as const,
+    title: 'mcbot 血量偏低',
+    message: '血量低',
+    details: { source: 'mcbot', mcbotEventId: 'b1-1', mcbotType: 'low_health' },
+  }
+  try {
+    const first = fx.alerts.recordExternal({ ...base, dedupeKey: 'mcbot:boot:b1-1' })
+    const second = fx.alerts.recordExternal({ ...base, dedupeKey: 'mcbot:boot:b1-1' })
+    assert.equal(second, first)
+    const other = fx.alerts.recordExternal({ ...base, dedupeKey: 'mcbot:boot:b1-2' })
+    assert.notEqual(other, first)
+    const plain = fx.alerts.recordExternal(base)
+    const plainAgain = fx.alerts.recordExternal({ ...base, dedupeKey: ' \n ' })
+    assert.notEqual(plain, plainAgain)
+    const rows = fx.db
+      .prepare('SELECT id, dedupe_key, status FROM alert_events ORDER BY id ASC')
+      .all() as unknown as { id: number; dedupe_key: string | null; status: string }[]
+    assert.equal(rows.length, 4)
+    assert.equal(rows[0]?.dedupe_key, 'mcbot:boot:b1-1')
+    assert.equal(rows[1]?.dedupe_key, 'mcbot:boot:b1-2')
+    assert.equal(rows[2]?.dedupe_key, null)
+    assert.equal(rows[3]?.dedupe_key, null)
+    assert.ok(rows.every((row) => row.status === 'event'))
+    const stateCount = (fx.db.prepare('SELECT COUNT(*) AS c FROM alert_state').get() as { c: number }).c
+    assert.equal(stateCount, 0, '外部告警不得写入 alert_state')
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    assert.deepEqual(notified, [first, other, plain, plainAgain])
+  } finally {
+    fx.close()
+  }
+})
+
+const ACTIVE_SERVICES = {
+  minecraft: 'active' as const,
+  cloudflared: 'active' as const,
+  opencode: 'active' as const,
+  mcbot: 'active' as const,
+}
+
+test('mcbot 单次不可达不触发 service_down；过期后 firing，恢复后 resolved', async () => {
+  let health = { enabled: true, reachable: false, stale: false }
+  const fx = alertFixture({
+    deps: {
+      serviceStates: async () => ({ ...ACTIVE_SERVICES }),
+      mcbotHealth: () => health,
+    },
+  })
+  try {
+    await fx.alerts.evaluateOnce()
+    await fx.alerts.evaluateOnce()
+    const early = events(fx).filter((row) => row.event === 'service_down' && row.status === 'firing')
+    assert.equal(early.length, 0, '一个轮询间隔内的失败不得抖动成 firing')
+
+    health = { enabled: true, reachable: false, stale: true }
+    await fx.alerts.evaluateOnce()
+    const firing = events(fx).filter((row) => row.event === 'service_down' && row.status === 'firing')
+    assert.equal(firing.length, 1)
+    const detail = fx.db
+      .prepare("SELECT details_json FROM alert_events WHERE event = 'service_down' AND status = 'firing'")
+      .get() as { details_json: string }
+    const parsed = JSON.parse(detail.details_json) as { down: string[]; services: Record<string, string> }
+    assert.deepEqual(parsed.down, ['mcbot'])
+    assert.equal(parsed.services.mcbot, 'inactive')
+    assert.equal(
+      (fx.db.prepare("SELECT event FROM alert_state WHERE event = 'mcbot'").get() as unknown) ?? null,
+      null,
+      '不得把 mcbot 写成独立的伪装告警路径',
+    )
+
+    const externalId = fx.alerts.recordExternal({
+      event: 'mcbot_low_health',
+      severity: 'warning',
+      title: 'mcbot 血量偏低',
+      message: '血量低',
+      details: { source: 'mcbot' },
+      dedupeKey: 'mcbot:boot:health-1',
+    })
+    assert.equal(typeof externalId, 'number')
+    const external = fx.db.prepare('SELECT status FROM alert_events WHERE id = ?').get(externalId) as { status: string }
+    assert.equal(external.status, 'event', '上游 alert 不得升成 firing')
+
+    health = { enabled: true, reachable: true, stale: false }
+    await fx.alerts.evaluateOnce()
+    const resolved = events(fx).filter((row) => row.event === 'service_down' && row.status === 'resolved')
+    assert.equal(resolved.length, 1)
+    const state = fx.db.prepare("SELECT status FROM alert_state WHERE event = 'service_down'").get() as { status: string }
+    assert.equal(state.status, 'ok')
+  } finally {
+    fx.close()
+  }
+})
+
+test('mcbot 进程不在时不等待轮询过期，直接进入 service_down', async () => {
+  const fx = alertFixture({
+    deps: {
+      serviceStates: async () => ({ ...ACTIVE_SERVICES, mcbot: 'inactive' as const }),
+      mcbotHealth: () => ({ enabled: true, reachable: false, stale: false }),
+    },
+  })
+  try {
+    await fx.alerts.evaluateOnce()
+    const firing = events(fx).filter((row) => row.event === 'service_down' && row.status === 'firing')
+    assert.equal(firing.length, 1)
+    const detail = JSON.parse(
+      (fx.db.prepare("SELECT details_json FROM alert_events WHERE event = 'service_down'").get() as { details_json: string })
+        .details_json,
+    ) as { down: string[] }
+    assert.ok(detail.down.includes('mcbot'))
+  } finally {
+    fx.close()
+  }
+})

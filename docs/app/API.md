@@ -454,7 +454,8 @@ RCON 不可用：`502 rcon_unavailable`。
 - Webhook 请求体 `{source,version,event,severity,status,title,message,details,at}`；可选 HMAC 头 `x-antifieldcloud-signature: sha256=<hex>`；10s 超时、最多 3 次尝试。
 - 告警条件：磁盘、温度、内存（默认 90%）、服务、备份超期、pending 备份、备份密钥包、MC、欠压（health probe JSON）、世界备份/世界拉取/恢复演练超期与异地副本超期（`offsite_overdue`）；同状态去重/冷却，恢复时发 resolved。`status` 可能为 `unknown`（连续 3 次数据源不可用后降级并产生一次事件）；`alert_events` 保留 90 天。
   `config` 含 `offsiteMaxAgeHours`（小时，0 表示关闭；状态文件缺失/未配置时该条件不进入列表，不误报）；`status` 字段另含世界备份/拉取/演练阈值。
-- 外部事件告警（v0.8.0，mcbot）：上游 `alert` 事件由服务端映射为 `status='event'` 写入 `alert_events`，**不写 `alert_state`、不参与 firing/resolved 状态机、不产生恢复通知**；`severity`：已知类型（low_health/chest_full/defense_retreat → warning，task_failed/disconnected → critical），未知类型上游 `severity='error'` 为 critical，否则 warning；`event` 名为 `mcbot_low_health`/`mcbot_task_failed`/`mcbot_disconnected`/`mcbot_chest_full`/`mcbot_defense_retreat`/`mcbot_alert`（未知），`details` 含 `source:"mcbot"`、`mcbotEventId`、`mcbotType` 与清洗后的上游 details（深度≤2、键≤20、数组≤20、字符串≤300）。写入后异步复用 webhook 投递与 Bot 通知，不阻塞请求；`ALERTS_ENABLED=false` 时不写库/不投递。
+- 外部事件告警（v0.8.0，mcbot）：上游 `alert` 事件由服务端映射为 `status='event'` 写入 `alert_events`，**不写 `alert_state`、不参与 firing/resolved 状态机、不产生恢复通知**；`severity`：已知类型（low_health/chest_full/defense_retreat → warning，task_failed/disconnected → critical），未知类型上游 `severity='error'` 为 critical，否则 warning；`event` 名为 `mcbot_low_health`/`mcbot_task_failed`/`mcbot_disconnected`/`mcbot_chest_full`/`mcbot_defense_retreat`/`mcbot_alert`（未知），`details` 含 `source:"mcbot"`、`mcbotEventId`、`mcbotType` 与清洗后的上游 details（深度≤2、键≤20、数组≤20、字符串≤300）。写入后异步复用 webhook 投递与 Bot 通知，不阻塞请求；`ALERTS_ENABLED=false` 时不写库/不投递。schema v19 起 mcbot 告警带 `dedupe_key=mcbot:<bootId>:<eventId>`（各段去空白、拒绝控制字符、截断后拼接）。同一键再次写入返回已有 id，不新增行、不重复 webhook、不重复入队。空键或纯空白键视为无键，各自插入且 `dedupe_key` 为 NULL。
+- 服务条件在 `MCBOT_ENABLED=true` 时包含 mcbot。systemd 为 `inactive`/`failed`，或轮询快照 `enabled && stale`，都记为 inactive 并走既有 `service_down`。单次失败且 `stale=false` 不触发。恢复后写 `resolved`，`alert_state` 回到 `ok`。这不把上游 `alert` 升格为 firing。
 
 ## 11. 备份管理 / 文件级恢复
 
@@ -738,9 +739,9 @@ ChatbotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|proje
 
 `chatbot_disabled`（503）、`chatbot_key_missing`（503）、`chatbot_ai_tool_isolation_unavailable`（503，AI 工具隔离不可用且发送工具启用时新 Chat 被拒绝，10 分钟窗口后重试）、`chatbot_key_invalid`（500，仅启动/配置阶段）、`invalid_chatbot_config`（400，含非 QQ 平台/字段校验失败）、`publish_confirm_required`（400）、`publish_text_too_long`（400，发布文本超过 2000 字符）、`totp_required`（400）、`invalid_code`（401）、`conflict`（409，目标重复）、`rate_limited`（429）、`not_found`（404）、`invalid_request`（400，静默时段/事件结果非法）、`chatbot_health_unsupported`（400，适配器不支持连接自检）。AI 图片内部错误码 `chatbot_ai_image_unsupported`/`chatbot_ai_image_invalid` 只用于日志/降级，不作为管理端点响应。Webhook 额外使用 `invalid_signature`、`stale_signature`、`invalid_payload`、`missing_fields`。删除 `chat_trigger_unsupported` 与媒体相关错误码（`too_many_media`/`media_too_large`/`media_total_too_large`/`qq_media_unsupported`）。
 
-## 15. mcbot Bot 对接（v0.8.0 引入；v1.0.2 自主模式；v1.0.3 环境/动作工具；v1.0.5 在线模式/目标/自动生存；v1.0.6 寻路状态；默认关闭）
+## 15. mcbot Bot 对接（v0.8.0 引入；v1.0.2 自主模式；v1.0.3 环境/动作工具；v1.0.5 在线模式/目标/自动生存；v1.0.6 寻路状态；v1.0.7 成功时间与兜底原因；默认关闭）
 
-mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。上游契约为 mcbot **v1.0.6**（最低兼容 v0.6.0，`contractVersion=1`）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
+mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。上游契约为 mcbot **v1.0.7**（最低兼容 v0.6.0，`contractVersion=1`）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
 
 ### 通用语义
 
@@ -767,6 +768,7 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
   "version": "0.6.1",
   "contractVersion": 1,
   "lastPollAt": "2026-10-27T09:00:00.000Z",
+  "lastSuccessAt": "2026-10-27T09:00:00.000Z",
   "error": null,
   "status": { "version": "0.6.1", "uptimeSec": 123, "state": "connected", "minecraft": { "connected": true, "username": "lofii" }, "player": { "health": 20, "food": 20 }, "server": { "reachable": true, "online": 1, "max": 6 }, "task": { "enabled": true, "active": false, "name": null, "state": "idle", "pendingResume": null, "queue": [] }, "admin": { "rcon": true, "tps": { "one": 19.9, "five": 19.8, "fifteen": 19.7 } } },
   "events": [ { "id": "036e732d-10", "type": "presence", "ts": "2026-10-27T08:59:58.000Z", "data": {} } ]
@@ -778,8 +780,9 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 - `eventsSupported`：上游是否提供 `/events/recent`（旧版 404 时 false）；字段缺失/`undefined` 时前端**不把 undefined 当作支持**，回退为按 `contractVersion`（仅 number 有效）或已有事件数组判断；`contractVersion` 仅接受 number（否则显示“—”，不显示 `vundefined`）。
 - `events`：内存环最近事件，**newest-first，最多 100 条且序列化总字节 ≤512 KiB**；服务端重启清空；不写入 DB/日志。
 - `error`：稳定错误码（如 `mcbot_unavailable`/`mcbot_auth_failed`/`mcbot_cursor_failed`/`mcbot_upstream_error`），不是上游原文。**`reachable=true` 时 `error` 仍可能非空**（如 `/status` 成功但 `/events/recent` 失败或游标写库失败），前端必须展示可见警告，不得把“可达”等同于“事件/告警正常”。
-- `lastPollAt` 为最近一次轮询**尝试**时间；当前快照**未下发** `lastSuccessAt`（残余：stale 提示仍用 `lastPollAt`，持续故障时可能显示误导性“上次成功轮询”时间，见 `docs/app/AUDIT.md` 补审计节 ARCH6-03）。
-- 游标/告警重试：`recordExternal` 写告警失败时游标停在上一条**已完整处理**的事件，下一轮重新处理失败事件；`MCBOT_ALERTS_ENABLED=false` 时仍推进游标但不写告警。
+- `lastPollAt` 为最近一次轮询**尝试**时间，失败也会更新。`lastSuccessAt` 只在完整上游 `/status` 成功时更新；从未成功为 `null`。面板过期文案用 `lastSuccessAt`，null 时显示“尚无成功轮询”。
+- `navigation` 可选。v1.0.7 起含 `lastFallbackReason`（最近一次兜底原因，≤160 字符）；无兜底或旧版缺字段时为 `null`。该短文本只给面板，不进入自主提示。
+- 游标/告警重试：`recordExternal` 写告警失败时游标停在上一条**已完整处理**的事件，下一轮重新处理失败事件。同一 `dedupe_key` 再次写入视为已处理，游标可以前进，且不再通知。`MCBOT_ALERTS_ENABLED=false` 时仍推进游标但不写告警。
 
 ### GET /api/mcbot/history
 

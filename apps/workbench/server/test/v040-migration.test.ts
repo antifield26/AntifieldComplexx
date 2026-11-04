@@ -67,6 +67,19 @@ function createV4Database(path: string): void {
         VALUES ('file-1', NULL, 'a.txt', 'file', 3, 'text/plain', '${'a'.repeat(64)}', 'file-1', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', NULL, NULL);
       INSERT INTO shares (id, file_id, token_hash, expires_at, max_downloads, download_count, created_at, revoked_at, created_by)
         VALUES ('share-1', 'file-1', '${'b'.repeat(64)}', '2099-01-01T00:00:00.000Z', 0, 2, '2026-01-01T00:00:00.000Z', NULL, 'admin');
+      -- schema 4 的真实库已有告警表。夹具补上，供 v19 追加 dedupe_key。
+      CREATE TABLE alert_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        status TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        details_json TEXT,
+        created_at TEXT NOT NULL,
+        delivered_at TEXT,
+        delivery_error TEXT
+      );
     `)
   } finally {
     old.close()
@@ -82,6 +95,7 @@ test('v4 旧库升级到 v5：origin 默认 user、唯一索引含 origin、shar
     try {
       const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
       assert.equal(version.value, String(SUPPORTED_SCHEMA_VERSION))
+      assert.ok(columnsOf(db, 'alert_events').includes('dedupe_key'))
 
       // files 追加 origin，历史行默认 user；索引已重建为含 origin 的三列索引。
       assert.ok(columnsOf(db, 'files').includes('origin'))

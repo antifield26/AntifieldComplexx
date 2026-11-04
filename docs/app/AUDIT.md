@@ -1,6 +1,23 @@
-# AntifieldComplexx 审计与修复记录（v0.2.0 → v1.0.6）
+# AntifieldComplexx 审计与修复记录（v0.2.0 → v1.0.7）
 
-> 本文合并原按版本拆分的 `DEBUG-AUDIT-v1.0.5.md`、`DEBUG-AUDIT-v1.0.6.md` 与 `RESOURCE-AUDIT-2026-10-31.md`；当前 v1.0.6 正文、历史 v1.0.5 Debug、2026-10-31 磁盘审计与本次文档漂移检查分别见附录 A/B/C/D。
+> 本文合并原按版本拆分的 `DEBUG-AUDIT-v1.0.5.md`、`DEBUG-AUDIT-v1.0.6.md` 与 `RESOURCE-AUDIT-2026-10-31.md`。v1.0.7 的当前处置见下节。v1.0.6 正文、历史 v1.0.5 Debug、2026-10-31 磁盘审计与文档漂移检查分别见附录 A/B/C/D。v0.8.1 残余表保持当时原文，不把后来修掉的行改写成当时已修。
+
+## v1.0.7 运行时可信（代码完成，生产部署待本窗口）
+
+本版处理的项。下面 v0.8.1 表里的对应行仍是当时记录：
+
+- ARCH6-06：schema v19 增加可空 `alert_events.dedupe_key` 与部分唯一索引。mcbot 键为 `mcbot:<bootId>:<eventId>`。同一键不新增行、不重复 webhook、不重复入队。空键与纯空白键不合并。游标重试、重复轮询和恢复后重放都走这条路径。
+- ARCH6-03：快照下发 `lastSuccessAt`，只在完整上游 `/status` 成功时更新。面板过期文案用它；没有成功轮询时显示“尚无成功轮询”。失败轮询只改 `lastPollAt`。
+- ARCH6-13：`MCBOT_ENABLED=true` 时 systemd 已监控 `mcbot.service`。本版在轮询快照 `stale=true` 且单元尚未标成 inactive 时，把副本标为 inactive，走既有 `service_down` 的 firing/resolved。单次失败且未过期不触发。上游 `alert` 仍是 `status='event'`，不写入 `alert_state`。Dashboard 服务卡显示 mcbot。
+- 周度世界拉取：`install-backup-task.ps1` 把脚本复制到 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1` 并注册 `AntifieldCloud-World-Pull`。任务名与目录名不变。本地门禁通过后才用管理员权限改现有任务参数，不为改路径再拉世界归档。
+
+特性：寻路兜底进入自主重决策。提示只有“寻路兜底：已安全传送”或“寻路兜底：已停止、没有路径”。30 秒去重，每会话最多 6 次。不新增 MCP 工具。`lastFallbackReason` 只给面板。
+
+OpenCode 针为 2.2.5。升级步骤在 `docs/app/DEPLOY.md` §3.2。矩阵失败则恢复本次 v2.2.0 备份并停止应用部署。未预先加显式 bash/shell deny。
+
+本版明确不修，不得写成已解决：告警风暴并发上限（SEC6-05）、`lastError` 原样透传（SEC6-06）、`MCBOT_URL` 任意 loopback 端口（SEC6-08）、`stop()` 不取消在途轮询（ARCH6-07）、契约版本无守卫（ARCH6-15）、5 格垂直墙、`http-proxy` 弃用警告。`GET /api/mcbot/status` 与 `/history` 已有每 IP 60 次/分钟限流；历史表里“无 GET 限流”的句子不作为本版待修项。
+
+本地门禁（2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。OpenCode 已升到 2.2.5，矩阵见 `docs/app/DEPLOY.md` §3.2。应用与 mcbot 的生产部署仍待本窗口。
 
 > 本文件补齐 2026-10-20 未落档的第二轮审计记录、第三轮 v0.4.0 与第四轮 v0.4.2/v0.5.0 记录；第一轮 v0.2.0 记录保留在下方。
 

@@ -66,6 +66,7 @@ export class MovementManager {
     attempts: 0,
     lastFailureKind: null,
     lastFallback: null,
+    lastFallbackReason: null,
     aiUsed: false,
     updatedAt: null
   }
@@ -634,6 +635,7 @@ export class MovementManager {
       attempts: 0,
       lastFailureKind: null,
       lastFallback: null,
+      lastFallbackReason: null,
       aiUsed: false
     })
     let failure: RouteFailureKind = 'path_stuck'
@@ -679,9 +681,15 @@ export class MovementManager {
     if (allowTeleport && config.pathTeleportFallback) {
       try {
         await this.teleportNearPoint(target.x, target.y, target.z, Math.max(3, tolerance + 2))
-        this.updateNavigation({ state: 'fallback', source: 'teleport', lastFallback: 'teleport' })
+        const fallbackReason = reason.slice(0, 160)
+        this.updateNavigation({
+          state: 'fallback',
+          source: 'teleport',
+          lastFallback: 'teleport',
+          lastFallbackReason: fallbackReason
+        })
         this.notify?.('我找不到规范路径，先安全传送过去。')
-        this.fallbackListener?.('teleport', reason)
+        this.fallbackListener?.('teleport', fallbackReason)
         return
       } catch (error) {
         this.logger.warn('movement teleport fallback rejected', {
@@ -690,14 +698,16 @@ export class MovementManager {
         reason = error instanceof Error ? error.message : String(error)
       }
     }
+    const fallbackReason = reason.slice(0, 160)
     this.updateNavigation({
       state: 'fallback',
       source: 'stopped',
       lastFallback: 'stopped',
+      lastFallbackReason: fallbackReason,
       lastFailureKind: failure
     })
     this.notify?.('我找不到规范路径，先停在这里。')
-    this.fallbackListener?.('stopped', reason)
+    this.fallbackListener?.('stopped', fallbackReason)
     throw new MovementError(`走不过去：${reason}`)
   }
 

@@ -617,6 +617,10 @@ export function safeLofiiStatus(value: unknown): McbotStatus | null {
           lastFallback: navigation.lastFallback === 'teleport' || navigation.lastFallback === 'stopped'
             ? navigation.lastFallback
             : null,
+          lastFallbackReason: (() => {
+            const reason = asText(navigation.lastFallbackReason)
+            return reason ? reason.slice(0, 160) : null
+          })(),
           aiUsed: navigation.aiUsed === true,
           updatedAt: asText(navigation.updatedAt),
         } as McbotNavigation

@@ -1,6 +1,15 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.6（2026-10-30 已部署）：app 1.0.6/schema18/OpenCode 2.2.0、mcbot 1.0.6；v1.0.5 为上一稳定版本。
+> 当前版本 v1.0.7（代码与文档已对齐；应用生产部署待本窗口）。OpenCode v2.2.5 已在树莓派运行。应用与 mcbot 的已部署版本仍为 v1.0.6/schema18。
+
+### v1.0.7 运行时可信（代码完成，生产证据待本窗口回填）
+
+- 范围：schema v19 告警幂等键；`lastSuccessAt`；mcbot 轮询过期或进程不在时的 `service_down`；周度世界拉取安装到 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`；寻路兜底进入自主重决策；OpenCode 2.2.5 与应用同窗口升级。
+- 本地测试覆盖成功与失败路径：同一 `dedupe_key` 不新增行且不重复通知，空键仍各自写入；单次轮询失败不触发 `service_down`，过期后 firing、恢复后 resolved；进程 inactive 直接 firing；传送兜底只重决策一次，第 7 次停止会话；未启动自主会话时兜底不创建会话。
+- 本地门禁（2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**；`check-naming`、`check:docs` 通过。生产 smoke 待本窗口。
+- OpenCode（2026-11-04）：已升到 v2.2.5，运行中 `/api/info` 为 2.2.5，进程 exe 非 deleted。备份 `/var/backups/opencode` timestamp `20261104T062115Z`。矩阵见 `docs/app/DEPLOY.md` §3.2。未改 `opencode.json`。
+- 应用与 mcbot：尚未部署。release 路径、smoke 计数与 5 格墙实机重决策在部署后回填。不把 v1.0.6 的 smoke 记成 v1.0.7。
+- 明确不做：不挖掘/不放置/不跑酷；不新增 Bot 平台；不启用异地副本；不重启 Minecraft。
 
 ### v1.0.6 寻路重构验收（2026-10-30，已部署；核心矩阵通过）
 

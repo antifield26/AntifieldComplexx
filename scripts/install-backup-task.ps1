@@ -13,8 +13,10 @@
   [switch]$DryRun
 )
 
-# 安装/更新当前用户的每日备份任务，并收紧备份目录 ACL（仅当前用户 + Administrators + SYSTEM）。
+# 安装/更新当前用户的每日备份任务与周度世界拉取任务，并收紧备份目录 ACL（仅当前用户 + Administrators + SYSTEM）。
 # - 任务参数显式传入 -PiHost/-PiUser/-BackupRoot，避免使用脚本默认占位值导致备份指向错误主机；
+# - 每日任务与世界拉取都把脚本复制到 %LOCALAPPDATA%\AntifieldCloud，计划任务指向副本，不指向仓库路径；
+# - 世界拉取任务名保持 AntifieldCloud-World-Pull，触发为每周日 12:00（本机本地时间）；
 # - 任务在电池供电时也运行（AllowStartIfOnBatteries/DontStopIfGoingOnBatteries）；
 # - 可选 -InstallOffsiteTask：额外安装 AntifieldCloud-Backup-Offsite（只上传加密归档到 rclone 远端）；
 #   未提供 -OffsiteRemote 时不安装并打印提示（不静默跳过）；
@@ -26,11 +28,18 @@ $ErrorActionPreference = "Stop"
 $OutputEncoding = [System.Text.Encoding]::UTF8
 $base = Join-Path $env:LOCALAPPDATA "AntifieldCloud"
 $source = Join-Path $PSScriptRoot "backup-pull.ps1"
+$worldSource = Join-Path $PSScriptRoot "world-pull.ps1"
 $offsiteSource = Join-Path $PSScriptRoot "backup-offsite.ps1"
 $offsiteNodeSource = Join-Path $PSScriptRoot "backup-offsite.mjs"
 $markerPath = Join-Path $base "backup-task.json"
 $root = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path $source)) { throw "找不到 $source" }
+if (-not (Test-Path $worldSource)) { throw "找不到 $worldSource" }
+
+function Get-WorldPullArguments {
+  param([string]$ScriptPath)
+  return "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -PiHost `"$PiHost`" -PiUser `"$PiUser`" -BackupRoot `"$BackupRoot`""
+}
 $installOffsite = [bool]$InstallOffsiteTask
 if ($installOffsite -and [string]::IsNullOrWhiteSpace($OffsiteRemote)) {
   throw "-InstallOffsiteTask 需要同时提供 -OffsiteRemote（rclone 远端名，如 offsite），否则任务会每天无效运行"
@@ -120,6 +129,10 @@ if ($DryRun) {
   Write-Host "[DryRun] PiHost=$PiHost PiUser=$PiUser BackupRoot=$BackupRoot DailyTime=$DailyTime"
   $dryArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $base 'backup-pull.ps1')`" -PiHost `"$PiHost`" -PiUser `"$PiUser`" -BackupRoot `"$BackupRoot`""
   Write-Host "[DryRun] 任务参数：$dryArguments"
+  $dryWorldScript = Join-Path $base "world-pull.ps1"
+  $dryWorldArguments = Get-WorldPullArguments -ScriptPath $dryWorldScript
+  Write-Host "[DryRun] 世界拉取任务：AntifieldCloud-World-Pull 每周日 12:00"
+  Write-Host "[DryRun] 世界拉取参数：$dryWorldArguments"
   if ($installOffsite) {
     $dryOffsiteArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $base 'backup-offsite.ps1')`" -BackupRoot `"$BackupRoot`" -PiHost `"$PiHost`" -PiUser `"$PiUser`" -Remote `"$OffsiteRemote`" -RemotePath `"$OffsiteRemotePath`" -RemoteLabel `"$OffsiteRemoteLabel`" -NodeScriptPath `"$(Join-Path $base 'backup-offsite.mjs')`" -RcloneBin `"$RcloneBin`""
     Write-Host "[DryRun] 异地副本任务：AntifieldCloud-Backup-Offsite @ $OffsiteTime"
@@ -176,6 +189,40 @@ $registeredArguments = [string]$task.Actions[0].Arguments
 foreach ($expected in @("-PiHost", "-PiUser", "-BackupRoot", $PiHost, $BackupRoot)) {
   if ($registeredArguments -notlike "*$expected*") {
     throw "计划任务参数校验失败：缺少 $expected（实际：$registeredArguments）"
+  }
+}
+
+# 周度世界拉取：与每日任务一样复制到本地目录，避免仓库改名后计划任务指向失效脚本。
+Copy-Item -Force $worldSource (Join-Path $base "world-pull.ps1")
+$worldScriptPath = Join-Path $base "world-pull.ps1"
+$worldScriptSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $worldScriptPath).Hash.ToLower()
+$worldArguments = Get-WorldPullArguments -ScriptPath $worldScriptPath
+$worldAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $worldArguments
+$worldTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At "12:00"
+$worldSettings = New-ScheduledTaskSettingsSet `
+  -StartWhenAvailable `
+  -MultipleInstances IgnoreNew `
+  -ExecutionTimeLimit (New-TimeSpan -Hours 3) `
+  -AllowStartIfOnBatteries `
+  -DontStopIfGoingOnBatteries
+try {
+  Register-ScheduledTask `
+    -TaskName "AntifieldCloud-World-Pull" `
+    -Description "AntifieldComplexx 世界备份周度拉取：从 $PiHost 拉到 $BackupRoot\world" `
+    -Action $worldAction `
+    -Trigger $worldTrigger `
+    -Settings $worldSettings `
+    -Principal $principal `
+    -Force `
+    -ErrorAction Stop | Out-Null
+} catch {
+  throw "注册世界拉取计划任务失败：$($_.Exception.Message)`n请以【管理员身份】打开 PowerShell 后重新运行本脚本。"
+}
+$worldTask = Get-ScheduledTask -TaskName "AntifieldCloud-World-Pull"
+$registeredWorldArguments = [string]$worldTask.Actions[0].Arguments
+foreach ($expected in @("world-pull.ps1", "-PiHost", "-PiUser", "-BackupRoot", $PiHost, $PiUser, $BackupRoot, $worldScriptPath)) {
+  if ($registeredWorldArguments -notlike "*$expected*") {
+    throw "世界拉取任务参数校验失败：缺少 $expected（实际：$registeredWorldArguments）"
   }
 }
 
@@ -236,6 +283,10 @@ $marker = [ordered]@{
   offsiteRemoteLabel = if ($offsiteInstalled) { $OffsiteRemoteLabel } else { $null }
   offsiteTime        = if ($offsiteInstalled) { $OffsiteTime } else { $null }
   offsiteArguments   = $offsiteArguments
+  worldPullTaskName  = "AntifieldCloud-World-Pull"
+  worldPullScriptPath = $worldScriptPath
+  worldPullScriptSha256 = $worldScriptSha
+  worldPullArguments = $registeredWorldArguments
 }
 $markerJson = ConvertTo-Json -InputObject $marker -Depth 5
 [System.IO.File]::WriteAllText($markerPath, $markerJson + "`n", (New-Object System.Text.UTF8Encoding($false)))
@@ -255,4 +306,8 @@ if ($offsiteInstalled) {
 } else {
   Write-Host "未安装异地副本任务（需要时加 -InstallOffsiteTask -OffsiteRemote <rclone-remote>）"
 }
+$worldInfo = Get-ScheduledTaskInfo -TaskName "AntifieldCloud-World-Pull"
+Write-Host "世界拉取任务：AntifieldCloud-World-Pull（每周日 12:00，脚本 $worldScriptPath）"
+Write-Host "世界拉取下次运行：$($worldInfo.NextRunTime)；日志：$base\world-pull.log"
+Write-Host "世界拉取 scriptSha256=$worldScriptSha"
 Write-Host "旧任务 PiBackUp-Nightly 未被修改。"

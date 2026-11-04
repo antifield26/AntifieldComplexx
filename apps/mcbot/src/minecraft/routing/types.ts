@@ -90,6 +90,8 @@ export interface NavigationSnapshot {
   attempts: number
   lastFailureKind: RouteFailureKind | null
   lastFallback: 'teleport' | 'stopped' | null
+  /** 最近一次兜底的短原因，不含 Token。旧快照可缺省。 */
+  lastFallbackReason: string | null
   aiUsed: boolean
   updatedAt: string | null
 }

@@ -1,5 +1,12 @@
 # 路线图
 
+## v1.0.7（代码完成，生产部署待本窗口；运行时可信 + 寻路兜底重决策；schema v19 / OpenCode 2.2.5）
+
+- **范围**：`alert_events.dedupe_key`；mcbot `lastSuccessAt`；mcbot 进程或轮询过期进入 `service_down`；周度世界拉取安装到 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`；寻路兜底进入自主重决策；OpenCode 2.2.5 与应用同窗口升级。
+- **边界**：不挖掘/不放置/不跑酷；不新增 MCP 工具或任务名；模型不能调用传送；安全区外过来/跟随仍只走路。不启用异地副本，不重启 Minecraft。
+- **状态**：本地代码与文档已对齐。2026-11-04 `npm run check`：app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。OpenCode 运行中版本已是 2.2.5，矩阵见 `docs/app/DEPLOY.md` §3.2。应用 release 与 smoke 在部署后回填。已部署的应用版本仍是 v1.0.6。
+- **明确不修**：告警风暴并发上限、`lastError` 透传、任意 loopback 端口、在途轮询取消、契约版本守卫、5 格垂直墙、`http-proxy` 弃用警告。
+
 ## v1.0.6（**已部署并发布 Tag/Release，核心实机矩阵通过**；MC Bot 统一寻路层）
 
 - **范围**：pathfinder 快速路径 → 确定性 A* → 受控执行 → AI 路点建议 → 安全兜底；`navigation` 状态、app Fact、`movement` 事件/聊天提示；`PATH_*` 九键。

@@ -210,6 +210,10 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
         })),
     },
   })
+  // McbotService 在 AlertService 之后创建；健康读取在首轮评估前绑定。
+  const mcbotHealth: { read: (() => { enabled: boolean; reachable: boolean; stale: boolean }) | null } = {
+    read: null,
+  }
   const alerts = new AlertService(db, config, {
     log: (level, message, detail) => {
       const payload = detail ? { detail } : {}
@@ -222,6 +226,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       return { online: status.online, error: status.error }
     },
     notifyEvent: (event) => chatbots.notifyAlert(event),
+    mcbotHealth: () => mcbotHealth.read?.() ?? null,
   })
   // mcbot 轮询依赖 AlertService.recordExternal；禁用时无定时器、无网络请求。
   const mcbot = new McbotService({
@@ -235,6 +240,10 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       else app.log.info(payload, message)
     },
   })
+  mcbotHealth.read = () => {
+    const snapshot = mcbot.snapshot()
+    return { enabled: snapshot.enabled, reachable: snapshot.reachable, stale: snapshot.stale }
+  }
   const proxy = new OpenCodeProxy(config, auth, app.log, {
     audit: (action, target, detail, ip) => audit(db, 'anonymous', action, target, detail, ip),
   })

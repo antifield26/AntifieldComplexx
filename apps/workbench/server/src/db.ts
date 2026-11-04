@@ -723,6 +723,12 @@ export const MIGRATIONS: string[] = [
   UPDATE meta SET key = 'chatbot_ai_tool_mode' WHERE key = 'bot_ai_tool_mode';
   UPDATE meta SET key = 'mcbot.event_cursor' WHERE key = 'lofii.event_cursor';
   `,
+  `
+  -- v1.0.7：外部告警幂等键。历史行保持 NULL；部分唯一索引允许多个 NULL。
+  ALTER TABLE alert_events ADD COLUMN dedupe_key TEXT;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_events_dedupe
+    ON alert_events(dedupe_key) WHERE dedupe_key IS NOT NULL;
+  `,
 ]
 
 export interface OpenOptions {

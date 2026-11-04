@@ -293,6 +293,7 @@ describe('McbotPanel 状态与降级', () => {
     renderPanel()
     expect(await screen.findByText(/无法连接 mcbot：mcbot 服务不可达/)).toBeTruthy()
     expect(screen.getByText(/mcbot 数据已过期/)).toBeTruthy()
+    expect(screen.getByText(/尚无成功轮询/)).toBeTruthy()
     // 缓存的状态数据仍然展示
     expect(screen.getByText('已连接（mcbot）')).toBeTruthy()
     expect(screen.getByText('2 / 6')).toBeTruthy()

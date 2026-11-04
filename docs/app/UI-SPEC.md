@@ -1,5 +1,6 @@
 # AntifieldComplexx UI 规范
 
+> v1.0.7：mcbot 过期提示用 `lastSuccessAt`，没有成功轮询时显示“尚无成功轮询”；寻路 Fact 在有兜底原因时追加“兜底原因：…”；Dashboard 服务状态卡在 mcbot 启用时显示 `mcbot`。不新增页面。
 > mcbot v1.0.6：mcbot 状态卡增加「寻路」Fact（`idle/planning/executing/fallback`、来源、最近兜底），旧 mcbot 无 `navigation` 时隐藏；不新增页面。
 
 > 项目定位：**个人综合交互平台**。v1.0.1 起运行时 UI/标题/登录/设置/manifest 已同步；systemd Description 同步为 `AntifieldComplexx comprehensive interaction platform`。
@@ -83,7 +84,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 第二行：
   - Minecraft 详情卡：玩家名列表（空态“暂无玩家在线”）、TPS、服务状态、公共地址复制按钮、“管理白名单”链接。
   - 快捷入口卡：AI 工作区（`https://ai.example.com`）、RPi Connect、Minecraft 地址（复制）、云盘（本页）。
-  - 服务状态卡：minecraft/cloudflared/opencode 三个圆点 + 状态文字。
+  - 服务状态卡：minecraft/cloudflared/opencode 三个圆点 + 状态文字；`MCBOT_ENABLED=true` 时再加 mcbot，标签为 `mcbot`。
 - 第三行：最近活动（审计 8 条，图标 + 动作 + 目标 + 相对时间）。
 - 趋势区（四张 CPU/内存/温度/磁盘 SVG 趋势卡）与“备份状态”卡（应用归档/密钥包/世界备份/演练）见 §14。
 - 所有卡片有 loading 骨架；错误时卡片内“加载失败 + 重试”。
@@ -478,7 +479,8 @@ mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbo
 - 刷新失败时卡片内 `InlineError`“<错误>（显示上次成功获取的数据）”+ 重试；无快照时 `EmptyState`“暂无 mcbot 状态快照”。
 - 状态栅格（缺失字段显示“—”）：运行状态（中文徽章：空闲（动态下线）/连接中/已连接/重连等待/冷却中）、Minecraft 连接（已连接（用户名）/未连接）、服务器在线/上限（服务器不可达时提示）、TPS（1m/5m/15m，RCON 不可用时提示）、mcbot 血量/饥饿（维度作 hint）、AI 队列（排队/处理中，失败次数与最近延迟；AI 关闭时“—”）、记忆（玩家数/轮数）、mcbot 版本 + 契约版本、运行时长、白名单数量（上游 lastError 作 hint）、告警联动（已启用/未启用）、事件流条数（“内存环”）。
 - 附加警告：上次 Minecraft 断线（相对时间 + 原因 + 累计重连次数）、AI 最近错误（文本）。
-- 脚注：上次轮询相对时间；“契约版本 < 1”时提示契约版本过低；`contractVersion` 非 number（缺失/`undefined`）时显示“—”，不显示 `vundefined`。
+- 脚注：上次轮询相对时间（`lastPollAt`）；“契约版本 < 1”时提示契约版本过低；`contractVersion` 非 number（缺失/`undefined`）时显示“—”，不显示 `vundefined`。
+- 寻路 Fact：有 `navigation` 时显示状态/来源/最近兜底；`lastFallbackReason` 非空时在其下显示“兜底原因：”加该短文本。旧版无 `navigation` 时不显示这一格。
 
 ### 自主模式卡（v1.0.2）
 
@@ -534,7 +536,7 @@ mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbo
 ### 确认、降级与隐私
 
 - 二次确认：开始任务、停止/放弃任务、恢复任务、发送游戏内聊天均使用统一 `ConfirmDialog`（危险操作默认焦点“取消”，加载中禁止重复提交）。
-- 降级矩阵：禁用 → 仅说明；首次加载失败 → 卡片错误 + 重试；等待首次轮询 → 提示且控制禁用；不可达 → 缓存数据 + 警告 + 控制禁用；stale → 警告（当前仍用 `lastPollAt`；快照未下发 `lastSuccessAt`，见 AUDIT 残余 ARCH6-03）；**可达但事件/游标失败 → 可见部分失败警告，控制仍可用但提示告警可能停更**；控制未启用 → 只读（聊天也禁用）。
+- 降级矩阵：禁用 → 仅说明；首次加载失败 → 卡片错误 + 重试；等待首次轮询 → 提示且控制禁用；不可达 → 缓存数据 + 警告 + 控制禁用；stale → 警告，时间用 `lastSuccessAt`，null 时为“尚无成功轮询”（不用失败轮询的 `lastPollAt`）；**可达但事件/游标失败 → 可见部分失败警告，控制仍可用但提示告警可能停更**；控制未启用 → 只读（聊天也禁用）。
 - 隐私与安全：不展示 mcbot URL/Token/内部路径/记忆正文；事件与聊天纯文本渲染；历史只显示白名单字段；所有控制按钮在 `mcbotControlEnabled=false` 时禁用；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符。
 - 历史错误码/错误提示使用中文映射（含 `mcbot_cursor_failed`/`mcbot_not_found`/`mcbot_history_disabled`），未知码原样显示；查表使用 own-property，不命中原型链。
 - 响应式/可访问性：390 px 下状态栅格与双列卡片纵向堆叠、不横向滚动；标签键盘可操作；图标按钮有 `aria-label`；表单 label 关联；错误 `role="alert"`；不引入第三方组件库，样式集中在 `web/src/styles/v08.css`。

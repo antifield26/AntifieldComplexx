@@ -1,7 +1,7 @@
 # mcbot（游戏内人格名 Lofii）
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：**v1.0.6**（2026-10-30 已部署并发布 Tag/Release，release `/opt/mcbot/releases/20261030T143538Z`，服务 `mcbot.service`）。本版增加统一寻路层：pathfinder 快速路径 → 确定性 A* → 受控路点执行 → AI 路点建议 → 安全兜底；1–5 级逐级台阶、1 格矮墙、2 格墙绕行与安全区外路径通过，5 格垂直墙明确兜底；不挖掘/不放置/不跑酷。自主模式仍仅主人显式启动。
+> 当前版本：**v1.0.7**（代码完成，生产部署待本窗口）。寻路兜底进入自主重决策；`navigation.lastFallbackReason` 供面板显示。上一已部署 release 仍是 `/opt/mcbot/releases/20261030T143538Z`（v1.0.6，服务 `mcbot.service`）。不挖掘/不放置/不跑酷。自主模式仍仅主人显式启动。
 
 ## 能做什么
 
@@ -31,13 +31,20 @@
 - **本机 HTTP 接口**：只读状态/任务/SSE/近期事件 + `/say`，独立控制 Token 的任务/移动接口；v1.0.2 增加 `/autonomy` 状态/启动/急停与内部 MCP 工具端点；仅监听 `127.0.0.1:3010`。
 - **可靠性**：登录超时/断线/服务器重启/满员/连接节流自动退避重连；systemd 崩溃拉起。
 
+## v1.0.7 寻路兜底重决策（代码完成，待部署）
+
+- **触发**：统一导航层在安全传送或停止且没有路径时发出 `movement` 事件，`action=fallback`。自主会话若已启动，把固定中文事实送进既有重决策。
+- **提示**：安全传送为“寻路兜底：已安全传送”；停止为“寻路兜底：已停止、没有路径”。原因原文、坐标和 Token 不进入提示或审计。
+- **限额**：30 秒内重复兜底不叠加；每会话最多 6 次，第 7 次停止会话且不再要模型回答。未调用 `start()` 时不注册会话。
+- **面板**：`/status.navigation.lastFallbackReason` 为最近兜底原因的短文本（≤160）。规划新路径时清空。
+
 ## v1.0.6 寻路重构（已部署，核心矩阵通过）
 
 - **统一导航层**：`pathfinder` 快速路径失败后，用只读方块采样 + 确定性 A* 重规划；支持 1 格抬高、2 格下落、台阶/楼梯/半砖碰撞形状；目标不可站立时寻找半径 2 内最近落点。
 - **受控执行**：按路点中心行走，只有下一路点抬高 1 格时显式起跳；2 格以上不硬跳；停滞/取消/超时立即释放控制并重规划或明确兜底。
 - **安全边界**：不挖掘、不放置、不跑酷、不开门、不跨维度；任务/目标/自主仍限安全区；`过来/跟随`允许安全区外路径，但安全区外不传送。玩家实体未加载时过来、跟随和按名字传送都拒绝。
 - **AI 路点建议**：确定性失败后最多一次；默认在 OpenCode/AI 配置可用时启用；严格 JSON、最多 3 点、边界/可站立校验；AI 不直接控制移动，不能传送。
-- **可见性**：`/status.navigation`（state/source/attempts/lastFailureKind/lastFallback/aiUsed/updatedAt）；兜底同时写 `movement` 事件与聊天提示；app 面板显示寻路 Fact。
+- **可见性**：`/status.navigation`（state/source/attempts/lastFailureKind/lastFallback/lastFallbackReason/aiUsed/updatedAt）；兜底同时写 `movement` 事件与聊天提示；app 面板显示寻路 Fact。
 
 ## v1.0.5 修复与新特性（已部署）
 
