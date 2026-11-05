@@ -343,18 +343,6 @@ function archiveOrigin(row: Pick<ArchiveRow, 'origin'>): 'pi' | 'import' {
   return row.origin === 'import' ? 'import' : 'pi'
 }
 
-/** 从 manifest_json 中提取 skippedMissing（旧归档没有该字段时返回空）。 */
-function manifestSkippedMissing(raw: string | null): string[] {
-  if (!raw) return []
-  try {
-    const parsed = asRecord(JSON.parse(raw))
-    const value = parsed.skippedMissing
-    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []
-  } catch {
-    return []
-  }
-}
-
 export class BackupService {
   private readonly db: DatabaseSync
   private readonly config: Required<BackupServiceConfig>
@@ -1207,14 +1195,14 @@ export class BackupService {
     if (selection.notFound.length > 0) {
       throw badRequest('部分路径在归档中不存在', 'invalid_selection')
     }
-    // 归档 manifest 标记为缺失的文件内容不可用：从选择中剔除并明确报告，而不是整体失败。
-    const missingContent = new Set(chain.flatMap((row) => manifestSkippedMissing(row.manifest_json)))
-    const skippedMissing = selection.files.filter((file) => missingContent.has(file.id)).map((file) => file.id)
+    // 旧归档的缺失标记只描述该次打包；以整条链实际可取得的内容为准。
+    const measured = await this.measureContents(chain, selection.files.map((file) => file.id))
+    const skippedMissing = measured.missing
+    selection.totalBytes = measured.bytes
     if (skippedMissing.length > 0) {
       const skippedSet = new Set(skippedMissing)
       selection.files = selection.files.filter((file) => !skippedSet.has(file.id))
       for (const id of skippedMissing) selection.selected.delete(id)
-      selection.totalBytes = selection.files.reduce((sum, row) => sum + Number(row.size), 0)
     }
     if (selection.files.length === 0) {
       throw new AppError(400, 'invalid_selection', '所选文件在归档中缺失，无法恢复', {
@@ -1375,12 +1363,7 @@ export class BackupService {
             resolved.files.map((row) => row.id),
             contentDir,
           )
-          // 归档 manifest 记录/实际内容缺失的文件：跳过并从选择中剔除，其余内容继续恢复。
-          const missingContent = new Set([
-            ...missing,
-            ...measured.missing,
-            ...chain.flatMap((row) => manifestSkippedMissing(row.manifest_json)),
-          ])
+          const missingContent = new Set([...missing, ...measured.missing])
           const availableFiles = resolved.files.filter((file) => !missingContent.has(file.id) && extracted.has(file.id))
           if (availableFiles.length === 0) {
             throw new AppError(422, 'invalid_archive', '归档缺少所选文件的全部内容', {

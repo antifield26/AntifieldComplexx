@@ -9,7 +9,8 @@ import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { once } from 'node:events'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
 import type { Actor, FileItem } from '../files/service.ts'
@@ -91,15 +92,21 @@ export class UploadService {
   private readonly files: FileService
   private readonly rootDir: string
   private readonly reservedSessions = new Set<string>()
+  private readonly assembling = new Set<string>()
+  private readonly logCleanupFailure?: (id: string) => void
   /** 同一会话+索引的进程内串行锁，保证重复 PUT 幂等且不互相删除共享块。 */
   private readonly chunkLocks = new Map<string, Promise<void>>()
 
-  constructor(db: DatabaseSync, config: Config, files: FileService) {
+  constructor(db: DatabaseSync, config: Config, files: FileService, logCleanupFailure?: (id: string) => void) {
     this.db = db
     this.config = config
     this.files = files
+    if (logCleanupFailure) this.logCleanupFailure = logCleanupFailure
     this.rootDir = join(config.dataDir, 'tmp', 'chunks')
     mkdirSync(this.rootDir, { recursive: true, mode: 0o700 })
+    this.db.prepare(
+      "UPDATE upload_sessions SET status = 'uploading', updated_at = ? WHERE status = 'assembling' AND file_id IS NULL AND expires_at > ?",
+    ).run(nowIso(), nowIso())
     this.restoreReservations()
   }
 
@@ -370,24 +377,21 @@ export class UploadService {
       .prepare("UPDATE upload_sessions SET status = 'assembling', updated_at = ? WHERE id = ? AND status = 'uploading'")
       .run(nowIso(), id)
     if (Number(claimed.changes) !== 1) throw conflict('上传会话正在完成或状态已变化', 'upload_not_completable')
+    this.assembling.add(id)
     const tempPath = join(this.rootDir, `${id}.assembling`)
     try {
       const hash = createHash('sha256')
-      const out = createWriteStream(tempPath, { mode: 0o600 })
-      try {
+      const chunkPath = (index: number) => this.chunkPath(id, index)
+      const chunks = async function* () {
         for (let index = 0; index < Number(session.total_chunks); index++) {
-          const stream = createReadStream(this.chunkPath(id, index))
+          const stream = createReadStream(chunkPath(index))
           for await (const chunk of stream) {
             hash.update(chunk as Buffer)
-            if (!out.write(chunk)) await once(out, 'drain')
+            yield chunk
           }
         }
-        out.end()
-        await once(out, 'finish')
-      } catch (error) {
-        out.destroy()
-        throw error
       }
+      await pipeline(Readable.from(chunks()), createWriteStream(tempPath, { mode: 0o600 }))
       const actual = statSync(tempPath)
       if (actual.size !== Number(session.size)) throw badRequest('拼接后文件大小不一致', 'size_mismatch')
       const sha256 = hash.digest('hex')
@@ -400,20 +404,29 @@ export class UploadService {
         size: actual.size,
         sha256,
         reservedBytes: Number(session.size),
+        completeRegistration: (fileId) => {
+          const updated = this.db.prepare(
+            "UPDATE upload_sessions SET status = 'completed', file_id = ?, updated_at = ? WHERE id = ? AND status = 'assembling'",
+          ).run(fileId, nowIso(), id)
+          if (Number(updated.changes) !== 1) throw conflict('上传会话已结束', 'upload_not_completable')
+          this.db.prepare('DELETE FROM upload_chunks WHERE session_id = ?').run(id)
+        },
       })
       // 只释放本会话真实持有的预留，避免与过期/取消路径双重释放导致计数下溢。
       this.release(session)
-      this.db
-        .prepare("UPDATE upload_sessions SET status = 'completed', file_id = ?, updated_at = ? WHERE id = ?")
-        .run(file.id, nowIso(), id)
-      this.db.prepare('DELETE FROM upload_chunks WHERE session_id = ?').run(id)
-      this.removeSessionDir(id)
+      try {
+        this.removeSessionDir(id)
+      } catch {
+        this.logCleanupFailure?.(id)
+      }
       return { ok: true, file }
     } catch (error) {
       rmSync(tempPath, { force: true })
       // 保持会话可重试；配额预留继续占用，避免失败后其他上传抢占。
       this.db.prepare("UPDATE upload_sessions SET status = 'uploading', updated_at = ? WHERE id = ? AND status = 'assembling'").run(nowIso(), id)
       throw error
+    } finally {
+      this.assembling.delete(id)
     }
   }
 
@@ -442,8 +455,9 @@ export class UploadService {
     const stale = this.db
       .prepare("SELECT * FROM upload_sessions WHERE status = 'assembling' AND updated_at < ?")
       .all(staleCutoff) as unknown as UploadSessionRow[]
-    for (const row of stale) this.expireStaleAssembling(row)
-    return rows.length + stale.length
+    const abandoned = stale.filter((row) => !this.assembling.has(row.id))
+    for (const row of abandoned) this.expireStaleAssembling(row)
+    return rows.length + abandoned.length
   }
 
   private expireStaleAssembling(session: UploadSessionRow): void {

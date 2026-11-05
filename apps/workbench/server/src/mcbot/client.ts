@@ -5,7 +5,7 @@
  * - 上游地址由 config 校验为 loopback + http(s)；客户端始终 `redirect: 'error'`，
  *   避免被 302 引到外部主机后把 Token 发出去；每次请求带超时 AbortSignal，
  *   可由调用方传入额外 AbortSignal（进程关闭时中断在途请求）。
- * - 读 Token 只用于 /status、/autonomy、/events/recent、/history、/say；控制 Token
+ * - 读 Token 只用于读接口；控制 Token
  *   只用于 /task/*、/move 与 /autonomy/start|stop；控制 Token 为空时控制方法直接返回
  *   mcbot_control_disabled。
  * - 错误统一为稳定 `McbotError`（code/statusCode/upstreamCode），message 会移除上游
@@ -200,10 +200,27 @@ export class McbotClient {
     this.fetchImpl = options.fetch ?? ((input, init) => fetch(input, init))
   }
 
-  /** /status 完整快照；只做对象校验，字段由上游契约保证。 */
+  async health(signal?: AbortSignal): Promise<{ version: string; contractVersion: 1 | 2 }> {
+    const body = await this.request('/healthz', { method: 'GET', signal })
+    if (!isRecord(body) || body.status !== 'ok' || typeof body.version !== 'string' || !body.version.trim()) {
+      throw new McbotError('mcbot_upstream_error', 'mcbot 健康响应格式不合法')
+    }
+    if (body.contractVersion !== 1 && body.contractVersion !== 2) {
+      throw new McbotError('mcbot_contract_unsupported', 'mcbot 契约版本不受支持')
+    }
+    return { version: body.version, contractVersion: body.contractVersion }
+  }
+
+  /** 校验轮询使用的状态核心字段；可选面板段由各自的视图归一化。 */
   async status(signal?: AbortSignal): Promise<Record<string, unknown>> {
     const body = await this.request('/status', { method: 'GET', token: this.readToken, signal })
-    if (!isRecord(body)) throw new McbotError('mcbot_upstream_error', 'mcbot 状态响应格式不合法')
+    if (!isRecord(body) || typeof body.version !== 'string' || !body.version.trim() ||
+        typeof body.state !== 'string' || !['idle', 'connecting', 'connected', 'backoff', 'cooldown'].includes(body.state) ||
+        !isRecord(body.minecraft) || typeof body.minecraft.connected !== 'boolean' ||
+        !isRecord(body.task) || typeof body.task.active !== 'boolean' || typeof body.task.state !== 'string' ||
+        !Array.isArray(body.task.queue)) {
+      throw new McbotError('mcbot_upstream_error', 'mcbot 状态响应格式不合法')
+    }
     return body
   }
 
@@ -229,7 +246,8 @@ export class McbotClient {
     if (!bootId) throw new McbotError('mcbot_upstream_error', 'mcbot 事件响应缺少 bootId')
     const contractVersion =
       typeof body.contractVersion === 'number' && Number.isFinite(body.contractVersion) ? body.contractVersion : null
-    const events = Array.isArray(body.events) ? body.events.map(toEvent).filter((event): event is McbotEvent => event !== null) : []
+    if (!Array.isArray(body.events)) throw new McbotError('mcbot_upstream_error', 'mcbot 事件列表格式不合法')
+    const events = body.events.map(toEvent).filter((event): event is McbotEvent => event !== null)
     return {
       contractVersion,
       bootId,
@@ -276,11 +294,9 @@ export class McbotClient {
     return this.control('/move', target ? { action, target } : { action }, signal)
   }
 
-  /** /say 使用读 Token（与上游契约一致）；不执行任何斜杠命令。 */
+  /** 契约 v2 的发言使用控制 Token。 */
   async say(message: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
-    const body = await this.request('/say', { method: 'POST', token: this.readToken, payload: { message }, signal })
-    if (!isRecord(body)) throw new McbotError('mcbot_upstream_error', 'mcbot 聊天响应格式不合法')
-    return body
+    return this.control('/say', { message }, signal)
   }
 
   /** 启动自主模式（控制 Token）；目标由应用侧校验 1..200 字符。 */
@@ -344,12 +360,12 @@ export class McbotClient {
 
   private async request(
     path: string,
-    options: { method: 'GET' | 'POST'; token: string; payload?: Record<string, unknown>; signal?: AbortSignal },
+    options: { method: 'GET' | 'POST'; token?: string; payload?: Record<string, unknown>; signal?: AbortSignal },
   ): Promise<unknown> {
     const headers: Record<string, string> = {
       accept: 'application/json',
-      authorization: `Bearer ${options.token}`,
     }
+    if (options.token !== undefined) headers.authorization = `Bearer ${options.token}`
     if (options.payload !== undefined) headers['content-type'] = 'application/json; charset=utf-8'
     const timeoutSignal = AbortSignal.timeout(this.timeoutMs)
     // 外部 signal 用于进程关闭时中断在途请求；与超时信号合并，任一触发即中止。

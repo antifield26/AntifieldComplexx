@@ -211,6 +211,7 @@ function serviceFixture(options: {
   const impl = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
     calls.push({ url: url.toString(), init: init ?? {} })
+    if (url.pathname === '/healthz') return json({ status: 'ok', version: '1.0.2', contractVersion: 1 })
     return (options.handler ?? (() => json({ error: 'not_found' }, 404)))(url, init ?? {})
   }) as typeof fetch
   const service = new McbotService({
@@ -247,7 +248,7 @@ function autonomyStatusHandler(state: { autonomy: Record<string, unknown> }) {
       return json({
         version: '1.0.2',
         state: 'connected',
-        task: { active: false, state: 'idle' },
+        minecraft: { connected: true }, task: { active: false, state: 'idle', queue: [] },
         autonomy: state.autonomy,
       })
     }
@@ -289,7 +290,7 @@ test('服务：/status 的 autonomy 段进入快照；旧版缺失降级 null；
   // 旧版 mcbot /status 无 autonomy：快照为 null，不伪造状态、不抛错。
   const legacy = serviceFixture({
     handler: (url) => {
-      if (url.pathname === '/status') return json({ version: '0.6.0', state: 'connected' })
+      if (url.pathname === '/status') return json({ version: '1.0.2', state: 'connected', minecraft: { connected: true }, task: { active: false, state: 'idle', queue: [] } })
       if (url.pathname === '/events/recent') return json({ contractVersion: 1, bootId: 'b1', lastEventId: null, events: [] })
       return json({ error: 'not_found', message: 'not found' }, 404)
     },
@@ -306,11 +307,13 @@ test('服务：/status 的 autonomy 段进入快照；旧版缺失降级 null；
 test('服务：startAutonomy/stopAutonomy 走控制 Token 并在成功后刷新', async () => {
   const fx = serviceFixture({ handler: autonomyStatusHandler({ autonomy: autonomySnapshot() }) })
   try {
+    await fx.service.pollOnce()
+    fx.calls.length = 0
     const started = await fx.service.startAutonomy('收集木材')
     assert.equal(started.ok, true)
     assert.equal(started.autonomy?.state, 'starting')
     const paths = fx.calls.map((call) => new URL(call.url).pathname)
-    assert.deepEqual(paths.slice(0, 3), ['/autonomy/start', '/status', '/events/recent'])
+    assert.deepEqual(paths.slice(0, 4), ['/autonomy/start', '/healthz', '/status', '/events/recent'])
     assert.equal(authHeader(fx.calls[0]!.init), `Bearer ${CONTROL}`)
     // 刷新后快照以最新 /status 为准（running）。
     assert.equal(fx.service.snapshot().autonomy?.state, 'running')
@@ -372,9 +375,9 @@ test('停止收口：中止在途 status/recent、await 在途轮询、停止后
   setMeta(db, MCBOT_EVENT_CURSOR_KEY, JSON.stringify({ bootId: 'b1', lastEventId: 'b1-1', lastTs: T0 }))
   try {
     const polling = service.pollOnce()
-    await waitFor(() => calls.length === 2, '发起 status+recent 请求')
-    const statusSignal = calls[0]!.init.signal as AbortSignal
-    const recentSignal = calls[1]!.init.signal as AbortSignal
+    await waitFor(() => calls.length === 3, '发起 health+status+recent 请求')
+    const statusSignal = calls[1]!.init.signal as AbortSignal
+    const recentSignal = calls[2]!.init.signal as AbortSignal
 
     await service.stop()
     const result = await polling
@@ -391,7 +394,7 @@ test('停止收口：中止在途 status/recent、await 在途轮询、停止后
     const afterStop = await service.pollOnce()
     assert.equal(afterStop.skipped, true)
     assert.equal(afterStop.error, 'mcbot_stopped')
-    assert.equal(calls.length, 2)
+    assert.equal(calls.length, 3)
 
     // stop() 幂等：重复调用直接返回。
     await service.stop()
@@ -416,7 +419,7 @@ interface RouteFixture {
 
 function defaultRouteHandler(url: URL, init: RequestInit): Response | Promise<Response> {
   if (url.pathname === '/status') {
-    return json({ version: '1.0.2', state: 'connected', autonomy: autonomySnapshot() })
+    return json({ version: '1.0.2', state: 'connected', minecraft: { connected: true }, task: { active: false, state: 'idle', queue: [] }, autonomy: autonomySnapshot() })
   }
   if (url.pathname === '/events/recent') return json({ contractVersion: 1, bootId: 'b1', lastEventId: null, events: [] })
   if (url.pathname === '/autonomy') return json({ autonomy: autonomySnapshot() })
@@ -454,6 +457,7 @@ async function makeRouteApp(options: { config?: Partial<Config>; handler?: Handl
   const impl = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
     calls.push({ url: url.toString(), init: init ?? {} })
+    if (url.pathname === '/healthz') return json({ status: 'ok', version: '1.0.2', contractVersion: 1 })
     return handler(url, init ?? {})
   }) as typeof fetch
   const service = new McbotService({

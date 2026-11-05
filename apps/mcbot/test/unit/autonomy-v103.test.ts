@@ -182,6 +182,7 @@ function fixture (env: Record<string, string | undefined> = {}): Fixture {
     tasks: {
       ...tasks,
       isActive: () => tasks.active,
+      stopAndWait: (reason: string) => tasks.stopAndWait(reason),
       start: (name: string) => tasks.start(name as TaskName)
     } as unknown as TaskController,
     opencode: session,

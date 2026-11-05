@@ -113,14 +113,35 @@ test('恢复跳过 skippedMissing：计划明确报告并从选择中剔除，�
   }
 })
 
+test('后续增量已补回的文件可计划并恢复', async () => {
+  const fx = backupsFixture()
+  try {
+    const rows = [{ id: 'file-back-0001', name: 'back.txt', kind: 'file' as const, size: 3 }]
+    addPiArchive(fx, {
+      createdAt: T0, mode: 'full', snapshotRows: rows, contents: [],
+      manifestPatch: { skippedMissing: [rows[0]!.id] },
+    })
+    const target = addPiArchive(fx, {
+      createdAt: '2026-06-02T00:00:00.000Z', since: T0, mode: 'inc', snapshotRows: rows,
+      contents: [{ id: rows[0]!.id, data: Buffer.from('abc') }],
+    })
+    const plan = await fx.service.createRestorePlan(fx.actor, { archive: target, paths: ['/'] })
+    assert.equal(plan.fileCount, 1)
+    assert.deepEqual(plan.skippedMissing, [])
+    assert.equal((await fx.service.executeRestore(fx.actor, plan.id)).result.filesRestored, 1)
+  } finally {
+    fx.close()
+  }
+})
+
 test('恢复磁盘预检：按选择字节 ×2 + 保留空间判断，不足返回 507', async () => {
   const fx = backupsFixture({ freeBytes: () => 1024 })
   try {
     const name = addPiArchive(fx, {
       createdAt: T0,
       mode: 'full',
-      snapshotRows: [{ id: 'file-a', name: 'a.txt', kind: 'file', size: 3 }],
-      contents: [{ id: 'file-a', data: Buffer.from('abc') }],
+      snapshotRows: [{ id: 'file-alpha', name: 'a.txt', kind: 'file', size: 3 }],
+      contents: [{ id: 'file-alpha', data: Buffer.from('abc') }],
     })
     await expectAppRejects(fx.service.createRestorePlan(fx.actor, { archive: name, paths: ['/'] }), 507, 'insufficient_storage')
   } finally {
@@ -134,15 +155,15 @@ test('恢复链按 origin 隔离：Pi full+inc 中插入 import full 仍解析�
     const piFull = addPiArchive(fx, {
       createdAt: '2026-06-01T00:00:00.000Z',
       mode: 'full',
-      snapshotRows: [{ id: 'file-a', name: 'a.txt', kind: 'file', size: 3 }],
-      contents: [{ id: 'file-a', data: Buffer.from('old') }],
+      snapshotRows: [{ id: 'file-alpha', name: 'a.txt', kind: 'file', size: 3 }],
+      contents: [{ id: 'file-alpha', data: Buffer.from('old') }],
     })
     const piInc = addPiArchive(fx, {
       createdAt: '2026-06-01T02:00:00.000Z',
       mode: 'inc',
       since: '2026-06-01T00:00:00.000Z',
-      snapshotRows: [{ id: 'file-b', name: 'b.txt', kind: 'file', size: 3 }],
-      contents: [{ id: 'file-b', data: Buffer.from('new') }],
+      snapshotRows: [{ id: 'file-bravo', name: 'b.txt', kind: 'file', size: 3 }],
+      contents: [{ id: 'file-bravo', data: Buffer.from('new') }],
     })
     // Web 导入的 full 时间落在两个 Pi 归档之间，不能成为 Pi inc 的父链。
     const imported = buildArchive({
@@ -224,7 +245,7 @@ test('Web prepare：超时清理本次锁与 .part；陈旧锁（>1h）可继续
 
 test('恢复解包前按 tar 实际字节预检：快照声明 1 字节、实际 20 MiB，空间不足返回 507 且不建目标', async () => {
   let free = 4 * 1024 * 1024 * 1024
-  const fx = backupsFixture({ freeBytes: () => free })
+  const fx = backupsFixture({ freeBytes: () => free, config: { quotaBytes: 100 * 1024 * 1024 } })
   try {
     const content = Buffer.alloc(20 * 1024 * 1024, 0x41)
     const name = addPiArchive(fx, {
@@ -234,7 +255,7 @@ test('恢复解包前按 tar 实际字节预检：快照声明 1 字节、实际
       contents: [{ id: 'file-bomb-0001', data: content }],
     })
     const plan = await fx.service.createRestorePlan(fx.actor, { archive: name, paths: ['/'] })
-    assert.equal(plan.totalBytes, 1, '计划展示仍使用快照声明尺寸（API 兼容）')
+    assert.equal(plan.totalBytes, content.length, '计划展示 tar 实测字节')
 
     // 解包真实内容需要 20 MiB + 保留空间；注入可用空间 64 MiB 时必须在写内容前失败。
     free = 64 * 1024 * 1024

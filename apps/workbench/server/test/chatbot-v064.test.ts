@@ -163,7 +163,7 @@ test('v0.6.4：私聊工具连续发送多条消息，并使用目标名称 + Ch
   })
   fixtureRef = fixture
   try {
-    assert.equal(getMeta(fixture.db, 'chatbot_ai_tool_mode'), 'off:send')
+    assert.equal(getMeta(fixture.db, 'chatbot_ai_tool_mode'), 'isolated-v1:off:send')
     createUserTarget(fixture)
     await sendWebhook(
       fixture,

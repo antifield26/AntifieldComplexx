@@ -59,7 +59,7 @@ function authHeader(init: RequestInit): string {
 }
 
 test('status：使用读 Token、GET、redirect:error、带超时信号并解析 JSON', async () => {
-  const { impl, calls } = makeFetch(() => json({ version: '0.6.0', state: 'connected' }))
+  const { impl, calls } = makeFetch(() => json({ version: '0.6.0', state: 'connected', minecraft: { connected: true }, task: { active: false, state: 'idle', queue: [] } }))
   const client = makeClient(impl)
   const status = await client.status()
   assert.equal(status.version, '0.6.0')
@@ -117,7 +117,7 @@ test('history：把 kind/from/to/limit 透传为查询串，使用读 Token', as
   assert.equal(authHeader(calls[0]!.init), `Bearer ${READ}`)
 })
 
-test('控制方法：使用控制 Token，/say 使用读 Token', async () => {
+test('控制方法：使用控制 Token，/say 使用控制 Token', async () => {
   const { impl, calls } = makeFetch(() => json({ ok: true, queued: false, position: null, requestId: 'r1' }))
   const client = makeClient(impl)
 
@@ -144,19 +144,18 @@ test('控制方法：使用控制 Token，/say 使用读 Token', async () => {
 
   await client.say('你好')
   assert.equal(calls[6]?.url, `${BASE}/say`)
-  assert.equal(authHeader(calls[6]!.init), `Bearer ${READ}`)
+  assert.equal(authHeader(calls[6]!.init), `Bearer ${CONTROL}`)
   assert.deepEqual(JSON.parse(String(calls[6]?.init.body)), { message: '你好' })
 })
 
-test('控制 Token 为空：控制方法直接 mcbot_control_disabled，不发请求；/say 仍可用', async () => {
+test('控制 Token 为空：控制方法直接 mcbot_control_disabled，不发请求；发言也禁用', async () => {
   const { impl, calls } = makeFetch(() => json({ ok: true, lines: 1 }))
   const client = makeClient(impl, { controlToken: '' })
   const error = await expectLofiiError(client.startTask('fishing'), 'mcbot_control_disabled')
   assert.equal(error.statusCode, null)
   assert.equal(calls.length, 0)
-  await client.say('只读模式也能说话')
-  assert.equal(calls.length, 1)
-  assert.equal(authHeader(calls[0]!.init), `Bearer ${READ}`)
+  await expectLofiiError(client.say('只读模式'), 'mcbot_control_disabled')
+  assert.equal(calls.length, 0)
 })
 
 test('401/403 映射 mcbot_auth_failed；错误文本不含 URL/Token', async () => {

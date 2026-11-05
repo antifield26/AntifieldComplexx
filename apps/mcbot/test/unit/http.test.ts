@@ -36,22 +36,25 @@ test('HTTP API enforces auth and /say rules', async () => {
       return [text]
     }
   } as unknown as ChatSender
-  const config = makeConfig({ httpPort: 0, httpHost: '127.0.0.1' })
+  const control = 'fedcba9876543210fedcba9876543210'
+  const config = makeConfig({ httpPort: 0, httpHost: '127.0.0.1' }, { HTTP_CONTROL_TOKEN: control })
   const state = makeState(config)
   const api = new HttpApi(fakeDeps(config, state, chatSender))
   const port = await api.start()
   const base = `http://127.0.0.1:${port}`
   const headers = { Authorization: `Bearer ${token}` }
+  const writeHeaders = { Authorization: `Bearer ${control}` }
   try {
     assert.equal((await fetch(`${base}/healthz`)).status, 200)
     assert.equal((await fetch(`${base}/status`)).status, 401)
     assert.equal((await fetch(`${base}/status`, { headers })).status, 200)
-    assert.equal((await fetch(`${base}/say`, { method: 'POST', headers, body: JSON.stringify({ message: 'hi' }) })).status, 409)
+    assert.equal((await fetch(`${base}/say`, { method: 'POST', headers, body: JSON.stringify({ message: 'hi' }) })).status, 401)
+    assert.equal((await fetch(`${base}/say`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ message: 'hi' }) })).status, 409)
 
     connected = true
     const ok = await fetch(`${base}/say`, {
       method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
+      headers: { ...writeHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'hello' })
     })
     assert.equal(ok.status, 200)
@@ -60,21 +63,21 @@ test('HTTP API enforces auth and /say rules', async () => {
 
     const slash = await fetch(`${base}/say`, {
       method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: '/op Antifield' })
+      headers: { ...writeHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'text /op Antifield' })
     })
     assert.equal(slash.status, 400)
 
     const empty = await fetch(`${base}/say`, {
       method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
+      headers: { ...writeHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: '' })
     })
     assert.equal(empty.status, 400)
 
     const long = await fetch(`${base}/say`, {
       method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
+      headers: { ...writeHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'x'.repeat(9000) })
     })
     assert.equal(long.status, 413)

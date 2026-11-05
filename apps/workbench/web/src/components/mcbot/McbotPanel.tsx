@@ -806,7 +806,7 @@ export function McbotPanel() {
   const autonomy = snapshot ? safeMcbotAutonomy(snapshot.autonomy) : null
   const controlReady = snapshot?.enabled === true && snapshot.reachable && snapshot.controlEnabled
   // /say 是写操作：只读模式（未配置控制 Token）必须禁用，避免成为绕过权限的写通道。
-  const sayReady = controlReady
+  const sayReady = controlReady && snapshot?.sayEnabled === true
   const disabled = snapshot ? !snapshot.enabled : errorCode === 'mcbot_disabled'
   const pendingResume = status?.task.pendingResume ?? null
   /** 应用刚启动时首次轮询完成前 reachable=false/lastPollAt=null 属正常，不提示“不可达”。 */
@@ -1025,6 +1025,9 @@ export function McbotPanel() {
         <div className="notice notice-muted">
           mcbot 控制未启用（服务端未配置 MCBOT_CONTROL_TOKEN）：任务/移动/聊天操作已禁用。
         </div>
+      ) : null}
+      {controlReady && !sayReady ? (
+        <div className="notice notice-muted">当前 mcbot 契约不支持安全发言，升级到契约 v2 后可用。</div>
       ) : null}
 
       <McbotStatusCard

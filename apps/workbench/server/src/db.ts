@@ -729,6 +729,21 @@ export const MIGRATIONS: string[] = [
   CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_events_dedupe
     ON alert_events(dedupe_key) WHERE dedupe_key IS NOT NULL;
   `,
+  `
+  -- 外部告警每个通道独立重试，历史事件不补发。
+  CREATE TABLE external_alert_deliveries (
+    event_id INTEGER NOT NULL REFERENCES alert_events(id) ON DELETE CASCADE,
+    channel TEXT NOT NULL CHECK(channel IN ('webhook', 'qq')),
+    delivery_key TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('pending', 'done', 'dead', 'skipped')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT NOT NULL,
+    last_error TEXT,
+    PRIMARY KEY (event_id, channel)
+  );
+  CREATE INDEX idx_external_alert_due ON external_alert_deliveries(channel, next_attempt_at, event_id)
+    WHERE status = 'pending';
+  `,
 ]
 
 export interface OpenOptions {

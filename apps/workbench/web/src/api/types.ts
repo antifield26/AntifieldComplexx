@@ -1573,6 +1573,7 @@ export interface McbotSnapshot {
   reachable: boolean
   stale: boolean
   controlEnabled: boolean
+  sayEnabled?: boolean
   alertsEnabled: boolean
   version: string | null
   contractVersion: number | null

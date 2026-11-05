@@ -2,6 +2,13 @@
 
 > 本文合并原按版本拆分的 `DEBUG-AUDIT-v1.0.5.md`、`DEBUG-AUDIT-v1.0.6.md` 与 `RESOURCE-AUDIT-2026-10-31.md`。v1.0.7 的当前处置见下节。v1.0.6 正文、历史 v1.0.5 Debug、2026-10-31 磁盘审计与文档漂移检查分别见附录 A/B/C/D。v0.8.1 残余表保持当时原文，不把后来修掉的行改写成当时已修。
 
+## v1.0.8 补丁（工作区）
+
+- 恢复演练覆盖水位与文件对账，Web 恢复按归档实际内容判断，分片上传事务提交文件与会话。
+- 外部告警持久化投递，QQ 不等待 Webhook；Webhook 失败有限重试，接收端可按稳定 `Idempotency-Key` 去重。
+- Chat 全模式关闭隔离失败路径；mcbot v2 控制令牌发言、核心状态校验、自主启动停止串行与移动取消。
+- ARCH6-07 已由 Workbench 轮询实现中止在途请求并等待结束；历史表保留原记录。异地副本启用与 sudo 收权仍为独立运维事项。
+
 ## v1.0.7 运行时可信（2026-11-04 已部署）
 
 本版处理的项。下面 v0.8.1 表里的对应行仍是当时记录：
@@ -15,7 +22,7 @@
 
 OpenCode 针为 2.2.5。升级步骤在 `docs/app/DEPLOY.md` §3.2。矩阵失败则恢复本次 v2.2.0 备份并停止应用部署。未预先加显式 bash/shell deny。
 
-本版明确不修，不得写成已解决：告警风暴并发上限（SEC6-05）、`lastError` 原样透传（SEC6-06）、`MCBOT_URL` 任意 loopback 端口（SEC6-08）、`stop()` 不取消在途轮询（ARCH6-07）、契约版本无守卫（ARCH6-15）、5 格垂直墙、`http-proxy` 弃用警告。`GET /api/mcbot/status` 与 `/history` 已有每 IP 60 次/分钟限流；历史表里“无 GET 限流”的句子不作为本版待修项。
+本版明确不修，不得写成已解决：告警风暴并发上限（SEC6-05）、`lastError` 原样透传（SEC6-06）、`MCBOT_URL` 任意 loopback 端口（SEC6-08）、契约版本无守卫（ARCH6-15）、5 格垂直墙、`http-proxy` 弃用警告。`GET /api/mcbot/status` 与 `/history` 已有每 IP 60 次/分钟限流；历史表里“无 GET 限流”的句子不作为本版待修项。
 
 本地门禁（2026-11-04）：`npm run check` 与 `npm run build` 通过；app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。OpenCode 已升到 2.2.5，矩阵见 `docs/app/DEPLOY.md` §3.2。生产 app `/opt/antifieldcloud/releases/20261104T093100Z`、mcbot `/opt/mcbot/releases/20261104T092858Z`，完整 Access smoke **36/0/1/2**。管理员在线时，安全区内 5 格密封圆石箱让 `go_home` 走 `no_path`/`exhausted` 后安全传送到 `174.5,64,410.5`，自主会话 `decisionCycles=1`、事件「寻路兜底：已安全传送」。围墙已拆除，墙仍不可走。演练 `20261104T103202Z` 为 schema 19（full + 7 inc，世界归档未解包）。早先 smoke 的 schema-18 WARN 是演练前快照，未重跑。另观察到 `movement.stop()` 不清除 `cancelled`，下一次 `go_home` 会直接「移动已取消」，直到 `come`/`follow` 或进程重启；本提交不修。mcbot 已删除超出保留数的 `20261030T120449Z` 与 `20261030T142942Z`。仍保留 current、`20261030T143538Z` 与 `20261030T143306Z`。
 

@@ -509,7 +509,7 @@ test('SEC-11：发送工具启用且隔离不可用（重试窗口内）时 fail
   }
 })
 
-test('SEC-11：未启用发送工具时隔离状态不影响既有 Chat（行为保持）', async () => {
+test('SEC-11：普通 Chat 同样阻断隔离失败', async () => {
   const fixture = createQqServiceFixture({ aiEnabled: true, configOverrides: { chatbotChatBurstWindowMs: 0 } })
   try {
     withIsolation(fixture, isolationStatus({ retryAt: new Date(Date.now() + 10 * 60_000).toISOString() }))
@@ -523,7 +523,7 @@ test('SEC-11：未启用发送工具时隔离状态不影响既有 Chat（行为
     })
     const event = c2cWebhook(fixture.appSecret, { id: 'v070-nosend-1', userOpenid: 'user-openid-v070-nosend', content: '你好' })
     await sendWebhook(fixture, event)
-    assert.equal(fixture.aiCalls.length, 1, '未启用发送工具时保持旧行为（不 fail-closed）')
+    assert.equal(fixture.aiCalls.length, 0)
   } finally {
     fixture.cleanup()
   }

@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.7）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.8）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -13,7 +13,14 @@
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
-- 当前 schema **v19**：迁移 19 为 `alert_events.dedupe_key`（可空 TEXT，部分唯一索引；历史行保持 NULL）。此前 v18 的 `audit_write_failures` 保存审计失败诊断；`chatbot_group_roles` 保存群聊共享角色卡；`chatbot_memory_items`/`chatbot_memory_state` 保存结构化记忆；`chatbot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照。schema v19 写入后，回退到 v1.0.6 必须先恢复该快照。
+- 当前 schema **v20**（工作区）：新增外部告警 Webhook 和 QQ 入队状态。迁移前保存并核验 schema 19 快照。生产版本见下方记录。
+
+## v1.0.8 发布顺序
+
+1. 用修正后的 `drill.ps1 -ExpectedSchemaVersion 19 -IncludeWorld -RequireWorld` 复核现有链和文件。可用 `-ReportRoot` 将报告与保留清理隔离到指定目录。若缺档或缺件，保全原归档并验证新全量基线。
+2. 保留并校验 schema 19 的迁移前数据库快照，先切换 Workbench。旧 mcbot 仍可读取和执行既有控制，发言返回 `503 mcbot_say_unavailable`。过渡 smoke 用 `-ExpectedMcbotVersion 1.0.7 -ExpectedMcbotContractVersion 1`。
+3. 升级 mcbot，核对契约 2，验证发言仅接受控制 Token。本机调用方同步切换令牌。重新安装 Windows 备份任务，拉取并确认 schema 20 归档，重跑演练与完整 Access smoke。
+4. mcbot 可单独回退到 v1。Workbench 回退时先留存 v20 数据库副本，再恢复迁移前 schema 19 快照和旧 release。有新增写入时优先前向修复。Minecraft 维持运行，整包加密、异地副本及 Pi sudo 收权另行排期。
 
 > **v1.0.7 部署（2026-11-04 已完成，commit `b17102b`）**：OpenCode 2.2.5 已按 §3.2 升级，运行中 `/api/info` 为 2.2.5，矩阵见 §3.2，回滚备份 timestamp `20261104T062115Z`。app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19），迁移前 DB 快照 `db-predeploy-20261104T093146763Z.sqlite`（sha256 `1b09c9…fa03`）。mcbot `/opt/mcbot/releases/20261104T092858Z`。完整 Access smoke **36/0/1/2**。同日实机：5 格密封箱触发区内安全传送与一次自主重决策。演练 `20261104T103202Z` 通过（schema 19，full + 7 inc，世界归档未解包）。早先 smoke 的 schema-18 WARN 是演练前快照，未重跑 smoke。回退应用必须先恢复该快照。不重启 Minecraft，不启用异地副本。已发布 annotated Tag `v1.0.7` 与 GitHub Release。
 
@@ -203,7 +210,7 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 - 手工等价步骤（仅在脚本不可用时）：解包 → `npm ci --omit=dev --ignore-scripts` → 先跑
   `node scripts/backup.mjs --snapshot-db` → 写入/校验 `APP_VERSION` → `ln -sfn` → `systemctl restart antifieldcloud` → `curl /healthz`。
 
-### 3.0 应用部署步骤（当前版本 v1.0.7；schema v19）
+### 3.0 应用部署步骤（工作区 v1.0.8；schema v20）
 
 1. **本地发布前校验**（PC）：`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格模式，含 schema/OpenCode 交叉校验）、
    `node scripts/check-prod-deps.mjs`。check-version 期望 app/mcbot `1.0.7`、schema `19`、OpenCode `2.2.5`。
@@ -1129,10 +1136,10 @@ curl -fsS http://127.0.0.1:3000/healthz
 ```
 
 - 每次部署在切换前生成 `/var/lib/antifieldcloud/backups/db-predeploy-*.sqlite`（0600，**保留最新 2 个**：`MAX_PREDEPLOY_SNAPSHOTS=2`，供自动回滚；明文快照属威胁模型明确豁免项，见 `docs/app/SECURITY.md` §4）。
-- **schema 只向上（当前 v19）**（迁移 5 结构、迁移 6 孤儿 shares 修复、迁移 7 Bot 表、迁移 8 重建 Bot 表/静默列/AI 会话、
+- **schema 只向上（工作区 v20）**（迁移 5 结构、迁移 6 孤儿 shares 修复、迁移 7 Bot 表、迁移 8 重建 Bot 表/静默列/AI 会话、
   迁移 9 `allow_chat`/`chatbot_ai_memories`/`chatbot_inbound_targets`、迁移 10 `chatbot_ai_sessions.mode`、迁移 11 `chatbot_chat_roles`、
   迁移 12 `chat_trigger`/`chatbot_events` 诊断列、迁移 13 删除非 QQ Bot 及级联数据、迁移 14 结构化记忆两表、迁移 15 `qq_number` 兼容列、
-  迁移 16 群聊角色卡 `chatbot_group_roles`、迁移 17 审计失败诊断表、迁移 18 chatbot 全量改名、迁移 19 `alert_events.dedupe_key`；当前 schema v19）：迁移前会清理不可达孤儿 shares 并做 `PRAGMA foreign_key_check`，
+  迁移 16 群聊角色卡 `chatbot_group_roles`、迁移 17 审计失败诊断表、迁移 18 chatbot 全量改名、迁移 19 `alert_events.dedupe_key`、迁移 20 `external_alert_deliveries`）：迁移前会清理不可达孤儿 shares 并做 `PRAGMA foreign_key_check`，
   其它外键不一致会拒绝启动；旧代码遇到更高 schema 会拒绝启动。迁移单向、无 down；回滚旧 release 前必须恢复对应迁移前快照
   （`stop → 复制快照为 db.sqlite → 删除 -wal/-shm → 还原 APP_VERSION → 切 release → start`）。
   回滚旧 release 前必须恢复对应迁移前快照并同步还原 `APP_VERSION`；生产数据变更以快照为准。

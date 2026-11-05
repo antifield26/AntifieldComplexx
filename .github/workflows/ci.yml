@@ -59,6 +59,8 @@ jobs:
 
       - name: Coverage (web)
         run: npm run test:web:coverage
+      - name: Coverage (mcbot)
+        run: npm run test:coverage -w @antifieldcomplexx/mcbot
 
   prod-dependencies:
     runs-on: ubuntu-latest
@@ -147,6 +149,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Setup Node 26
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      - name: Exercise the Windows restore drill
+        run: node --test scripts/test/drill-powershell.test.mjs
 
       - name: Check PowerShell BOM and syntax (PS 5.1)
         shell: powershell

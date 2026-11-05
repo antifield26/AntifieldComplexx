@@ -66,7 +66,7 @@ interface ActiveRun {
   state: AutonomyState
   active: boolean
   sessionId: string | null
-  mcpRegistered: boolean
+  startup: Promise<void> | null
   toolCalls: number
   failures: number
   lastAction: string | null
@@ -158,6 +158,7 @@ export class AutonomyService {
   private readonly deps: AutonomyServiceDeps
   private readonly logger: Logger
   private run: ActiveRun | null = null
+  private mcpCleanupRequired = true
 
   constructor (deps: AutonomyServiceDeps) {
     this.deps = deps
@@ -261,7 +262,7 @@ export class AutonomyService {
       state: 'starting',
       active: true,
       sessionId: null,
-      mcpRegistered: false,
+      startup: null,
       toolCalls: 0,
       failures: 0,
       lastAction: null,
@@ -297,41 +298,52 @@ export class AutonomyService {
       details: { goalChars: goalText.length, maxToolCalls: run.maxToolCalls }
     })
     try {
-      await this.deps.opencode.removeMcp(AUTONOMY_MCP_SERVER).catch(() => undefined)
-      await this.deps.opencode.registerMcp(AUTONOMY_MCP_SERVER, this.mcpUrl(), run.token)
-      run.mcpRegistered = true
-      // OpenCode 运行时注册 MCP 后，工具列表刷新是异步的；过早创建 session 会让模型
-      // 看不到工具（表现为空回复/直接结束）。等待工具发现完成后再 prompt。
-      await this.sleep(this.deps.config.autonomyMcpWarmupMs)
+      run.startup = this.prepareRun(run)
+      await run.startup
       if (run.stopRequested) return this.stoppedDuringStart(run)
-      const permissions: SessionPermission[] = [
-        { action: '*', resource: '*', effect: 'deny' },
-        { action: AUTONOMY_PERMISSION_PREFIX, resource: '*', effect: 'allow' }
-      ]
-      run.sessionId = await this.deps.opencode.createSession(`mcbot-autonomy-${run.runId.slice(0, 8)}`, permissions)
+      const signal = this.decisionSignal(run)
+      await this.promptRun(run, signal)
       if (run.stopRequested) return this.stoppedDuringStart(run)
-      run.state = 'running'
-      this.publish()
-      this.subscribeEvents(run)
-      await this.deps.opencode.prompt(run.sessionId, this.buildPrompt(run))
-      if (run.stopRequested) return this.stoppedDuringStart(run)
-      run.loop = this.decisionLoop(run)
+      run.loop = this.decisionLoop(run, signal)
       return { ok: true, autonomy: this.snapshot() }
     } catch (error) {
+      if (run.stopRequested) return this.stoppedDuringStart(run)
       await this.finalize(run, 'failed', this.errorCode(error))
       return { ok: false, code: this.errorCode(error), autonomy: this.snapshot() }
     }
   }
 
+  private async removeMcp (): Promise<void> {
+    if (!this.mcpCleanupRequired) return
+    try {
+      await this.deps.opencode.removeMcp(AUTONOMY_MCP_SERVER)
+    } catch (error) {
+      if (!(error instanceof OpenCodeSessionError && error.status === 404)) throw error
+    }
+    this.mcpCleanupRequired = false
+  }
+
+  private async prepareRun (run: ActiveRun): Promise<void> {
+    await this.removeMcp()
+    if (run.stopRequested) return
+    // 注册请求超时也可能已被上游接收，清理标记先于请求设置。
+    this.mcpCleanupRequired = true
+    await this.deps.opencode.registerMcp(AUTONOMY_MCP_SERVER, this.mcpUrl(), run.token)
+    if (run.stopRequested) return
+    await this.sleep(this.deps.config.autonomyMcpWarmupMs)
+    if (run.stopRequested) return
+    const permissions: SessionPermission[] = [
+      { action: '*', resource: '*', effect: 'deny' },
+      { action: AUTONOMY_PERMISSION_PREFIX, resource: '*', effect: 'allow' }
+    ]
+    run.sessionId = await this.deps.opencode.createSession(`mcbot-autonomy-${run.runId.slice(0, 8)}`, permissions)
+    if (run.stopRequested) return
+    run.state = 'running'
+    this.publish()
+    this.subscribeEvents(run)
+  }
+
   private async stoppedDuringStart (run: ActiveRun): Promise<AutonomyStartResult> {
-    if (run.sessionId) {
-      await this.deps.opencode.deleteSession(run.sessionId).catch(() => undefined)
-      run.sessionId = null
-    }
-    if (run.mcpRegistered) {
-      await this.deps.opencode.removeMcp(AUTONOMY_MCP_SERVER).catch(() => undefined)
-      run.mcpRegistered = false
-    }
     await this.finalize(run, 'finished', null, 'stopped')
     return { ok: false, code: 'autonomy_stopped', autonomy: this.snapshot() }
   }
@@ -438,8 +450,29 @@ export class AutonomyService {
     return task.active || task.queue.length > 0 || task.pendingResume !== null
   }
 
-  private async waitForAssistant (run: ActiveRun): Promise<void> {
-    await this.deps.opencode.wait(run.sessionId ?? '', run.abort.signal)
+  private decisionSignal (run: ActiveRun): AbortSignal {
+    const budget = Math.min(this.deps.config.autonomyDecisionTimeoutMs, run.deadline - Date.now())
+    if (budget <= 0) throw new OpenCodeSessionError('timeout', 'decision budget exhausted')
+    return AbortSignal.any([run.abort.signal, AbortSignal.timeout(budget)])
+  }
+
+  private async decisionRequest (run: ActiveRun, signal: AbortSignal, request: () => Promise<void>): Promise<void> {
+    try {
+      signal.throwIfAborted()
+      await request()
+      signal.throwIfAborted()
+    } catch (error) {
+      if (!run.abort.signal.aborted && signal.aborted) throw new OpenCodeSessionError('timeout', 'decision budget exhausted')
+      throw error
+    }
+  }
+
+  private async promptRun (run: ActiveRun, signal: AbortSignal, cause?: string): Promise<void> {
+    await this.decisionRequest(run, signal, () => this.deps.opencode.prompt(run.sessionId ?? '', this.buildPrompt(run, cause), signal))
+  }
+
+  private async waitForAssistant (run: ActiveRun, signal: AbortSignal): Promise<void> {
+    await this.decisionRequest(run, signal, () => this.deps.opencode.wait(run.sessionId ?? '', signal))
     if (run.finishRequested) await this.sleep(200)
   }
 
@@ -467,9 +500,9 @@ export class AutonomyService {
     })
   }
 
-  private async decisionLoop (run: ActiveRun): Promise<void> {
+  private async decisionLoop (run: ActiveRun, firstSignal: AbortSignal): Promise<void> {
     try {
-      await this.waitForAssistant(run)
+      await this.waitForAssistant(run, firstSignal)
       while (run.active && !run.stopRequested && !run.finishRequested) {
         if (!this.hasTask() && !run.pendingReason) break
         const cause = await this.waitForDecision(run)
@@ -488,9 +521,10 @@ export class AutonomyService {
         run.lastDecisionAt = nowIso()
         run.state = 'running'
         this.publish()
-        await this.deps.opencode.prompt(run.sessionId ?? '', this.buildPrompt(run, cause))
+        const signal = this.decisionSignal(run)
+        await this.promptRun(run, signal, cause)
         if (run.stopRequested || run.finishRequested) break
-        await this.waitForAssistant(run)
+        await this.waitForAssistant(run, signal)
       }
       await this.finalize(run, 'finished', null)
     } catch (error) {
@@ -521,6 +555,10 @@ export class AutonomyService {
       try {
         this.deps.movement.stop('autonomy')
       } catch { /* best effort */ }
+      const taskCleanup = this.deps.tasks.isActive()
+        ? this.deps.tasks.stopAndWait('autonomy_end').catch(() => this.logger.warn('autonomy task cleanup failed'))
+        : null
+      await run.startup?.catch(() => undefined)
       try {
         const bot = this.deps.getBot()
         if (bot?.currentWindow) await bot.closeWindow(bot.currentWindow).catch(() => undefined)
@@ -530,16 +568,14 @@ export class AutonomyService {
           await this.deps.opencode.interrupt(run.sessionId).catch(() => undefined)
         }
       } catch { /* best effort */ }
-      try {
-        if (this.deps.tasks.isActive()) {
-          await this.deps.tasks.stopAndWait('autonomy_end')
-        }
-      } catch (error) {
-        this.logger.warn('autonomy task cleanup failed', { error: error instanceof Error ? error.message : String(error) })
-      }
+      await taskCleanup
       try {
         if (run.sessionId) await this.deps.opencode.deleteSession(run.sessionId).catch(() => undefined)
-        if (run.mcpRegistered) await this.deps.opencode.removeMcp(AUTONOMY_MCP_SERVER).catch(() => undefined)
+        await this.removeMcp().catch(() => {
+          errorCode = 'autonomy_mcp_cleanup_failed'
+          outcome = 'failed'
+          this.logger.warn('autonomy MCP cleanup failed')
+        })
       } finally {
         run.state = outcome
         run.active = false
@@ -590,7 +626,7 @@ export class AutonomyService {
   async handleMcpHttp (bearer: string, body: unknown): Promise<McpHttpResult> {
     if (!this.enabled) return { status: 404, body: { error: 'autonomy_disabled' } }
     const run = this.run
-    if (!run || !run.active || !safeEqual(bearer, run.token)) {
+    if (!run || !run.active || run.stopRequested || !safeEqual(bearer, run.token)) {
       return { status: 401, body: { error: 'unauthorized' } }
     }
     const requests = Array.isArray(body) ? body : [body]

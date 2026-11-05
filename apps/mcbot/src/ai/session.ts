@@ -31,7 +31,7 @@ export interface AutonomySessionClient {
   registerMcp: (name: string, url: string, bearer: string) => Promise<void>
   removeMcp: (name: string) => Promise<void>
   createSession: (title: string, permissions: SessionPermission[]) => Promise<string>
-  prompt: (sessionId: string, text: string) => Promise<void>
+  prompt: (sessionId: string, text: string, signal?: AbortSignal) => Promise<void>
   wait: (sessionId: string, signal?: AbortSignal) => Promise<void>
   interrupt: (sessionId: string) => Promise<void>
   deleteSession: (sessionId: string) => Promise<void>
@@ -137,8 +137,8 @@ export class OpenCodeSessionClient implements AutonomySessionClient {
     return id
   }
 
-  async prompt (sessionId: string, text: string): Promise<void> {
-    await this.request('POST', `/api/session/${encodeURIComponent(sessionId)}/prompt`, { text })
+  async prompt (sessionId: string, text: string, signal?: AbortSignal): Promise<void> {
+    await this.request('POST', `/api/session/${encodeURIComponent(sessionId)}/prompt`, { text }, { signal })
   }
 
   async wait (sessionId: string, signal?: AbortSignal): Promise<void> {

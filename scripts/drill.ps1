@@ -1,5 +1,6 @@
 ﻿param(
   [string]$BackupRoot = (Join-Path $env:USERPROFILE "AntifieldCloudBackups"),
+  [string]$ReportRoot = "",
   [switch]$IncludeWorld,
   [switch]$RequireWorld,
   [int]$KeepDays = 180,
@@ -19,9 +20,9 @@
 # 1) 定位最新 full 与其后的全部 inc（按归档名时间戳排序；明文 .tar.gz 与加密 .tar.gz.age 混合链均支持）；
 # 2) 每个归档校验 .sha256 旁文件 + SHA-256（加密归档先校验密文，再用 -AgeIdentityPath 解密到临时目录，
 #    按 <archive>.meta.json 的 plainSha256/plainSize 校验明文，临时明文随演练目录清理）；
-# 3) 链连续性：inc 的 manifest.since 必须与上一归档 createdAt 对齐（缺失/断链即失败）；
+# 3) 链连续性：增量起点不得晚于已覆盖水位，终点必须推进水位；
 # 4) 解包到临时目录（先完成安全检查才解包），取最新 db-*.sqlite，调用 node drill-verify.mjs
-#    做 PRAGMA integrity_check / foreign_key_check / schema_version 与 manifest schema/mode/fileCount 校验；
+#    校验 SQLite 完整性、外键、schema 与全部物理文件；
 # 5) 世界归档默认只校验 SHA/列表/level.dat（-IncludeWorld 时才解包，且先检查临时盘空间）；
 # 6) 输出 %BackupRoot%\drills\<UTC>\report.json|report.md，失败退出码 1；
 # 7) 可选把 ASCII 状态写回 Pi /var/lib/antifieldcloud/drill-status.json（-PiHost 指定时）。
@@ -40,7 +41,7 @@ $script:report = $null
 
 $base = Join-Path $env:LOCALAPPDATA "AntifieldCloud"
 $logPath = Join-Path $base "drill.log"
-$reportRoot = Join-Path $BackupRoot "drills"
+if ([string]::IsNullOrWhiteSpace($ReportRoot)) { $ReportRoot = Join-Path $BackupRoot "drills" }
 $worldRoot = Join-Path $BackupRoot "world"
 $drillVerifyPath = Join-Path $PSScriptRoot "drill-verify.mjs"
 $target = "$PiUser@$PiHost"
@@ -264,13 +265,6 @@ function ConvertFrom-Stamp {
   } catch {
     return $null
   }
-}
-
-function Get-TimestampFromDatabaseName {
-  param([string]$Name)
-  $match = [regex]::Match($Name, '^db-(\d{8}T\d{6,9}Z)(?:-\d+)?\.sqlite$')
-  if (-not $match.Success) { return $null }
-  return (ConvertFrom-Stamp -Stamp $match.Groups[1].Value)
 }
 
 # 按文件体积给压缩/解压操作留超时：小归档用基础值，大世界归档按 MiB 估算并夹在 7200s 内。
@@ -508,38 +502,6 @@ function Invoke-ChainExtraction {
   return $extractDir
 }
 
-function Get-LatestDatabase {
-  param([string]$ExtractDir)
-  $backupsDir = Join-Path $ExtractDir "backups"
-  if (-not (Test-Path -LiteralPath $backupsDir)) {
-    Add-DrillError -Code "db_snapshot_missing" -Message "解包目录中缺少 backups/ 目录"
-    return $null
-  }
-  $dbFiles = @(Get-ChildItem -LiteralPath $backupsDir -File -Filter "db-*.sqlite" -ErrorAction SilentlyContinue)
-  if ($dbFiles.Count -eq 0) {
-    Add-DrillError -Code "db_snapshot_missing" -Message "解包目录中找不到 db-*.sqlite"
-    return $null
-  }
-  $best = $null
-  $bestTimestamp = $null
-  foreach ($file in $dbFiles) {
-    $timestamp = Get-TimestampFromDatabaseName -Name $file.Name
-    if ($null -eq $timestamp) {
-      Add-DrillWarning -Code "db_name_unexpected" -Message "忽略无法解析时间的 DB 快照：$($file.Name)"
-      continue
-    }
-    if ($null -eq $bestTimestamp -or $timestamp -gt $bestTimestamp) {
-      $best = $file
-      $bestTimestamp = $timestamp
-    }
-  }
-  if (-not $best) {
-    Add-DrillError -Code "db_snapshot_missing" -Message "没有时间戳可解析的 db-*.sqlite"
-    return $null
-  }
-  return [pscustomobject]@{ File = $best; Timestamp = $bestTimestamp }
-}
-
 # 世界归档：默认只校验 SHA/条目安全/level.dat；-IncludeWorld 时先查空间再解包。
 function Test-WorldArchive {
   $result = [ordered]@{
@@ -579,20 +541,9 @@ function Test-WorldArchive {
   $result.sizeBytes = $latest.Length
   Write-Log "校验世界归档：$($latest.Name)（$($latest.Length) bytes）"
   $sidecarPath = "$($latest.FullName).sha256"
-  $listing = $null
-  $tempWorldDir = Join-Path $script:tempDir "world-check"
-  New-Item -ItemType Directory -Force -Path $tempWorldDir | Out-Null
-  $timeout = Get-SizeBasedTimeout -SizeBytes $latest.Length -BaseSeconds $CommandTimeoutSec -SecondsPerMiB 8
-  $nameResult = Invoke-NativeWithTimeout -FilePath $script:tarBin -Arguments @('-tzf', $latest.FullName) -TimeoutSeconds $timeout -Label "tar -tzf world"
-  if ($nameResult.ExitCode -eq 0) {
-    $entries = @($nameResult.StdOut -split "`r?`n" | Where-Object { $_ -ne "" })
-    $listingPath = Join-Path $tempWorldDir "world-listing.txt"
-    Write-Utf8NoBom -Path $listingPath -Content (($entries -join "`n") + "`n")
-    $listing = [pscustomobject]@{ Path = $listingPath; Entries = $entries }
-  } else {
-    Add-DrillError -Code "tar_list_failed" -Message ("世界归档 tar -tzf 失败（exit=$($nameResult.ExitCode)）：$($latest.Name) $($nameResult.StdErr)")
-    return $result
-  }
+  $previousErrors = $script:errors.Count
+  $listing = Get-ArchiveListing -Archive @{ Name = $latest.Name; SizeBytes = $latest.Length; WorkPath = $latest.FullName }
+  if (-not $listing -or $script:errors.Count -gt $previousErrors) { return $result }
   if (Test-Path -LiteralPath $sidecarPath) {
     $arguments = @(
       '--archive', $latest.FullName,
@@ -643,7 +594,7 @@ function Test-WorldArchive {
   }
   $result.extracted = $true
   $levelDat = Join-Path (Join-Path $worldExtractDir 'world') 'level.dat'
-  if (Test-Path -LiteralPath $levelDat) {
+  if ((Test-Path -LiteralPath $levelDat -PathType Leaf) -and (Get-Item -LiteralPath $levelDat).Length -gt 0) {
     $result.restoredLevelDat = $true
     Write-Log "世界归档解包成功：world/level.dat $((Get-Item -LiteralPath $levelDat).Length) bytes"
   } else {
@@ -753,6 +704,9 @@ function Build-ReportMarkdown {
   $lines.Add("- schema_version：$($Report.database.schemaVersion)")
   $lines.Add("- integrity_check：$($Report.database.integrity)")
   $lines.Add("- foreign_key_check：通过=$($Report.database.foreignKeyOk)，违规=$($Report.database.foreignKeyViolations)")
+  if ($Report.files) {
+    $lines.Add("- 文件：已检查 $($Report.files.checked)，哈希通过 $($Report.files.hashed)，仅大小 $($Report.files.sizeOnly)，缺失 $($Report.files.missing)，异常 $($Report.files.invalid)")
+  }
   $lines.Add("")
   $lines.Add("## 世界归档")
   $lines.Add("")
@@ -802,6 +756,7 @@ $script:tarBin = $null
 $fullResult = $null
 $incrementResults = @()
 $databaseResult = $null
+$fileResult = $null
 $worldResult = $null
 $reportDir = $null
 $chainVerified = $false
@@ -865,8 +820,7 @@ try {
           }
         }
       }
-      # 链连续性（OPS-13）：每个 inc 的 manifest.since 必须等于/晚于上一归档 createdAt，
-      # 缺失 inc 或时间戳倒退都会在这里暴露，不能只靠“单归档 tar 能解开”。
+      # 允许覆盖重叠，但增量不能留下空洞，也不能让覆盖水位倒退。
       if ($script:errors.Count -eq 0 -and $chainChecks.Count -eq (@($selected.Increments).Count + 1)) {
         $previousCreatedAt = $null
         if ($chainChecks[0].Manifest) { $previousCreatedAt = [string]$chainChecks[0].Manifest.createdAt }
@@ -889,13 +843,13 @@ try {
             $chainVerified = $false
             break
           }
-          if ($previousTime -and $sinceTime -lt $previousTime) {
-            Add-DrillError -Code "chain_discontinuity" -Message ("增量链断链/乱序：$($current.Archive.Name) 的 since=$since 早于上一归档 createdAt=$previousCreatedAt")
+          if ($previousTime -and $sinceTime -gt $previousTime) {
+            Add-DrillError -Code "chain_discontinuity" -Message ("增量链断链：$($current.Archive.Name) 的 since=$since 晚于已覆盖水位 $previousCreatedAt")
             $chainVerified = $false
             break
           }
-          if ($createdTime -lt $sinceTime) {
-            Add-DrillError -Code "chain_timestamp_invalid" -Message ("归档 createdAt 早于 since：$($current.Archive.Name)")
+          if ($createdTime -lt $sinceTime -or ($previousTime -and $createdTime -le $previousTime)) {
+            Add-DrillError -Code "chain_timestamp_invalid" -Message ("增量归档未推进覆盖水位：$($current.Archive.Name)")
             $chainVerified = $false
             break
           }
@@ -906,11 +860,12 @@ try {
       if ($script:errors.Count -eq 0) {
         $extractDir = Invoke-ChainExtraction -Chain $selected
         if ($extractDir) {
-          $latestDb = Get-LatestDatabase -ExtractDir $extractDir
-          if ($latestDb) {
-            $dbArguments = @('--db', $latestDb.File.FullName)
+          $dbPath = Join-Path $extractDir $chainChecks[-1].Manifest.database
+          if (Test-Path -LiteralPath $dbPath -PathType Leaf) {
+            $dbName = Split-Path -Leaf $dbPath
+            $dbArguments = @('--db', $dbPath, '--restored-root', $extractDir)
             if ($ExpectedSchemaVersion -gt 0) { $dbArguments += @('--schema-version', [string]$ExpectedSchemaVersion) }
-            $dbVerify = Invoke-Verify -Arguments $dbArguments -Label "verify db $($latestDb.File.Name)"
+            $dbVerify = Invoke-Verify -Arguments $dbArguments -Label "verify db $dbName"
             Add-VerifyResult -Result $dbVerify -Context "db"
             $integrity = $null
             $foreignKeyOk = $null
@@ -926,12 +881,15 @@ try {
               }
             }
             $databaseResult = [ordered]@{
-              name                  = $latestDb.File.Name
+              name                  = $dbName
               schemaVersion         = $schemaVersion
               integrity             = $integrity
               foreignKeyOk          = $foreignKeyOk
               foreignKeyViolations  = $foreignKeyViolations
             }
+            if ($dbVerify -and $dbVerify.checks) { $fileResult = $dbVerify.checks.files.details }
+          } else {
+            Add-DrillError -Code "db_snapshot_missing" -Message "缺少最后一份归档 manifest 指定的数据库快照"
           }
         }
       } else {
@@ -987,6 +945,7 @@ try {
     full          = $fullReport
     increments    = @($incrementResults)
     database      = $databaseReport
+    files         = $fileResult
     world         = $worldReport
     report        = [ordered]@{ name = $reportDirName; json = (Join-Path $reportDir "report.json"); markdown = (Join-Path $reportDir "report.md") }
     errors        = [object[]]@($script:errors | ForEach-Object { [pscustomobject]@{ code = $_.code; message = $_.message } })

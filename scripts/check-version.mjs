@@ -44,11 +44,15 @@ function readToolVersions(root) {
   if (typeof parsed?.mcbotVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(parsed.mcbotVersion)) {
     return { ok: false, error: { code: 'tool_versions_invalid', message: `${TOOL_VERSIONS_FILE}.mcbotVersion 必须是 x.y.z` } }
   }
+  if (!Number.isSafeInteger(parsed?.mcbotContractVersion) || parsed.mcbotContractVersion < 1) {
+    return { ok: false, error: { code: 'tool_versions_invalid', message: `${TOOL_VERSIONS_FILE}.mcbotContractVersion 必须是正整数` } }
+  }
   return {
     ok: true,
     schemaVersion: parsed.schemaVersion,
     opencodeVersion: parsed.opencodeVersion,
     mcbotVersion: parsed.mcbotVersion,
+    mcbotContractVersion: parsed.mcbotContractVersion,
   }
 }
 
@@ -237,6 +241,11 @@ export async function checkVersions(root = process.cwd()) {
         code: 'mcbot_tool_version_mismatch',
         message: `${TOOL_VERSIONS_FILE}.mcbotVersion=${toolVersions.mcbotVersion} 与统一版本=${packageVersion} 不一致`,
       })
+    }
+    const contractSource = readText(resolve(resolvedRoot, 'apps/mcbot/src/contract.ts'))
+    const contract = /^export const CONTRACT_VERSION = (\d+)$/m.exec(contractSource ?? '')
+    if (Number(contract?.[1]) !== toolVersions.mcbotContractVersion) {
+      errors.push({ code: 'mcbot_contract_version_mismatch', message: 'mcbot 契约版本与工具版本清单不一致' })
     }
 
     const allowStaleTools = process.env.CHECK_VERSION_ALLOW_STALE_TOOLS === '1'

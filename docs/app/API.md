@@ -741,7 +741,7 @@ ChatbotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|proje
 
 ## 15. mcbot Bot 对接（v0.8.0 引入；v1.0.2 自主模式；v1.0.3 环境/动作工具；v1.0.5 在线模式/目标/自动生存；v1.0.6 寻路状态；v1.0.7 成功时间与兜底原因；默认关闭）
 
-mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。上游契约为 mcbot **v1.0.7**（最低兼容 v0.6.0，`contractVersion=1`）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
+mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。目标上游为 mcbot **v1.0.8**（契约 v2，兼容已声明契约 v1 的旧版本）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
 
 ### 通用语义
 
@@ -763,6 +763,7 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
   "reachable": true,
   "stale": false,
   "controlEnabled": true,
+  "sayEnabled": true,
   "alertsEnabled": true,
   "eventsSupported": true,
   "version": "0.6.1",
@@ -780,7 +781,7 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 - `eventsSupported`：上游是否提供 `/events/recent`（旧版 404 时 false）；字段缺失/`undefined` 时前端**不把 undefined 当作支持**，回退为按 `contractVersion`（仅 number 有效）或已有事件数组判断；`contractVersion` 仅接受 number（否则显示“—”，不显示 `vundefined`）。
 - `events`：内存环最近事件，**newest-first，最多 100 条且序列化总字节 ≤512 KiB**；服务端重启清空；不写入 DB/日志。
 - `error`：稳定错误码（如 `mcbot_unavailable`/`mcbot_auth_failed`/`mcbot_cursor_failed`/`mcbot_upstream_error`），不是上游原文。**`reachable=true` 时 `error` 仍可能非空**（如 `/status` 成功但 `/events/recent` 失败或游标写库失败），前端必须展示可见警告，不得把“可达”等同于“事件/告警正常”。
-- `lastPollAt` 为最近一次轮询**尝试**时间，失败也会更新。`lastSuccessAt` 只在完整上游 `/status` 成功时更新；从未成功为 `null`。面板过期文案用 `lastSuccessAt`，null 时显示“尚无成功轮询”。
+- `lastPollAt` 为最近一次轮询**尝试**时间，失败也会更新。`lastSuccessAt` 只在 `/healthz` 契约与 `/status` 核心字段通过校验后更新；从未成功为 `null`。面板过期文案用 `lastSuccessAt`，null 时显示“尚无成功轮询”。
 - `navigation` 可选。v1.0.7 起含 `lastFallbackReason`（最近一次兜底原因，≤160 字符）；无兜底或旧版缺字段时为 `null`。该短文本只给面板，不进入自主提示。
 - 游标/告警重试：`recordExternal` 写告警失败时游标停在上一条**已完整处理**的事件，下一轮重新处理失败事件。同一 `dedupe_key` 再次写入视为已处理，游标可以前进，且不再通知。`MCBOT_ALERTS_ENABLED=false` 时仍推进游标但不写告警。
 
@@ -871,7 +872,7 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 
 ### POST /api/mcbot/say
 
-需要会话 + CSRF + **控制 Token**（v0.8.1 起 `/say` 是游戏内写操作，只读模式重必须返回 `503 mcbot_control_disabled`）。body：
+需要会话、CSRF 和控制 Token。无控制 Token 返回 `503 mcbot_control_disabled`，上游契约 v1 返回 `503 mcbot_say_unavailable`，`sayEnabled` 表示契约 v2 下的发言可用性。
 
 ```json
 { "message": "来自 AntifieldComplexx 的问候" }

@@ -164,6 +164,8 @@ const MCBOT_ERROR_LABELS: Record<string, string> = {
   mcbot_unavailable: 'mcbot 服务不可达',
   mcbot_auth_failed: 'mcbot 鉴权失败',
   mcbot_upstream_error: 'mcbot 上游响应异常',
+  mcbot_contract_unsupported: 'mcbot 契约或状态未通过校验',
+  mcbot_say_unavailable: 'mcbot 发言需要契约 v2',
   mcbot_rate_limited: 'mcbot 请求过于频繁',
   mcbot_resume_pending: 'mcbot 有待恢复任务',
   mcbot_resume_failed: 'mcbot 任务恢复失败',

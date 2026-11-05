@@ -21,6 +21,7 @@ import type { Config } from '../config.ts'
 import { transaction } from '../db.ts'
 import { readOutboundHealth } from '../chatbot/outbound.ts'
 import { nowIso } from '../util/time.ts'
+import { ExternalAlertOutbox } from './outbox.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -92,7 +93,7 @@ export interface AlertDeps {
     title: string
     message: string
     createdAt: string
-  }) => void
+  }, durable?: boolean) => void
 }
 
 export interface AlertEventItem {
@@ -329,6 +330,7 @@ export class AlertService {
   private timer: NodeJS.Timeout | null = null
   private running = false
   private lastEvaluatedAt: string | null = null
+  private readonly outbox: ExternalAlertOutbox
 
   constructor(db: DatabaseSync, config: Config, deps: AlertDeps = {}) {
     this.db = db
@@ -353,6 +355,14 @@ export class AlertService {
     this.memoryUsedPct = deps.memoryUsedPct ?? DEFAULT_MEMORY_USED_PCT
     this.unknownThreshold = Math.max(1, deps.unknownThreshold ?? UNKNOWN_DEGRADE_THRESHOLD)
     this.serviceUnits = deps.serviceUnits ?? defaultServiceUnits(config)
+    this.outbox = new ExternalAlertOutbox(db, {
+      now: this.deps.now,
+      webhook: (id, key, signal) => this.sendWebhook(this.externalEvent(id), signal, key),
+      notify: (id) => this.deps.notifyEvent?.(this.externalEvent(id), true),
+      webhookResult: (id, at, error) => this.markDelivery(id, at, error),
+      errorText: (error) => this.sanitizeError(error),
+      warn: (error) => this.deps.log('warn', '外部告警投递异常', { error: this.sanitizeError(error) }),
+    })
   }
 
   // ---------- 生命周期 ----------
@@ -360,6 +370,7 @@ export class AlertService {
   /** 由进程入口调用；alertsEnabled=false 时不启动。定时器 unref，不阻止进程退出。 */
   start(): void {
     if (!this.config.alertsEnabled || this.timer) return
+    this.outbox.start()
     const intervalMs = Math.max(60, this.config.alertCheckIntervalSeconds) * 1000
     this.timer = setInterval(() => {
       void this.evaluateOnce().catch((error: unknown) => {
@@ -372,10 +383,14 @@ export class AlertService {
     })
   }
 
-  stop(): void {
-    if (!this.timer) return
-    clearInterval(this.timer)
+  async stop(): Promise<void> {
+    if (this.timer) clearInterval(this.timer)
     this.timer = null
+    await this.outbox.stop()
+  }
+
+  processExternalDeliveries(): Promise<void> {
+    return this.config.alertsEnabled ? this.outbox.process() : Promise.resolve()
   }
 
   get evaluatedAt(): string | null {
@@ -980,7 +995,9 @@ export class AlertService {
     if (this.lastEventPruneAt > 0 && nowMs - this.lastEventPruneAt < EVENT_PRUNE_INTERVAL_MS) return
     this.lastEventPruneAt = nowMs
     const cutoff = new Date(nowMs - ALERT_EVENT_RETENTION_DAYS * 86_400_000).toISOString()
-    this.db.prepare('DELETE FROM alert_events WHERE created_at < ?').run(cutoff)
+    this.db.prepare(
+      "DELETE FROM alert_events WHERE created_at < ? AND NOT EXISTS (SELECT 1 FROM external_alert_deliveries WHERE event_id = alert_events.id AND status = 'pending')",
+    ).run(cutoff)
   }
 
   private insertEvent(condition: AlertCondition, status: 'firing' | 'resolved' | 'unknown', now: Date): AlertEventRow {
@@ -1054,13 +1071,9 @@ export class AlertService {
     })
   }
 
-  /** 投递单个事件；返回是否成功。失败原因脱敏后写入 delivery_error。 */
-  private async deliver(event: AlertEventRow): Promise<boolean> {
+  private async sendWebhook(event: AlertEventRow, signal?: AbortSignal, key?: string): Promise<boolean> {
     const url = this.config.alertWebhookUrl.trim()
-    if (!url) {
-      this.markDelivery(event.id, null, '未配置 webhook URL')
-      return false
-    }
+    if (!url) return false
     const body = this.buildPayload(event)
     const headers: Record<string, string> = {
       'content-type': 'application/json; charset=utf-8',
@@ -1070,22 +1083,31 @@ export class AlertService {
       const signature = createHmac('sha256', this.config.alertWebhookSecret).update(body).digest('hex')
       headers['x-antifieldcloud-signature'] = `sha256=${signature}`
     }
+    if (key) headers['Idempotency-Key'] = key
+    const timeout = AbortSignal.timeout(WEBHOOK_TIMEOUT_MS)
+    const response = await this.deps.fetch(url, {
+      method: 'POST',
+      headers,
+      body,
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    })
+    await response.body?.cancel()
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return true
+  }
+
+  /** 投递状态机或测试事件；失败原因脱敏后写入 delivery_error。 */
+  private async deliver(event: AlertEventRow): Promise<boolean> {
     let lastError = ''
     for (let attempt = 1; attempt <= WEBHOOK_MAX_ATTEMPTS; attempt += 1) {
       try {
-        const response = await this.deps.fetch(url, {
-          method: 'POST',
-          headers,
-          body,
-          signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
-        })
-        if (!response.ok) {
-          lastError = `HTTP ${response.status}`
-        } else {
-          this.markDelivery(event.id, nowIso(), null)
-          this.deps.log('info', '告警 webhook 已投递', { event: event.event, status: event.status })
-          return true
+        if (!await this.sendWebhook(event)) {
+          this.markDelivery(event.id, null, '未配置 webhook URL')
+          return false
         }
+        this.markDelivery(event.id, nowIso(), null)
+        this.deps.log('info', '告警 webhook 已投递', { event: event.event, status: event.status })
+        return true
       } catch (error) {
         lastError = this.sanitizeError(error)
       }
@@ -1236,13 +1258,15 @@ export class AlertService {
       delivery_error: null,
     }
     try {
-      const result = this.db
-        .prepare(
+      event.id = transaction(this.db, () => {
+        const result = this.db.prepare(
           `INSERT INTO alert_events (event, severity, status, title, message, details_json, created_at, delivered_at, delivery_error, dedupe_key)
            VALUES (?, ?, 'event', ?, ?, ?, ?, NULL, NULL, ?)`,
-        )
-        .run(event.event, event.severity, event.title, event.message, event.details_json, event.created_at, dedupeKey)
-      event.id = Number(result.lastInsertRowid)
+        ).run(event.event, event.severity, event.title, event.message, event.details_json, event.created_at, dedupeKey)
+        const id = Number(result.lastInsertRowid)
+        this.outbox.insert(id)
+        return id
+      })
     } catch (error) {
       if (dedupeKey && isUniqueViolation(error)) {
         const existing = this.findExternalByDedupe(dedupeKey)
@@ -1250,7 +1274,7 @@ export class AlertService {
       }
       throw error
     }
-    void this.deliverExternal(event)
+    this.outbox.wake()
     return event.id
   }
 
@@ -1262,26 +1286,9 @@ export class AlertService {
     return row ? Number(row.id) : null
   }
 
-  /** 外部事件的后台投递：webhook 与 Chatbot 通知互不阻断，失败只记录脱敏日志。 */
-  private async deliverExternal(event: AlertEventRow): Promise<void> {
-    try {
-      await this.deliver(event)
-    } catch (error) {
-      this.deps.log('warn', '外部告警 webhook 投递异常', { event: event.event, error: this.sanitizeError(error) })
-    }
-    try {
-      this.deps.notifyEvent?.({
-        id: event.id,
-        event: event.event,
-        severity: event.severity,
-        status: event.status,
-        title: event.title,
-        message: event.message,
-        createdAt: event.created_at,
-      })
-    } catch (error) {
-      this.deps.log('warn', 'Chatbot 告警通知入队失败', { error: this.sanitizeError(error) })
-    }
+  private externalEvent(id: number): AlertEventRow & { createdAt: string } {
+    const event = this.db.prepare('SELECT * FROM alert_events WHERE id = ?').get(id) as unknown as AlertEventRow
+    return { ...event, createdAt: event.created_at }
   }
 
   /** 发送一条测试告警（不参与状态机）；返回是否成功投递。 */

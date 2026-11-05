@@ -1,3 +1,4 @@
+/** 统一寻路和单次动作取消；传送仅允许经过安全区检查的落点。 */
 import type { Bot } from 'mineflayer'
 import pathfinderPackage from 'mineflayer-pathfinder'
 import { Vec3 } from 'vec3'
@@ -50,8 +51,7 @@ export class MovementManager {
   private bot: Bot | null = null
   private current: 'come' | 'follow' | 'task' | null = null
   private followedName: string | null = null
-  private cancelled = false
-  private followMonitor: NodeJS.Timeout | null = null
+  private operation: AbortController | null = null
   private notify: ((message: string) => void) | null = null
   private advisor: RouteAdvisor | null = null
   private navigationListener: ((snapshot: NavigationSnapshot) => void) | null = null
@@ -59,7 +59,7 @@ export class MovementManager {
   private readonly executor = new RouteExecutor()
   private readonly trace = new NavigationTrace()
   private lastAiAt = 0
-  private savedPathfinderMonitors: Array<() => void> = []
+  private restoreMonitor: (() => void) | null = null
   private navigation: NavigationSnapshot = {
     state: 'idle',
     source: null,
@@ -98,11 +98,8 @@ export class MovementManager {
   }
 
   detach (): void {
-    this.clearFollowMonitor()
-    this.current = null
-    this.followedName = null
+    this.stop('detach')
     this.bot = null
-    this.cancelled = false
   }
 
   setNotify (notify: ((message: string) => void) | null): void {
@@ -177,11 +174,19 @@ export class MovementManager {
     return target
   }
 
-  private clearFollowMonitor (): void {
-    if (this.followMonitor) {
-      clearInterval(this.followMonitor)
-      this.followMonitor = null
-    }
+  private begin (kind: NonNullable<MovementManager['current']>): AbortController {
+    if (this.operation) this.stop('superseded')
+    const operation = new AbortController()
+    this.operation = operation
+    this.current = kind
+    return operation
+  }
+
+  private end (operation: AbortController): void {
+    if (this.operation !== operation) return
+    this.operation = null
+    this.current = null
+    this.followedName = null
   }
 
   async waitForNear (x: number, y: number, z: number, tolerance = 3, timeoutMs = 6000): Promise<void> {
@@ -258,10 +263,11 @@ export class MovementManager {
     await this.waitForChunks()
   }
 
-  async teleportNearPoint (x: number, y: number, z: number, radius = 4): Promise<Vec3> {
+  async teleportNearPoint (x: number, y: number, z: number, radius = 4, signal?: AbortSignal): Promise<Vec3> {
     const bot = this.requireBot()
     const config = this.requireConfig()
     await this.waitForChunks()
+    signal?.throwIfAborted()
     const spot = safeSpotNear(bot, config, { x, y, z }, radius)
     if (!spot) throw new MovementError('附近找不到安全落点')
     await this.teleportTo(spot.x, spot.y, spot.z)
@@ -272,15 +278,25 @@ export class MovementManager {
    * 带停滞看门狗的路径执行：pathfinder 在高低差/地形边缘可能一直“原地跳”而不 reject。
    * 位置 3.5 秒没有达到 0.05 格位移就停止路径并抛错，交给上层规划/传送兜底。
    */
-  private async runPathWithWatchdog (goal: unknown, timeoutMs: number): Promise<void> {
+  private async runPathWithWatchdog (goal: unknown, timeoutMs: number, signal: AbortSignal): Promise<void> {
     const bot = this.requireBot()
     if (!bot.entity) throw new MovementError('还没加载好位置')
     const start = bot.entity.position.clone()
     let last = start.clone()
     let lastMovedAt = Date.now()
-    let settled = false
+    const failed = Promise.withResolvers<never>()
+    const abort = (): void => failed.reject(signal.reason)
+    signal.addEventListener('abort', abort, { once: true })
+    const stopPath = (message: string): void => {
+      if (signal.aborted) return
+      failed.reject(new MovementError(message))
+      try {
+        bot.pathfinder.stop()
+        bot.pathfinder.setGoal(null)
+      } catch { /* 尝试释放底层目标。 */ }
+    }
     const watchdog = setInterval(() => {
-      if (settled || !bot.entity) return
+      if (signal.aborted || !bot.entity) return
       const position = bot.entity.position
       if (position.distanceTo(last) >= 0.05) {
         last = position.clone()
@@ -288,50 +304,22 @@ export class MovementManager {
         return
       }
       if (Date.now() - lastMovedAt >= 3500) {
-        settled = true
         this.logger.warn('movement path stuck; aborting to fallback', {
           x: Math.round(position.x),
           y: Math.round(position.y),
           z: Math.round(position.z),
           goal: start.distanceTo(position) > 0.1 ? 'progressing' : 'blocked'
         })
-        try {
-          bot.pathfinder.stop()
-          bot.pathfinder.setGoal(null)
-        } catch {
-          // ignore
-        }
+        stopPath('卡住了')
       }
     }, 250)
-    let timeout: NodeJS.Timeout | null = null
+    const timeout = setTimeout(() => stopPath('走不过去'), timeoutMs)
     try {
-      await Promise.race([
-        bot.pathfinder.goto(goal),
-        new Promise<never>((_resolve, reject) => {
-          timeout = setTimeout(() => {
-            try {
-              bot.pathfinder.stop()
-              bot.pathfinder.setGoal(null)
-            } catch {
-              // ignore
-            }
-            reject(new MovementError('走不过去'))
-          }, timeoutMs)
-        }),
-        new Promise<never>((_resolve, reject) => {
-          const poll = setInterval(() => {
-            if (!settled) return
-            clearInterval(poll)
-            reject(new MovementError('卡住了'))
-          }, 200)
-          // 确保 settle 后即使路径 Promise 因 stop 静默，也能结束等待。
-          setTimeout(() => clearInterval(poll), timeoutMs + 1000).unref?.()
-        })
-      ])
+      await Promise.race([failed.promise, bot.pathfinder.goto(goal)])
     } finally {
-      settled = true
+      signal.removeEventListener('abort', abort)
       clearInterval(watchdog)
-      if (timeout) clearTimeout(timeout)
+      clearTimeout(timeout)
     }
   }
 
@@ -377,14 +365,14 @@ export class MovementManager {
     }
   }
 
-  private executorBot (bot: Bot): ExecutorBot {
+  private executorBot (bot: Bot, signal: AbortSignal): ExecutorBot {
     return {
       get entity () {
         return bot.entity ? { position: bot.entity.position } : null
       },
-      lookAt: (point, force) => bot.lookAt(point, force),
-      setControlState: (control, state) => bot.setControlState(control, state),
-      clearControlStates: () => bot.clearControlStates(),
+      lookAt: (point, force) => signal.aborted ? Promise.resolve() : bot.lookAt(point, force),
+      setControlState: (control, state) => { if (!signal.aborted) bot.setControlState(control, state) },
+      clearControlStates: () => { if (!signal.aborted) bot.clearControlStates() },
       controlState: () => ({ ...bot.controlState }),
       onGround: () => bot.entity?.onGround === true,
       velocity: () => bot.entity ? { x: bot.entity.velocity.x, y: bot.entity.velocity.y, z: bot.entity.velocity.z } : { x: 0, y: 0, z: 0 },
@@ -394,7 +382,7 @@ export class MovementManager {
         const block = bot.blockAt(bot.entity.position)
         return block ? block.name : null
       },
-      forceGround: () => this.refreshGround(bot),
+      forceGround: () => { if (!signal.aborted) this.refreshGround(bot) },
       getControlState: control => bot.getControlState(control)
     }
   }
@@ -437,22 +425,25 @@ export class MovementManager {
    * 受控执行期间临时摘掉 pathfinder 的 physicsTick 监控，避免它每 tick 覆写手动控制键。
    * 仅在同一次导航调用内挂起，finally 恢复；失败路径也不会留下状态。
    */
-  private suspendPathfinderMonitor (bot: Bot): void {
+  private suspendPathfinderMonitor (bot: Bot): () => void {
     const listeners = bot.listeners('physicsTick') as Array<() => void>
-    this.savedPathfinderMonitors = listeners.filter(listener => listener.name === 'monitorMovement')
-    for (const listener of this.savedPathfinderMonitors) bot.removeListener('physicsTick', listener)
-  }
-
-  private resumePathfinderMonitor (bot: Bot): void {
-    for (const listener of this.savedPathfinderMonitors) bot.on('physicsTick', listener)
-    this.savedPathfinderMonitors = []
+    const monitors = listeners.filter(listener => listener.name === 'monitorMovement')
+    for (const listener of monitors) bot.removeListener('physicsTick', listener)
+    const restore = (): void => {
+      if (this.restoreMonitor !== restore) return
+      this.restoreMonitor = null
+      for (const listener of monitors) bot.on('physicsTick', listener)
+    }
+    this.restoreMonitor = restore
+    return restore
   }
 
   private async tryPlannerRoute (
     bot: Bot,
     target: NavVector,
     tolerance: number,
-    allowOutsideSafeZone: boolean
+    allowOutsideSafeZone: boolean,
+    signal: AbortSignal
   ): Promise<{ ok: boolean, failure: RouteFailureKind, reason: string }> {
     const config = this.requireConfig()
     if (!config.pathPlannerEnabled) {
@@ -499,20 +490,21 @@ export class MovementManager {
       } : null,
       target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) }
     })
-    this.suspendPathfinderMonitor(bot)
+    const restore = this.suspendPathfinderMonitor(bot)
     let result: RouteExecutionResult
     try {
       result = await this.executor.run(
-        this.executorBot(bot),
+        this.executorBot(bot, signal),
         plan.waypoints.map(point => ({ x: point.x, y: point.y, z: point.z })),
         {
-          isCancelled: () => this.cancelled,
+          isCancelled: () => signal.aborted,
           totalMs: Math.max(8000, plan.waypoints.length * 2500)
         }
       )
     } finally {
-      this.resumePathfinderMonitor(bot)
+      restore()
     }
+    signal.throwIfAborted()
     if (result.status !== 'arrived') {
       const failure: RouteFailureKind = result.status === 'timeout' ? 'timeout' : 'path_stuck'
       this.recordFailure('planner', failure, result.reason)
@@ -533,7 +525,8 @@ export class MovementManager {
     target: NavVector,
     tolerance: number,
     allowOutsideSafeZone: boolean,
-    failure: RouteFailureKind
+    failure: RouteFailureKind,
+    signal: AbortSignal
   ): Promise<boolean> {
     const config = this.requireConfig()
     const advisor = this.advisor
@@ -554,6 +547,7 @@ export class MovementManager {
         allowOutsideSafeZone,
         terrain: buildTerrainSummary(world, area, { x: position.x, y: position.y, z: position.z })
       })
+      signal.throwIfAborted()
       if (!advice || advice.waypoints.length === 0) {
         this.recordFailure('ai', 'ai_invalid', 'empty_advice')
         return false
@@ -591,10 +585,11 @@ export class MovementManager {
       }
       waypoints.push(...finalPlan.waypoints)
       this.updateNavigation({ state: 'executing', source: 'ai' })
-      const result = await this.executor.run(this.executorBot(bot), waypoints, {
-        isCancelled: () => this.cancelled,
+      const result = await this.executor.run(this.executorBot(bot, signal), waypoints, {
+        isCancelled: () => signal.aborted,
         totalMs: Math.max(8000, waypoints.length * 1800)
       })
+      signal.throwIfAborted()
       if (result.status !== 'arrived') {
         this.recordFailure('ai', result.status === 'timeout' ? 'ai_timeout' : 'path_stuck', result.reason)
         return false
@@ -607,6 +602,7 @@ export class MovementManager {
       this.logger.info('movement ai route reached', { waypoints: waypoints.length })
       return true
     } catch (error) {
+      signal.throwIfAborted()
       this.recordFailure('ai', 'ai_timeout', error instanceof Error ? error.message : String(error))
       this.logger.warn('movement ai advisor failed', {
         error: error instanceof Error ? error.message : String(error)
@@ -624,11 +620,12 @@ export class MovementManager {
     tolerance: number,
     allowOutsideSafeZone: boolean,
     allowTeleport: boolean,
-    timeoutMs: number
+    timeoutMs: number,
+    signal: AbortSignal
   ): Promise<void> {
     const bot = this.requireBot()
     const config = this.requireConfig()
-    if (this.cancelled) throw new MovementError('移动已取消')
+    signal.throwIfAborted()
     this.updateNavigation({
       state: 'planning',
       source: 'pathfinder',
@@ -644,9 +641,10 @@ export class MovementManager {
       this.refreshGround(bot)
       await this.runPathWithWatchdog(
         new goals.GoalNear(target.x, target.y, target.z, Math.max(1, tolerance)),
-        Math.min(timeoutMs, 30000)
+        Math.min(timeoutMs, 30000),
+        signal
       )
-      if (this.cancelled) throw new MovementError('移动已取消')
+      signal.throwIfAborted()
       if (!this.reachedTarget(bot, target, tolerance)) {
         // pathfinder 在 3D GoalNear 的半径内可能停在一格下方；交给确定性规划器补齐高度。
         throw new MovementError('到达位置高度不精确')
@@ -654,7 +652,7 @@ export class MovementManager {
       this.updateNavigation({ state: 'idle', source: 'pathfinder', lastFailureKind: null })
       return
     } catch (error) {
-      if (this.cancelled) throw new MovementError('移动已取消')
+      signal.throwIfAborted()
       failure = this.classifyPathFailure(error)
       reason = error instanceof Error ? error.message : String(error)
       this.recordFailure('pathfinder', failure, reason)
@@ -667,8 +665,9 @@ export class MovementManager {
     }
 
     for (let attempt = 0; attempt <= config.pathMaxReplans; attempt += 1) {
-      if (this.cancelled) throw new MovementError('移动已取消')
-      const planner = await this.tryPlannerRoute(bot, target, tolerance, allowOutsideSafeZone)
+      signal.throwIfAborted()
+      const planner = await this.tryPlannerRoute(bot, target, tolerance, allowOutsideSafeZone, signal)
+      signal.throwIfAborted()
       if (planner.ok) return
       failure = planner.failure
       reason = planner.reason
@@ -676,11 +675,14 @@ export class MovementManager {
       await this.waitForChunks()
     }
 
-    if (await this.tryAiRoute(bot, target, tolerance, allowOutsideSafeZone, failure)) return
+    signal.throwIfAborted()
+    if (await this.tryAiRoute(bot, target, tolerance, allowOutsideSafeZone, failure, signal)) return
+    signal.throwIfAborted()
 
     if (allowTeleport && config.pathTeleportFallback) {
       try {
-        await this.teleportNearPoint(target.x, target.y, target.z, Math.max(3, tolerance + 2))
+        await this.teleportNearPoint(target.x, target.y, target.z, Math.max(3, tolerance + 2), signal)
+        signal.throwIfAborted()
         const fallbackReason = reason.slice(0, 160)
         this.updateNavigation({
           state: 'fallback',
@@ -692,6 +694,7 @@ export class MovementManager {
         this.fallbackListener?.('teleport', fallbackReason)
         return
       } catch (error) {
+        signal.throwIfAborted()
         this.logger.warn('movement teleport fallback rejected', {
           error: error instanceof Error ? error.message : String(error)
         })
@@ -721,12 +724,11 @@ export class MovementManager {
   ): Promise<void> {
     const config = this.requireConfig()
     if (!insideSafeZone(config, x, z)) throw new MovementError('目标在安全区外')
-    const previous = this.current
-    this.current = 'task'
+    const operation = this.begin('task')
     try {
-      await this.navigateTo({ x, y, z }, radius, false, allowTeleport, timeoutMs)
+      await this.navigateTo({ x, y, z }, radius, false, allowTeleport, timeoutMs, operation.signal)
     } finally {
-      this.current = previous
+      this.end(operation)
     }
   }
 
@@ -744,8 +746,7 @@ export class MovementManager {
       throw new MovementError(`看不到 ${username}，请靠近一点再试`)
     }
     const entity = target.entity
-    this.cancelled = false
-    this.current = 'come'
+    const operation = this.begin('come')
     this.logger.info('movement come start', { target: username, timeoutMs })
     try {
       await this.navigateTo(
@@ -753,17 +754,18 @@ export class MovementManager {
         2,
         true,
         true,
-        timeoutMs
+        timeoutMs,
+        operation.signal
       )
-      if (this.cancelled) return 'cancelled'
+      if (operation.signal.aborted) return 'cancelled'
       this.logger.debug('movement come reached', { target: username })
       return 'arrived'
     } catch (error) {
-      if (this.cancelled) return 'cancelled'
+      if (operation.signal.aborted) return 'cancelled'
       if (error instanceof MovementError) throw error
       throw new MovementError(`移动失败：${error instanceof Error ? error.message : String(error)}`)
     } finally {
-      if (this.current === 'come') this.current = null
+      this.end(operation)
     }
   }
 
@@ -779,18 +781,16 @@ export class MovementManager {
     if (!target?.entity) {
       throw new MovementError(`看不到 ${username}，请靠近一点再试`)
     }
-    this.cancelled = false
-    this.current = 'follow'
+    const operation = this.begin('follow')
     this.followedName = username
-    this.clearFollowMonitor()
     this.logger.info('movement follow start', { target: username })
-    void this.followLoop(username, maxMs)
+    void this.followLoop(username, maxMs, operation)
   }
 
-  private async followLoop (username: string, maxMs: number): Promise<void> {
+  private async followLoop (username: string, maxMs: number, operation: AbortController): Promise<void> {
     const startedAt = Date.now()
     try {
-      while (!this.cancelled) {
+      while (!operation.signal.aborted) {
         if (Date.now() - startedAt > maxMs) {
           this.notify?.(`跟了 ${Math.round(maxMs / 60000)} 分钟了，我先歇一下。`)
           return
@@ -811,10 +811,11 @@ export class MovementManager {
               2,
               true,
               false,
-              12000
+              12000,
+              operation.signal
             )
           } catch (error) {
-            if (this.cancelled) return
+            if (operation.signal.aborted) return
             this.notify?.('我找不到过去的路，先停下跟随。')
             this.logger.warn('movement follow failed', {
               error: error instanceof Error ? error.message : String(error)
@@ -825,16 +826,14 @@ export class MovementManager {
         await new Promise(resolve => setTimeout(resolve, 500))
       }
     } finally {
-      if (this.current === 'follow') {
-        this.current = null
-        this.followedName = null
-      }
+      this.end(operation)
     }
   }
 
   stop (reason = 'user'): void {
-    this.cancelled = true
-    this.clearFollowMonitor()
+    this.operation?.abort(new MovementError('移动已取消'))
+    this.operation = null
+    this.restoreMonitor?.()
     this.current = null
     this.followedName = null
     const bot = this.bot
@@ -844,6 +843,7 @@ export class MovementManager {
         // pathfinder.stop() only sets a flag; force the reset so a following
         // goto() does not immediately reject with PathStopped.
         bot.pathfinder.setGoal(null)
+        bot.clearControlStates()
       } catch {
         // ignore
       }

@@ -594,8 +594,7 @@ test('recordExternal：status=event、不写 alert_state、异步 webhook + Chat
     ).c
     assert.equal(firedCount, 0)
 
-    // 投递是异步的：等待后台任务完成后检查 webhook 与 Chatbot 通知。
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await fx.alerts.processExternalDeliveries()
     assert.equal(calls.length, 1)
     assert.equal(calls[0]?.url, WEBHOOK)
     const payload = JSON.parse(String(calls[0]?.init?.body)) as Record<string, unknown>
@@ -634,7 +633,11 @@ test('recordExternal：webhook 失败只异步记录 delivery_error；未配置 
       details: { source: 'mcbot', mcbotEventId: 'b1-2', mcbotType: 'task_failed' },
     })
     assert.ok(id)
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await failure.alerts.processExternalDeliveries()
+    failure.clock.advanceMs(1000)
+    await failure.alerts.processExternalDeliveries()
+    failure.clock.advanceMs(2000)
+    await failure.alerts.processExternalDeliveries()
     assert.equal(attempts.length, 3, '后台投递失败应按既有策略重试 3 次')
     const row = failure.db.prepare('SELECT delivered_at, delivery_error FROM alert_events WHERE id = ?').get(id) as {
       delivered_at: string | null
@@ -665,7 +668,7 @@ test('recordExternal：webhook 失败只异步记录 delivery_error；未配置 
       details: { source: 'mcbot', mcbotEventId: 'b1-3', mcbotType: 'unknown' },
     })
     assert.ok(id)
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await noWebhook.alerts.processExternalDeliveries()
     const row = noWebhook.db.prepare('SELECT delivery_error FROM alert_events WHERE id = ?').get(id) as {
       delivery_error: string | null
     }
@@ -673,6 +676,51 @@ test('recordExternal：webhook 失败只异步记录 delivery_error；未配置 
     assert.deepEqual(notified, ['mcbot_alert'], '未配置 webhook 也要通知 Chatbot')
   } finally {
     noWebhook.close()
+  }
+})
+
+test('外部告警重启可补投且 webhook 最多并发两条，QQ 独立完成', async () => {
+  const fx = alertFixture({ config: { alertWebhookUrl: WEBHOOK } })
+  const notified: number[] = []
+  const keys: string[] = []
+  const workers = new AlertService(fx.db, fx.config, {
+    now: fx.clock.now,
+    notifyEvent: (event) => notified.push(event.id),
+    fetch: async (_url, init) => {
+      keys.push(new Headers(init?.headers).get('Idempotency-Key') ?? '')
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+      })
+    },
+  })
+  try {
+    const ids = Array.from({ length: 4 }, () => fx.alerts.recordExternal({
+      event: 'mcbot_alert', severity: 'warning', title: '测试', message: '测试', details: {},
+    }))
+    const first = workers.processExternalDeliveries()
+    assert.deepEqual(notified, ids)
+    assert.equal(keys.length, 2)
+    assert.ok(keys.every(Boolean))
+    await workers.stop()
+    await first
+    const replayed: string[] = []
+    const restarted = new AlertService(fx.db, fx.config, {
+      now: fx.clock.now,
+      notifyEvent: (event) => notified.push(event.id),
+      fetch: async (_url, init) => {
+        replayed.push(new Headers(init?.headers).get('Idempotency-Key') ?? '')
+        return new Response(null, { status: 204 })
+      },
+    })
+    await restarted.processExternalDeliveries()
+    await restarted.processExternalDeliveries()
+    assert.deepEqual(replayed.slice(0, 2), keys)
+    assert.equal(replayed.length, 4)
+    assert.deepEqual(notified, ids)
+    assert.equal(fx.db.prepare("SELECT COUNT(*) AS n FROM external_alert_deliveries WHERE status = 'done'").get()?.n, 8)
+  } finally {
+    await workers.stop()
+    fx.close()
   }
 })
 
@@ -739,7 +787,7 @@ test('recordExternal：同一 dedupe_key 不新增行、不重复通知；空键
     assert.ok(rows.every((row) => row.status === 'event'))
     const stateCount = (fx.db.prepare('SELECT COUNT(*) AS c FROM alert_state').get() as { c: number }).c
     assert.equal(stateCount, 0, '外部告警不得写入 alert_state')
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await fx.alerts.processExternalDeliveries()
     assert.deepEqual(notified, [first, other, plain, plainAgain])
   } finally {
     fx.close()

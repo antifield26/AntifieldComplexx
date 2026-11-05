@@ -1,5 +1,10 @@
 # 路线图
 
+## v1.0.8（补丁，待部署）
+
+- 修复恢复链、上传原子性、外部告警投递、Chat 隔离和 mcbot 生命周期。schema 20、mcbot 契约 v2，Workbench 过渡兼容 v1。
+- 前端路由拆包，Windows 演练端到端夹具，mcbot 覆盖率门禁。发布验收见 [ACCEPTANCE](ACCEPTANCE.md)。
+
 ## v1.0.7（2026-11-04 已部署；运行时可信 + 寻路兜底重决策；schema v19 / OpenCode 2.2.5）
 
 - **范围**：`alert_events.dedupe_key`；mcbot `lastSuccessAt`；mcbot 进程或轮询过期进入 `service_down`；周度世界拉取安装到 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`；寻路兜底进入自主重决策；OpenCode 2.2.5 与应用同窗口升级。

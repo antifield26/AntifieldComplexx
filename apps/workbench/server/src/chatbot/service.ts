@@ -7,7 +7,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
 import { AppError, badRequest, notFound } from '../util/errors.ts'
-import { getMeta, setMeta } from '../db.ts'
+import { getMeta, setMeta, transaction } from '../db.ts'
 import { newId } from '../util/ids.ts'
 import { nowIso } from '../util/time.ts'
 import { SlidingWindowLimiter } from '../auth/limiter.ts'
@@ -406,7 +406,7 @@ export class ChatbotService {
    * `retryAt` 缺失（旧 AI 实现/无窗口信息）时不前置阻断，交给 ai.chat 的 503 兜底。
    */
   private aiIsolationBlocked(): boolean {
-    if (!this.config.chatbotAiSendToolEnabled && !this.config.chatbotAiContextReadEnabled) return false
+    if (!this.sessionPolicyReady) return true
     const status = this.aiToolIsolationStatus()
     if (!status || status.supported !== false) return false
     if (!status.retryAt) return false
@@ -886,29 +886,29 @@ export class ChatbotService {
    * 用 meta 记录上次工具模式，模式变化时一次性清空会话映射（新 Chat 会重新建会话），避免
    * “提示词说有工具、实际不可用”或沿用旧权限。消息发送工具启用时也必须重建会话。
    */
+  private sessionPolicyReady = true
+
   private resetSessionsForToolMode(): void {
     if (!this.config.chatbotEnabled || !this.config.chatbotAiEnabled) return
+    this.sessionPolicyReady = false
     const searchMode = this.config.chatbotSearchEnabled ? this.config.chatbotSearchMode : 'off'
-    // read 关闭时保持旧 mode 字符串（兼容既有测试/升级路径）；开启后目录变化也触发重建。
-    const baseMode = `${searchMode}:${this.config.chatbotAiSendToolEnabled ? 'send' : 'nosend'}`
+    const baseMode = `isolated-v1:${searchMode}:${this.config.chatbotAiSendToolEnabled ? 'send' : 'nosend'}`
     const mode = this.config.chatbotAiContextReadEnabled
       ? `${baseMode}:read:${contextModeTag(this.config.chatbotContextDir)}`
       : baseMode
-    const previous = getMeta(this.db, 'chatbot_ai_tool_mode')
-    if (previous === mode) {
-      void this.cleanupRemoteSessions([])
-      return
-    }
     try {
-      const sessionRows = this.db
-        .prepare('SELECT session_id FROM chatbot_ai_sessions')
-        .all() as { session_id: string }[]
-      const changes = Number(this.db.prepare('DELETE FROM chatbot_ai_sessions').run().changes)
-      setMeta(this.db, 'chatbot_ai_tool_mode', mode)
-      if (changes > 0) {
-        this.deps.audit('chatbot.ai.tool_mode_reset', null, { mode, sessions: changes })
+      const ids = transaction(this.db, () => {
+        if (getMeta(this.db, 'chatbot_ai_tool_mode') === mode) return []
+        const rows = this.db.prepare('SELECT session_id FROM chatbot_ai_sessions').all() as { session_id: string }[]
+        this.db.prepare('DELETE FROM chatbot_ai_sessions').run()
+        setMeta(this.db, 'chatbot_ai_tool_mode', mode)
+        return rows.map((row) => row.session_id)
+      })
+      this.sessionPolicyReady = true
+      if (ids.length > 0) {
+        this.deps.audit('chatbot.ai.tool_mode_reset', null, { mode, sessions: ids.length })
       }
-      void this.cleanupRemoteSessions(sessionRows.map((row) => row.session_id))
+      void this.cleanupRemoteSessions(ids)
     } catch (error) {
       this.deps.log('warn', 'Chatbot AI 工具模式切换清理会话失败', {
         error: error instanceof Error ? error.message : 'unknown',
@@ -1063,9 +1063,9 @@ export class ChatbotService {
   }
 
   /** 告警通知入队（静默时段只延迟 next_attempt_at）。 */
-  notifyAlert(event: ChatbotAlertEvent): void {
+  notifyAlert(event: ChatbotAlertEvent, durable = false): void {
     if (!this.enabled) return
-    this.queue.notifyAlert(event)
+    this.queue.notifyAlert(event, durable)
   }
 
   /** 投递队列扫描（tick/测试可直接调用）。 */

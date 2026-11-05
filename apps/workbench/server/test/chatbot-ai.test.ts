@@ -504,34 +504,15 @@ test('wait 返回 404 时回退为 500ms 轮询消息，不忙等', async () => 
   }
 })
 
-test('OpenCode 以 400 拒绝 permissions 时保持回退（未启用发送工具）并标注隔离不可用', async () => {
+test('普通 Chat 在权限字段被拒时停止创建会话', async () => {
   const fixture = setup(basicHandler({ rejectPermissionsFirst: true }))
   try {
-    const reply = await fixture.ai.chat({
-      chatbotId: CHATBOT_ID,
-      targetExternalId: TARGET,
-      userId: USER,
-      prompt: '你好',
-    })
-    assert.equal(reply, '默认回答')
-
-    const createCalls = fixture.calls.filter((call) => call.method === 'POST' && call.url.pathname === '/api/session')
-    assert.equal(createCalls.length, 2, '应重试一次创建会话')
-    const firstBody = createCalls[0]!.body as Record<string, unknown>
-    const secondBody = createCalls[1]!.body as Record<string, unknown>
-    assert.ok('permissions' in firstBody)
-    assert.ok(!('permissions' in secondBody), '回退请求不应再带 permissions')
-    assert.ok(
-      fixture.logs.some((entry) => entry.level === 'warn' && entry.message.includes('工具隔离不可用')),
-      '日志必须明确工具隔离不可用',
-    )
-    // 降级状态必须可被 ChatbotService/状态接口读取（不能只藏在日志里）。
-    const isolation = fixture.ai.toolIsolation()
-    assert.equal(isolation.supported, false)
-    assert.equal(isolation.fallbackCount, 1)
-    assert.equal(typeof isolation.fallbackAt, 'string')
-    assert.equal(typeof isolation.retryAt, 'string', '降级后应提供下次重试时间（ISO）')
-    assert.ok(Date.parse(String(isolation.retryAt)) > Date.now(), 'retryAt 必须在未来（10 分钟重试窗口）')
+    const input = { chatbotId: CHATBOT_ID, targetExternalId: TARGET, userId: USER, prompt: '你好' }
+    await assert.rejects(fixture.ai.chat(input), { code: 'chatbot_ai_tool_isolation_unavailable' })
+    await assert.rejects(fixture.ai.chat(input), { code: 'chatbot_ai_tool_isolation_unavailable' })
+    assert.equal(fixture.calls.length, 1)
+    assert.ok('permissions' in (fixture.calls[0]!.body as Record<string, unknown>))
+    assert.equal(fixture.ai.toolIsolation().supported, false)
     assertNoSecret(fixture.logs)
   } finally {
     dispose(fixture)

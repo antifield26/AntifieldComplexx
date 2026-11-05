@@ -102,7 +102,7 @@ class FakeSession implements AutonomySessionClient {
     return 'sess-test'
   }
 
-  async prompt (_sessionId: string, text: string): Promise<void> {
+  async prompt (_sessionId: string, text: string, _signal?: AbortSignal): Promise<void> {
     this.promptText = text
   }
 
@@ -251,6 +251,53 @@ test('autonomy token is invalid after stop', async () => {
   await s.service.stop('done')
   const response = await s.service.handleMcpHttp(token, { jsonrpc: '2.0', id: 5, method: 'tools/list' })
   assert.equal(response.status, 401)
+})
+
+test('启动中的旧注册完成并清理前，新启动保持忙碌且旧令牌立即失效', async () => {
+  const s = setup()
+  const entered = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  const register = s.session.registerMcp.bind(s.session)
+  s.session.registerMcp = async (name, url, bearer) => {
+    await register(name, url, bearer)
+    entered.resolve()
+    await release.promise
+  }
+  const first = s.service.start(null, 'owner')
+  await entered.promise
+  const stopped = s.service.stop('owner_stop')
+  assert.equal((await s.service.start(null, 'owner')).code, 'autonomy_busy')
+  assert.equal((await s.service.handleMcpHttp(s.session.token, { jsonrpc: '2.0', id: 1, method: 'tools/list' })).status, 401)
+  release.resolve()
+  assert.equal((await first).code, 'autonomy_stopped')
+  await stopped
+  assert.equal((await s.service.start(null, 'owner')).ok, true)
+  assert.equal(s.session.registered, 2)
+  await s.service.stop('test')
+})
+
+test('单轮 prompt 与 wait 共用决策超时预算', async () => {
+  const s = setup()
+  s.config.autonomyDecisionTimeoutMs = 80
+  let promptSignal: AbortSignal | undefined
+  const waiting = Promise.withResolvers<void>()
+  s.session.prompt = async (_id, _text, signal) => { promptSignal = signal }
+  s.session.wait = async (_id, signal) => {
+    assert.equal(signal, promptSignal)
+    await new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+    }).finally(() => waiting.resolve())
+  }
+  assert.equal((await s.service.start(null, 'owner')).ok, true)
+  const timer = setTimeout(() => waiting.reject(new Error('未在测试时限内取消')), 1000)
+  try {
+    await waiting.promise
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(s.service.snapshot().lastError, 'autonomy_timeout')
+  } finally {
+    clearTimeout(timer)
+    await s.service.stop('test')
+  }
 })
 
 test('autonomy enforces the tool-call budget', async () => {

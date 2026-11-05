@@ -7,6 +7,8 @@
 > 归档与密钥包只允许落在 Pi 本机、PC 备份目录或离线介质，不上传公开网盘；**Web 不持任何私钥**，加密归档只能在 PC 用
 > 离线私钥解密/校验/恢复；恢复演练由 `scripts/drill.ps1` 自动校验。
 
+v1.0.8 演练按 manifest 验证覆盖水位，允许重叠，发现空洞或水位倒退即失败。解包后对账目标 SQLite 中全部文件，校验大小与已有 SHA-256，历史无哈希项单独计数。链上曾缺失而后来补齐的文件可用于 Web 恢复。使用 `-IncludeWorld -RequireWorld` 在临时目录校验世界解包；运行报告可用 `-ReportRoot` 指定单独目录。
+
 ## 1. 策略
 
 | 链路 | 频率/触发 | 保留 | 确认方式 |
@@ -254,7 +256,7 @@ $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 12:00
 Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Trigger $trigger -Description "AntifieldComplexx 世界备份周度拉取"
 ```
 
-- `install-backup-task.ps1` **只安装每日应用归档任务**，不会创建世界拉取/演练任务；世界任务由用户手动安装（建议使用仓库路径或复制脚本后固定路径）。
+- `install-backup-task.ps1` 安装每日应用归档任务，并可安装周度世界拉取任务；演练保持手动运行。
 
 - 两阶段：查询远端 `world-backups` 与 `world-backup-status.json` → 逐个 scp 到 `.part` → 与远端 `.sha256` 比对
   → 原子改名 → 写本地 `.sha256` → 删除远端归档/旁文件（ack）；**校验失败不 ack、不动远端**，退出码 1。

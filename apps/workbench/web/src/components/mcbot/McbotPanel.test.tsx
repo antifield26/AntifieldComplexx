@@ -181,9 +181,10 @@ function snapshot(overrides: Partial<McbotSnapshot> = {}): McbotSnapshot {
     reachable: true,
     stale: false,
     controlEnabled: true,
+    sayEnabled: true,
     alertsEnabled: true,
-    version: '1.0.2',
-    contractVersion: 1,
+    version: '1.0.8',
+    contractVersion: 2,
     eventsSupported: true,
     lastPollAt: '2026-10-27T08:00:00.000Z',
     error: null,
@@ -418,6 +419,14 @@ describe('McbotPanel 任务控制', () => {
 })
 
 describe('McbotPanel 游戏内聊天', () => {
+  it('契约 v1 过渡期禁用发言，移动仍可用', async () => {
+    mocks.status.mockResolvedValue(snapshot({ contractVersion: 1, sayEnabled: false }))
+    renderPanel()
+    expect(await screen.findByText(/升级到契约 v2 后可用/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '回家' })).toBeEnabled()
+  })
+
   it('拒绝以 / 开头的内容，不打开确认、不调用接口', async () => {
     renderPanel()
     const input = await screen.findByLabelText('游戏内聊天内容')

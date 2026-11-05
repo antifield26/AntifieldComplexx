@@ -104,7 +104,7 @@ test('GET /events/recent is read-only, token-scoped and limit-validated', async 
     const response = await fetch(`${base}/events/recent`, { headers: readHeaders })
     assert.equal(response.status, 200)
     const body = await response.json() as RecentBodyShape
-    assert.equal(body.contractVersion, 1)
+    assert.equal(body.contractVersion, 2)
     assert.equal(body.bootId, events.bootId)
     assert.equal(body.lastEventId, `${events.bootId}-60`)
     assert.equal(body.events.length, 50, 'default limit is 50')

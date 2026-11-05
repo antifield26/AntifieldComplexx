@@ -25,9 +25,10 @@ function json(body: unknown, status = 200): Response {
 type Handler = (url: URL, init: RequestInit) => Response | Promise<Response>
 
 function defaultHandler(url: URL): Response {
-  if (url.pathname === '/status') return json({ version: '0.6.0', state: 'connected', task: { state: 'idle' } })
+  if (url.pathname === '/healthz') return json({ status: 'ok', version: '0.6.0', contractVersion: 2 })
+  if (url.pathname === '/status') return json({ version: '0.6.0', contractVersion: 2, state: 'connected', minecraft: { connected: true }, task: { active: false, state: 'idle', queue: [] } })
   if (url.pathname === '/events/recent') {
-    return json({ contractVersion: 1, bootId: 'b1', lastEventId: null, events: [] })
+    return json({ contractVersion: 2, bootId: 'b1', lastEventId: null, events: [] })
   }
   if (url.pathname === '/history') {
     const kind = url.searchParams.get('kind') ?? 'samples'
@@ -141,11 +142,15 @@ test('GET /api/mcbot/status：登录校验、快照字段（含 eventsSupported�
     assert.equal(body.reachable, true)
     assert.equal(body.stale, false)
     assert.equal(body.version, '0.6.0')
-    assert.equal(body.contractVersion, 1)
+    assert.equal(body.contractVersion, 2)
     assert.equal(body.eventsSupported, true)
     assert.equal(body.error, null)
     assert.equal(typeof body.lastPollAt, 'string')
-    assert.deepEqual(body.status, { version: '0.6.0', state: 'connected', task: { state: 'idle' } })
+    assert.deepEqual(body.status, {
+      version: '0.6.0', contractVersion: 2, state: 'connected',
+      minecraft: { connected: true }, task: { active: false, state: 'idle', queue: [] },
+    })
+    assert.equal(body.sayEnabled, true)
     assert.deepEqual(body.events, [])
   } finally {
     await fx.close()
@@ -201,7 +206,7 @@ test('控制路由：CSRF、上游字段保留、审计动作（不记 say 正�
     assert.equal(startBody.queued, true, '必须保留上游 queued 字段')
     assert.equal(startBody.position, 1, '必须保留上游 position 字段')
     assert.equal((startBody.task as { name?: string }).name, 'fishing')
-    assert.equal(authOf(fx.calls[0]!), 'Bearer control-token')
+    assert.equal(authOf(fx.calls.find(({ url }) => url.pathname === '/task/start')!), 'Bearer control-token')
 
     const stopped = await fx.app.inject({ method: 'POST', url: '/api/mcbot/tasks/stop', headers: authHeaders() })
     assert.equal(stopped.statusCode, 200)
@@ -236,7 +241,7 @@ test('控制路由：CSRF、上游字段保留、审计动作（不记 say 正�
     assert.equal(said.json().ok, true)
     const sayCall = fx.calls.find((call) => call.url.pathname === '/say')
     assert.ok(sayCall)
-    assert.equal(authOf(sayCall), 'Bearer read-token', '/say 必须使用读 Token')
+    assert.equal(authOf(sayCall), 'Bearer control-token', '/say 必须使用控制 Token')
 
     const rows = auditRows(fx.fixture.db)
     const actions = rows.map((row) => row.action)
@@ -438,9 +443,9 @@ test('错误映射：unavailable 503 / auth_failed 502 / upstream_error 502 / �
   let mode: 'ok' | 'unavailable' | 'auth' | 'upstream' | 'resume' | 'bad' = 'ok'
   const fx = await makeLofiiApp({
     handler: (url) => {
-      if (url.pathname === '/status') return json({ version: '0.6.0' })
+      if (url.pathname === '/status' || url.pathname === '/healthz') return defaultHandler(url)
       if (url.pathname === '/events/recent') {
-        return json({ contractVersion: 1, bootId: 'b1', lastEventId: null, events: [] })
+        return json({ contractVersion: 2, bootId: 'b1', lastEventId: null, events: [] })
       }
       if (mode === 'unavailable') throw new TypeError(`connect ECONNREFUSED http://127.0.0.1:3010/ token read-token control-token`)
       if (mode === 'auth') return json({ error: 'unauthorized', message: 'bad read-token' }, 401)

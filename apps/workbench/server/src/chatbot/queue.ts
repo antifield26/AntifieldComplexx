@@ -103,7 +103,7 @@ export class ChatbotQueue {
     }
   }
 
-  notifyAlert(event: ChatbotAlertEvent): void {
+  notifyAlert(event: ChatbotAlertEvent, durable = false): void {
     const chatbots = this.db.prepare('SELECT * FROM chatbots WHERE enabled = 1').all() as unknown as ChatbotRow[]
     for (const chatbot of chatbots) {
       const targets = this.db
@@ -125,6 +125,7 @@ export class ChatbotQueue {
           { text },
           `alert:${event.id}:${chatbot.id}:${target.id}`,
           notBefore,
+          durable,
         )
       }
     }
@@ -295,14 +296,16 @@ export class ChatbotQueue {
     payload: Record<string, unknown>,
     dedupeKey: string | null,
     notBefore?: Date,
+    durable = false,
   ): void {
     const now = nowIso()
     try {
       this.db
         .prepare(
-          `INSERT OR IGNORE INTO chatbot_deliveries
+          `INSERT INTO chatbot_deliveries
            (id, chatbot_id, target_id, kind, dedupe_key, payload_json, status, attempts, next_attempt_at, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?)
+           ON CONFLICT(chatbot_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
         )
         .run(
           newId(),
@@ -315,7 +318,8 @@ export class ChatbotQueue {
           now,
           now,
         )
-    } catch {
+    } catch (error) {
+      if (durable) throw error
       // 队列写入失败不应影响告警/请求主路径。
     }
   }

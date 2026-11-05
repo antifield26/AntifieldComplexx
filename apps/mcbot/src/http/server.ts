@@ -321,7 +321,7 @@ export class HttpApi {
     if (pathname === '/status') {
       if (req.method !== 'GET') return this.methodNotAllowed(res, 'GET')
       if (!this.authorizeRead(req, res)) return
-      sendJson(res, { status: 200, body: this.deps.state.snapshot() })
+      sendJson(res, { status: 200, body: { ...this.deps.state.snapshot(), contractVersion: CONTRACT_VERSION } })
       return
     }
     if (pathname === '/admin/status') {
@@ -419,7 +419,7 @@ export class HttpApi {
     }
     if (pathname === '/say') {
       if (req.method !== 'POST') return this.methodNotAllowed(res, 'POST')
-      if (!this.authorizeRead(req, res)) return
+      if (!this.authorizeControl(req, res)) return
       if (!this.takeSaySlot()) return this.rateLimited(res, 'say')
       if (!this.deps.chatSender.isConnected()) return sendError(res, 409, 'not_connected', 'bot is not connected')
       if (!isJsonRequest(req)) return sendError(res, 415, 'unsupported_media_type', 'Content-Type must be application/json')
@@ -431,7 +431,8 @@ export class HttpApi {
         const trimmed = message.trim()
         if (trimmed === '') throw new InvalidMessageError('message must not be empty')
         if (trimmed.length > 720) throw new InvalidMessageError('message is too long (max 720)')
-        if (trimmed.startsWith('/')) return sendError(res, 400, 'message_must_not_start_with_slash', 'chat messages must not start with /')
+        if (message.includes('/')) return sendError(res, 400, 'message_must_not_start_with_slash', 'chat messages must not contain /')
+        if (/[\u0000-\u001f\u007f]/.test(message)) throw new InvalidMessageError('chat messages must not contain control characters')
         const lines = await this.deps.chatSender.say(trimmed, 'http')
         sendJson(res, { status: 200, body: { ok: true, lines: lines.length } })
       } catch (error) {

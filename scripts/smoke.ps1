@@ -19,6 +19,7 @@
   [int]$ExpectedSchemaVersion = 0,
   [string]$ExpectedOpenCodeVersion = "",
   [string]$ExpectedMcbotVersion = "",
+  [int]$ExpectedMcbotContractVersion = 0,
   [switch]$SkipMcbot,
   [string[]]$ExpectedSshSources = @(),
   [int]$MaxMcpProcesses = 12,
@@ -292,11 +293,17 @@ if (-not $SkipMcbot) {
   }
   if ($ExpectedMcbotVersion) {
     Check "mcbot 版本与契约" {
+      $expectedContract = $ExpectedMcbotContractVersion
+      if ($expectedContract -le 0) {
+        $versions = Get-Content -Raw -Encoding UTF8 (Join-Path $root 'deploy/tool-versions.json') | ConvertFrom-Json
+        $expectedContract = [int]$versions.mcbotContractVersion
+        if ($expectedContract -le 0) { throw "工具版本清单缺少 mcbotContractVersion" }
+      }
       $out = Invoke-PiSsh "curl -fsS --max-time 5 http://127.0.0.1:3010/healthz" | Out-String
       $health = $null
       try { $health = $out.Trim() | ConvertFrom-Json } catch { throw "healthz 不是 JSON：$out" }
       if ([string]$health.version -ne $ExpectedMcbotVersion) { throw "version=$($health.version)，期望 $ExpectedMcbotVersion" }
-      if ([int]$health.contractVersion -ne 1) { throw "contractVersion=$($health.contractVersion)，期望 1" }
+      if ([int]$health.contractVersion -ne $expectedContract) { throw "contractVersion=$($health.contractVersion)，期望 $expectedContract" }
       "version=$($health.version) contractVersion=$($health.contractVersion)"
     }
   }

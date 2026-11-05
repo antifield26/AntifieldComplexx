@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Link, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { AppMetaProvider } from './meta/MetaContext'
@@ -8,17 +8,18 @@ import { Layout } from './components/Layout'
 import { AppLoading } from './components/Loading'
 import { Login } from './pages/Login'
 import { Dashboard } from './pages/Dashboard'
-import { Files } from './pages/Files'
-import { Knowledge } from './pages/Knowledge'
-import { Shares } from './pages/Shares'
 import { PublicShare } from './pages/PublicShare'
-import { Trash } from './pages/Trash'
-import { Minecraft } from './pages/Minecraft'
-import { Activity } from './pages/Activity'
-import { Settings } from './pages/Settings'
-import { Chatbots } from './pages/Chatbots'
 import { usePageTitle } from './hooks/usePageTitle'
 import { assignExternalUrl, externalLoginRedirect, sanitizeNext } from './lib/next-url'
+
+const Files = lazy(() => import('./pages/Files').then(({ Files }) => ({ default: Files })))
+const Knowledge = lazy(() => import('./pages/Knowledge').then(({ Knowledge }) => ({ default: Knowledge })))
+const Shares = lazy(() => import('./pages/Shares').then(({ Shares }) => ({ default: Shares })))
+const Trash = lazy(() => import('./pages/Trash').then(({ Trash }) => ({ default: Trash })))
+const Minecraft = lazy(() => import('./pages/Minecraft').then(({ Minecraft }) => ({ default: Minecraft })))
+const Activity = lazy(() => import('./pages/Activity').then(({ Activity }) => ({ default: Activity })))
+const Settings = lazy(() => import('./pages/Settings').then(({ Settings }) => ({ default: Settings })))
+const Chatbots = lazy(() => import('./pages/Chatbots').then(({ Chatbots }) => ({ default: Chatbots })))
 
 /** 受保护路由：会话恢复中显示占位；未登录跳转登录页并带上返回地址。 */
 function ProtectedRoute() {
@@ -73,23 +74,25 @@ export function App() {
       <ToastProvider>
         <AuthProvider>
           <AppMetaProvider>
-            <Routes>
-              <Route path="/login" element={<LoginRoute />} />
-              <Route path="/s/:token" element={<PublicShare />} />
-              <Route element={<ProtectedRoute />}>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/files" element={<Files />} />
-                <Route path="/knowledge" element={<Knowledge />} />
-                <Route path="/shares" element={<Shares />} />
-                <Route path="/trash" element={<Trash />} />
-                <Route path="/minecraft" element={<Minecraft />} />
-                <Route path="/chatbots" element={<Chatbots />} />
-                <Route path="/bots" element={<Navigate to="/chatbots" replace />} />
-                <Route path="/activity" element={<Activity />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="*" element={<NotFound />} />
-              </Route>
-            </Routes>
+            <Suspense fallback={<AppLoading text="正在加载页面…" />}>
+              <Routes>
+                <Route path="/login" element={<LoginRoute />} />
+                <Route path="/s/:token" element={<PublicShare />} />
+                <Route element={<ProtectedRoute />}>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/files" element={<Files />} />
+                  <Route path="/knowledge" element={<Knowledge />} />
+                  <Route path="/shares" element={<Shares />} />
+                  <Route path="/trash" element={<Trash />} />
+                  <Route path="/minecraft" element={<Minecraft />} />
+                  <Route path="/chatbots" element={<Chatbots />} />
+                  <Route path="/bots" element={<Navigate to="/chatbots" replace />} />
+                  <Route path="/activity" element={<Activity />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="*" element={<NotFound />} />
+                </Route>
+              </Routes>
+            </Suspense>
           </AppMetaProvider>
         </AuthProvider>
       </ToastProvider>

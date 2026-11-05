@@ -4,7 +4,9 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.0.7（2026-11-04 已部署，commit `b17102b`）**：schema v19 为 `alert_events.dedupe_key`；mcbot 快照下发 `lastSuccessAt`；mcbot 进程不在或轮询过期走 `service_down`；寻路兜底进入自主重决策（不新增 MCP 工具，不挖掘/不放置/不跑酷）。OpenCode **v2.2.5** 已在树莓派运行，回滚备份 timestamp `20261104T062115Z`。生产 app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19）、mcbot `/opt/mcbot/releases/20261104T092858Z`。npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
+**当前版本 v1.0.8（工作区，待部署）**：schema 20 新增外部告警投递箱；mcbot 契约 v2 将发言划入控制权限，Workbench 兼容 v1 读取及既有控制。恢复演练核对链与文件，分片登记与完成原子提交。
+
+**当前生产 v1.0.7（2026-11-04 已部署，commit `b17102b`）**：schema v19 为 `alert_events.dedupe_key`；mcbot 快照下发 `lastSuccessAt`；mcbot 进程不在或轮询过期走 `service_down`；寻路兜底进入自主重决策（不新增 MCP 工具，不挖掘/不放置/不跑酷）。OpenCode **v2.2.5** 已在树莓派运行，回滚备份 timestamp `20261104T062115Z`。生产 app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19）、mcbot `/opt/mcbot/releases/20261104T092858Z`。npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
 权威文档：
 - `docs/app/PLAN.md`：范围、决策、阶段与验收
@@ -70,7 +72,7 @@ apps/workbench/server/src/
   main.ts            进程入口：配置、DB、Fastify、信号退出、启动指标采样
   config.ts          环境变量解析与校验（非法值/不安全组合失败即退出）
   logger.ts          Fastify/pino 日志与脱敏
-  db.ts              SQLite 打开、迁移（当前 schema v19）、事务辅助
+  db.ts              SQLite 打开、迁移（工作区 schema v20）、事务辅助
   auth/              scrypt、TOTP、会话、CSRF、限流、恢复码、审计（字段截断 + 失败诊断）、Bot 发布 TOTP 再认证
   files/             存储、上传、配额、搜索、预览、回收站、files.origin 可见性、物理孤儿回收
   uploads/           分片上传会话/块索引、配额预留、拼接、过期与终态清理
@@ -142,7 +144,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 ## 6. 数据库与数据
 
-- schema 迁移集中在 `server/src/db.ts` 的 `MIGRATIONS`，启动时按 `meta.schema_version` 顺序执行；迁移只追加，当前 schema **v19**（v18 为 `audit_write_failures`；v19 追加可空 `alert_events.dedupe_key` 与部分唯一索引，不改既有列）。
+- schema 迁移集中在 `server/src/db.ts` 的 `MIGRATIONS`，启动时按 `meta.schema_version` 顺序执行；迁移只追加，工作区 schema **v20**（v19 增加 `alert_events.dedupe_key`；v20 增加 `external_alert_deliveries`，记录独立 Webhook 和 QQ 入队状态）。
   备份加密/异地副本通过归档名后缀、sidecar 与 `manifest_json` 识别，不修改列/表；群共享记忆归属迁移复用现有 `chatbot_memory_items` 行（一次性 meta 标记 `chatbot_group_memory_owner_migrated_v1`）。
   数据库 schema 高于程序支持版本时拒绝启动。
 - 时间统一存 ISO 8601 UTC 字符串；展示用 `Asia/Shanghai`。

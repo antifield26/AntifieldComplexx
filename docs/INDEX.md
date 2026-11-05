@@ -1,6 +1,6 @@
 # AntifieldComplexx 文档索引
 
-> 版本：v1.0.7（2026-11-04 已部署并发布 Tag/Release）：告警幂等、轮询成功时间、mcbot 服务告警、寻路兜底进入自主重决策；生产 app `/opt/antifieldcloud/releases/20261104T093100Z`、mcbot `/opt/mcbot/releases/20261104T092858Z`；schema v19 / OpenCode v2.2.5。v1.0.6 统一寻路层仍是上一稳定版本。
+> 工作区 v1.0.8（待部署），schema 20 / mcbot 契约 v2。当前生产 v1.0.7（schema 19 / mcbot 契约 v1 / OpenCode 2.2.5）。
 > 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
 
 ## 应用（apps/workbench，Web 端）

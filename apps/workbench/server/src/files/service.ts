@@ -458,6 +458,7 @@ export class FileService {
       sha256: string
       reservedBytes?: number
       origin?: FileOrigin
+      completeRegistration?: (fileId: string) => void
     },
   ): Promise<FileItem> {
     const origin = input.origin ?? 'user'
@@ -495,6 +496,7 @@ export class FileService {
                  VALUES (?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
               )
               .run(id, input.parentId, finalName, input.size, mime, input.sha256, id, now, now, origin)
+            input.completeRegistration?.(id)
           })
           break
         } catch (error) {

@@ -73,6 +73,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   mcbot_unavailable: 'mcbot 服务不可用',
   mcbot_auth_failed: 'mcbot 鉴权失败（Token 无效）',
   mcbot_upstream_error: 'mcbot 上游响应异常',
+  mcbot_contract_unsupported: 'mcbot 状态或契约尚未确认',
+  mcbot_say_unavailable: 'mcbot 发言需要契约 v2',
   mcbot_rate_limited: 'mcbot 请求过于频繁，请稍后重试',
   mcbot_resume_pending: 'mcbot 有待恢复任务，请先恢复或停止',
   mcbot_queue_full: 'mcbot 任务队列已满',
@@ -430,8 +432,7 @@ export function registerLofiiRoutes(
 
   app.post('/api/mcbot/say', { preHandler: [requireAuth, csrf] }, async (request) => {
     requireEnabled(mcbot)
-    // /say 是写操作；即使上游用读 Token，应用侧也必须要求控制 Token，
-    // 避免只读模式成为绕过任务/移动权限的写通道。
+    // 发言同时要求应用控制权限和上游契约 v2。
     if (!mcbot.controlEnabled) {
       throw new AppError(503, 'mcbot_control_disabled', errorMessageFor('mcbot_control_disabled', 'mcbot 控制接口未启用'))
     }

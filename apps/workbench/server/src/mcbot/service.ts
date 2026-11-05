@@ -66,6 +66,7 @@ export interface McbotSnapshot {
   reachable: boolean
   stale: boolean
   controlEnabled: boolean
+  sayEnabled: boolean
   alertsEnabled: boolean
   /** 上游是否支持 /events/recent（旧版返回 404 时为 false）。 */
   eventsSupported: boolean
@@ -368,7 +369,8 @@ export class McbotService {
     const controller = new AbortController()
     this.abortController = controller
     try {
-      const [statusResult, recentResult] = await Promise.allSettled([
+      const [healthResult, statusResult, recentResult] = await Promise.allSettled([
+        this.client.health(controller.signal),
         this.client.status(controller.signal),
         this.client.recentEvents(MCBOT_EVENT_POLL_LIMIT, controller.signal),
       ])
@@ -378,23 +380,35 @@ export class McbotService {
       let error: string | null = null
       let alertCount = 0
 
-      if (statusResult.status === 'fulfilled') {
+      const health = healthResult.status === 'fulfilled' ? healthResult.value : null
+      const compatible = health !== null &&
+        (statusResult.status !== 'fulfilled' ||
+          (statusResult.value.version === health.version &&
+            (health.contractVersion === 1 && statusResult.value.contractVersion === undefined ||
+              statusResult.value.contractVersion === health.contractVersion))) &&
+        (recentResult.status !== 'fulfilled' || recentResult.value.contractVersion === health.contractVersion)
+      this.contractVersion = compatible ? health.contractVersion : null
+      if (!compatible) {
+        error = healthResult.status === 'rejected' ? errorCodeOf(healthResult.reason) : 'mcbot_contract_unsupported'
+        this.eventsSupported = false
+      }
+
+      if (compatible && statusResult.status === 'fulfilled') {
         this.reachable = true
         this.statusSnapshot = statusResult.value
         this.autonomySnapshot = normalizeAutonomy(statusResult.value.autonomy)
         const version = statusResult.value.version
         if (typeof version === 'string' && version.trim()) this.version = version.trim()
-        this.lastSuccessAt = startedAt.getTime()
+        this.lastSuccessAt = this.now().getTime()
         this.failedPolls = 0
       } else {
         this.reachable = false
         this.failedPolls += 1
-        error = errorCodeOf(statusResult.reason)
+        if (statusResult.status === 'rejected') error ??= errorCodeOf(statusResult.reason)
       }
 
-      if (recentResult.status === 'fulfilled') {
+      if (compatible && statusResult.status === 'fulfilled' && recentResult.status === 'fulfilled') {
         this.eventsSupported = true
-        this.contractVersion = recentResult.value.contractVersion
         this.mergeEvents(recentResult.value.events)
         try {
           alertCount = this.advanceCursor(recentResult.value)
@@ -403,12 +417,12 @@ export class McbotService {
           this.log('warn', 'mcbot 告警游标处理失败', { error: errorCodeOf(cause) })
           if (!error) error = 'mcbot_cursor_failed'
         }
-      } else if (recentResult.reason instanceof McbotError && recentResult.reason.statusCode === 404) {
+      } else if (recentResult.status === 'rejected' && recentResult.reason instanceof McbotError && recentResult.reason.statusCode === 404) {
         // 旧版 mcbot 没有 /events/recent：明确降级，状态仍可用。
         this.eventsSupported = false
-        this.contractVersion = null
-      } else if (!error) {
-        error = errorCodeOf(recentResult.reason)
+      } else if (recentResult.status === 'rejected') {
+        this.eventsSupported = false
+        error ??= errorCodeOf(recentResult.reason)
       }
 
       this.error = error
@@ -577,6 +591,7 @@ export class McbotService {
         reachable: false,
         stale: false,
         controlEnabled: false,
+        sayEnabled: false,
         alertsEnabled: this.config.mcbotAlertsEnabled,
         eventsSupported: false,
         version: null,
@@ -594,6 +609,7 @@ export class McbotService {
       reachable: this.reachable,
       stale: this.isStale(),
       controlEnabled: this.controlEnabled,
+      sayEnabled: this.controlEnabled && this.reachable && this.contractVersion === 2,
       alertsEnabled: this.config.mcbotAlertsEnabled,
       eventsSupported: this.eventsSupported,
       version: this.version,
@@ -632,12 +648,14 @@ export class McbotService {
     return this.control(() => this.client.move(action, target))
   }
 
-  /** /say 使用读 Token，只读模式（无控制 Token）下仍可用。 */
+  /** v1 发言使用读 Token，Workbench 仅转发 v2 发言。 */
   async say(message: string): Promise<Record<string, unknown>> {
-    if (!this.config.mcbotEnabled) throw new McbotError('mcbot_disabled', 'mcbot 对接未启用')
-    const result = await this.client.say(message)
-    await this.refresh()
-    return result
+    return this.control(() => {
+      if (this.contractVersion !== 2) {
+        throw new McbotError('mcbot_say_unavailable', 'mcbot 发言需要契约 v2', 503)
+      }
+      return this.client.say(message)
+    })
   }
 
   async history(kind: McbotHistoryKind, query: McbotHistoryQuery = {}): Promise<Record<string, unknown>> {
@@ -708,6 +726,10 @@ export class McbotService {
     if (!this.config.mcbotEnabled) throw new McbotError('mcbot_disabled', 'mcbot 对接未启用')
     if (!this.controlEnabled) {
       throw new McbotError('mcbot_control_disabled', 'mcbot 控制接口未启用（未配置控制 Token）')
+    }
+    if (!this.reachable || this.contractVersion === null) await this.pollOnce()
+    if (!this.reachable || this.contractVersion === null) {
+      throw new McbotError(this.error ?? 'mcbot_contract_unsupported', 'mcbot 状态或契约尚未确认', 503)
     }
     const result = await run()
     await this.refresh()

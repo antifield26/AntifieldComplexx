@@ -1,15 +1,15 @@
-# AntifieldComplexx 对接契约（mcbot v1.0.6）
+# AntifieldComplexx 对接契约（mcbot v1.0.8 / v2）
 
-> 本文只描述 `mcbot` 侧的稳定接口。**本会话不修改 AntifieldCloud 仓库/服务**；Token 注入、面板展示与调用逻辑由用户自行接入。面板后端建议使用 Fastify 的 `fetch` 消费 SSE，不要把读 Token 放到浏览器 URL。
+> 契约 v2 的本机发言使用控制 Token。Workbench 可读取 v1 并沿用既有控制，v1 发言在 Workbench 停用。
 
 ## 1. 基础信息
 
 | 项目 | 值 |
 |---|---|
 | Base URL | `http://127.0.0.1:3010`（仅回环，不对外） |
-| 读 Token | `HTTP_TOKEN`，用于 `/status`、`/presence`、`/goals`、`/task`、`/events`、`/events/recent`、`/say` |
-| 控制 Token | `HTTP_CONTROL_TOKEN`，用于 `/task/*`、`POST /move`、`/presence`、`/goals*`、`/autonomy/start|stop` |
-| 契约版本 | `CONTRACT_VERSION=1`，由 `/healthz` 与 `/events/recent` 的 `contractVersion` 返回 |
+| 读 Token | `HTTP_TOKEN`，用于 `/status`、`/presence`、`/goals`、`/task`、`/events`、`/events/recent` |
+| 控制 Token | `HTTP_CONTROL_TOKEN`，用于 `/task/*`、`POST /move`、`POST /say`、`/presence`、`/goals*`、`/autonomy/start|stop` |
+| 契约版本 | `CONTRACT_VERSION=2`，由 `/healthz`、`/status` 与 `/events/recent` 的 `contractVersion` 返回 |
 | Token 位置 | Pi：`/etc/mcbot/env`（root:mcbot 0640） |
 | 数据格式 | JSON / SSE，UTF-8 |
 | 请求体上限 | 8 KiB |
@@ -392,7 +392,7 @@ Authorization: Bearer <HTTP_TOKEN>
 
 ## 8. POST /say
 
-需要读 Token + JSON。只聊天，不执行命令。
+需要控制 Token + JSON。只允许聊天文本，任意位置的 ASCII `/`、C0 控制字符和 DEL 都返回 400。
 
 ```json
 { "message": "来自 AntifieldCloud 的问候" }

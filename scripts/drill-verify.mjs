@@ -15,10 +15,10 @@
  * 避免 PowerShell 5.1 以 GBK 解码 JSON 失败。
  */
 import { createHash } from 'node:crypto'
-import { createReadStream, readFileSync, realpathSync } from 'node:fs'
+import { createReadStream, lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { pathToFileURL } from 'node:url'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 /** 备份归档允许的顶层前缀：应用数据归档只有 backups/ 与 files/。 */
 export const ARCHIVE_PREFIXES = ['backups/', 'files/']
@@ -125,6 +125,10 @@ export function analyzeTarListing(text, options = {}) {
       errors.push({ code: 'tar_path_absolute', message: `absolute archive path: ${sanitizeAscii(path)}` })
       continue
     }
+    if (path.includes(':')) {
+      errors.push({ code: 'tar_path_invalid', message: 'archive path contains a colon' })
+      continue
+    }
     const segments = path.split('/')
     if (segments.some((segment) => segment === '..')) {
       errors.push({ code: 'tar_path_traversal', message: `parent segment in archive path: ${sanitizeAscii(path)}` })
@@ -211,7 +215,7 @@ export function verifyManifest(manifest, options = {}) {
   if (manifest.totalBytes === undefined || !Number.isSafeInteger(manifest.totalBytes) || manifest.totalBytes < 0) {
     push('manifest_totalbytes_invalid', `manifest.totalBytes must be an integer >= 0, got ${JSON.stringify(manifest.totalBytes)}`)
   }
-  if (typeof manifest.database !== 'string' || !/^backups\/db-[^/]+\.sqlite$/.test(manifest.database)) {
+  if (typeof manifest.database !== 'string' || !/^backups\/db-[a-z0-9-]+\.sqlite$/i.test(manifest.database)) {
     push('manifest_database_invalid', `manifest.database is not a backups/db-*.sqlite path: ${JSON.stringify(manifest.database)}`)
   }
   if (manifest.mode === 'full' && manifest.since !== null && manifest.since !== undefined) {
@@ -316,6 +320,70 @@ export function verifyDb(path, options = {}) {
   return { ok: errors.length === 0, details, errors }
 }
 
+/** 对账快照引用的全部文件；只读取解包目录内的普通文件。 */
+export async function verifyRestoredFiles(dbPath, root) {
+  const details = { checked: 0, hashed: 0, sizeOnly: 0, missing: 0, invalid: 0 }
+  const problems = new Map()
+  function record(code, id) {
+    const problem = problems.get(code) ?? { count: 0, example: id }
+    problem.count++
+    problems.set(code, problem)
+  }
+  const db = new DatabaseSync(dbPath, { readOnly: true })
+  try {
+    const filesRoot = join(realpathSync(root), 'files')
+    for (const row of db.prepare("SELECT id, size, sha256 FROM files WHERE kind = 'file'").iterate()) {
+      details.checked++
+      const id = row.id
+      if (typeof id !== 'string' || !/^[a-z0-9_-]{2,128}$/i.test(id) ||
+          !Number.isSafeInteger(row.size) || row.size < 0 ||
+          (row.sha256 && (typeof row.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(row.sha256)))) {
+        details.invalid++
+        record('restored_file_metadata_invalid', 'invalid file record')
+        continue
+      }
+      const bucket = join(filesRoot, id.slice(0, 2))
+      const path = join(bucket, id)
+      try {
+        if (!lstatSync(filesRoot).isDirectory() || !lstatSync(bucket).isDirectory()) {
+          details.invalid++
+          record('restored_file_type_invalid', id)
+          continue
+        }
+        const stat = lstatSync(path)
+        if (!stat.isFile() || stat.size !== row.size) {
+          details.invalid++
+          record(stat.isFile() ? 'restored_file_size_mismatch' : 'restored_file_type_invalid', id)
+        } else if (!row.sha256) {
+          details.sizeOnly++
+        } else if ((await sha256File(path)) !== row.sha256.toLowerCase()) {
+          details.invalid++
+          record('restored_file_sha256_mismatch', id)
+        } else {
+          details.hashed++
+        }
+      } catch (error) {
+        if (error?.code === 'ENOENT') {
+          details.missing++
+          record('restored_file_missing', id)
+        } else {
+          details.invalid++
+          record('restored_file_unreadable', id)
+        }
+      }
+    }
+  } catch {
+    record('restored_file_index_unreadable', 'files')
+  } finally {
+    db.close()
+  }
+  const errors = Array.from(problems, ([code, { count, example }]) => ({
+    code,
+    message: `${count} restored file check(s) failed (example: ${example})`,
+  }))
+  return { ok: errors.length === 0, details, errors }
+}
+
 /** 读取文件并按 UTF-8 文本解析（失败时返回错误码而不是抛异常）。 */
 function readTextFile(path) {
   try {
@@ -336,6 +404,7 @@ export function parseArgs(argv) {
       return argv[index]
     }
     if (arg === '--db') options.db = next()
+    else if (arg === '--restored-root') options.restoredRoot = next()
     else if (arg === '--manifest') options.manifest = next()
     else if (arg === '--tar-list') options.tarList = next()
     else if (arg === '--sidecar') options.sidecar = next()
@@ -429,6 +498,9 @@ export async function runChecks(options) {
           }),
         )
         checks.manifest = { ok: manifestResult.ok, details: manifestResult.details }
+        if (manifestResult.ok && listing && listing.databases.filter((name) => name === parsed.database).length !== 1) {
+          errors.push({ code: 'db_snapshot_missing', message: 'manifest database must appear exactly once in its archive' })
+        }
       }
     }
   } else if (options.expectMode) {
@@ -438,6 +510,11 @@ export async function runChecks(options) {
   if (options.db) {
     const dbResult = collect(verifyDb(options.db, { expectedSchemaVersion: options.expectedSchemaVersion }))
     checks.db = { ok: dbResult.ok, details: dbResult.details }
+    if (dbResult.ok && options.restoredRoot) {
+      checks.files = collect(await verifyRestoredFiles(options.db, options.restoredRoot))
+    }
+  } else if (options.restoredRoot) {
+    errors.push({ code: 'invalid_arguments', message: '--restored-root requires --db' })
   }
 
   return { ok: errors.length === 0, checks, warnings, errors }

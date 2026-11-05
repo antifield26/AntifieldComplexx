@@ -53,6 +53,28 @@ test('分片乱序上传、complete 拼接并登记文件', async () => {
   }
 })
 
+test('会话完成写入失败时原子回滚文件登记，重启后重试仅生成一份文件', async () => {
+  const ctx = setup()
+  try {
+    const { uploadId } = ctx.uploads.init(ctx.actor, { name: 'atomic.bin', parentId: null, size: 4 })
+    await ctx.uploads.putChunk(ctx.actor, uploadId, 0, Buffer.from('abcd'))
+    ctx.db.exec(`CREATE TEMP TRIGGER fail_complete BEFORE UPDATE ON upload_sessions
+      WHEN NEW.status = 'completed' BEGIN SELECT RAISE(FAIL, 'fixture failure'); END`)
+    await assert.rejects(ctx.uploads.complete(ctx.actor, uploadId), /fixture failure/)
+    assert.equal(ctx.db.prepare('SELECT COUNT(*) AS n FROM files').get()?.n, 0)
+    assert.deepEqual(ctx.uploads.status(ctx.actor, uploadId).received, [0])
+    ctx.db.exec('DROP TRIGGER fail_complete')
+    ctx.db.prepare("UPDATE upload_sessions SET status = 'assembling' WHERE id = ?").run(uploadId)
+    const resumed = new UploadService(ctx.db, ctx.config, new FileService(ctx.db, ctx.config))
+    assert.equal(resumed.status(ctx.actor, uploadId).status, 'uploading')
+    const { file } = await resumed.complete(ctx.actor, uploadId)
+    assert.equal((await resumed.complete(ctx.actor, uploadId)).file.id, file.id)
+    assert.equal(ctx.db.prepare('SELECT COUNT(*) AS n FROM files').get()?.n, 1)
+  } finally {
+    close(ctx)
+  }
+})
+
 test('重复分片同内容幂等，不同内容 409', async () => {
   const ctx = setup()
   try {

@@ -257,7 +257,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/chatbot/webhook/:botId
 - **失败降级**：SearXNG 超时/非 2xx/格式错误时工具返回失败文本，Chat 继续回答并说明无法核实；`/search` 预取失败仍走 AI 回答（无来源）。审计 `chatbot.search` 只记录结果数/错误码/是否强制，不记录查询正文。
 - **限流/隐私**：每 Bot×用户每小时 `CHATBOT_SEARCH_RATE_PER_HOUR`；查询会发给私有 SearXNG 及其启用引擎（生产仅 Bing），不把用户消息直接发给任意外部搜索 API。MCP 服务只访问 `SEARXNG_URL`，不抓结果网页；MCP 工具输出含 URL 但 Bot 回答层仍会脱敏/附来源。
 - **启用步骤**：安装 SearXNG → `sudo bash scripts/install-searxng-mcp.sh`（安装 MCP 服务并改 OpenCode 配置；重启 opencode）→ `curl 'http://127.0.0.1:8888/search?q=test&format=json&engines=bing'` 返回 JSON → 应用 env `CHATBOT_SEARCH_ENABLED=true`/`CHATBOT_SEARCH_MODE=mcp`/`CHATBOT_SEARCH_URL=http://127.0.0.1:8888` → 重启应用 → 实测普通问句自动搜索与 `/search`。
-- **MCP 权限**：OpenCode 配置 `mcp.servers.searxng.codemode=false`；Bot 会话 permissions 顺序为 deny-all 后 allow `searxng_*`（启用发送工具时另 allow `botmsg_*`，最后匹配生效）。若 OpenCode 拒绝 permissions 字段，现有降级逻辑会记录 `aiToolIsolation.supported=false`，此时不应把 Chat 当强隔离环境。
+- **MCP 权限**：OpenCode 配置 `mcp.servers.searxng.codemode=false`；Bot 会话 permissions 顺序为 deny-all 后 allow `searxng_*`（启用发送工具时另 allow `botmsg_*`，最后匹配生效）。若 OpenCode 拒绝 permissions 字段，记录 `aiToolIsolation.supported=false` 并暂停 Chat。
 
 ## 5.8 消息发送工具与连续消息
 
@@ -275,8 +275,8 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/chatbot/webhook/:botId
 ## 5.9 审计与行为边界
 
 - **AI 工具隔离 fail-closed（D-12/SEC-11）**：OpenCode 明确 400 拒绝 `permissions` 时不再进程级永久降级，而是进入 10 分钟重试窗口；
-  启用 `CHATBOT_AI_SEND_TOOL_ENABLED` 且隔离不可用时**拒绝新 Chat**：inbound/chat 侧返回固定提示“安全隔离不可用，暂时停止 AI 对话。”并写 `chatbot_events`（群/@ 为 denied，全量群为 ignored），
-  OpenCode 层抛 `503 chatbot_ai_tool_isolation_unavailable`；窗口到点放行一次重试，上游恢复后 `aiToolIsolation.supported=true` 自动恢复。未启用发送工具时纯文本 Chat 行为不变。
+  所有模式隔离不可用时**拒绝新 Chat**：inbound/chat 侧返回固定提示“安全隔离不可用，暂时停止 AI 对话。”并写 `chatbot_events`（群/@ 为 denied，全量群为 ignored），
+  OpenCode 层抛 `503 chatbot_ai_tool_isolation_unavailable`；窗口到点放行一次重试，上游恢复后 `aiToolIsolation.supported=true` 自动恢复。纯文本 Chat 也要求隔离。
   状态 `ChatbotStatus.aiToolIsolation{ supported, fallbackCount, fallbackAt, retryAt }` 可查；降级审计 `chatbot.ai.permissions_fallback` 仍只记计数。
 - **群共享记忆归属（D-13/BOT-03/BOT-10）**：群 scope 条目 key 前缀由显示名改为稳定 `member_openid`，显示名只存 value；同名/改名成员不再互相覆盖或删除。
   启动一次性迁移 `meta.chatbot_group_memory_owner_migrated_v1`：按 `chatbot_inbound_targets` 的「群目标 + 显示名 + 用户」唯一映射旧键；无法唯一映射的条目加 `legacy:` 前缀保留（不参与按成员删除）；

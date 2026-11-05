@@ -4,7 +4,7 @@
  * 安全边界：
  * - 只访问 config.opencodeUrl，使用 Basic Auth；密码不进入日志、错误消息或返回值。
  * - 新建会话时用 deny-all 的 OpenCode Permission.Ruleset 关闭工具，避免 Chatbot 用户借 AI 执行主机操作；
- *   仅当服务端明确以 400 拒绝 permissions 字段时降级为默认权限，并记录“未隔离”警告，绝不假装已隔离。
+ *   服务端明确拒绝 permissions 时暂停对话，重试窗口到期后重新探测隔离能力。
  * - v0.7.3 文档模式：仅额外放行当前会话作用域的 role.md/memory.md（read + external_directory），
  *   其余工具仍 deny；启用文档模式或发送工具时权限拒绝即 fail-closed（503），不再以默认权限重建。
  * - 只返回 assistant 的 text 内容段，忽略 reasoning/tool；单次回复上限由 CHATBOT_AI_MAX_REPLY_CHARS 控制，平台层再按各自上限分段。
@@ -36,7 +36,7 @@ const POLL_INTERVAL_MS = 500
 const MAX_SEEN_MESSAGES_PER_SESSION = 500
 /** OpenCode Permission.Ruleset：拒绝一切工具动作。 */
 const DENY_ALL_PERMISSIONS = [{ action: '*', resource: '*', effect: 'deny' }]
-/** permissions 被拒后的重试窗口：窗口内不再带 permissions，之后重新尝试，避免进程级永久降级。 */
+/** permissions 被拒后的重试窗口，期间不创建会话。 */
 const PERMISSIONS_RETRY_WINDOW_MS = 10 * 60_000
 
 /**
@@ -207,6 +207,7 @@ export class OpenCodeBotAi implements ChatbotAi {
   private permissionsFallbackAt: string | null = null
   /** 下次允许重试 permissions 的时间（毫秒）；0 表示无需重试。 */
   private permissionsRetryAt = 0
+  private probingPermissions = false
   /**
    * 每会话已见 assistant 消息键（有界）。
    * 轮询回退时用它区分"本轮新回答"与"会话历史中的旧回答"；进程重启后首次复用时先读取存量消息建立基线。
@@ -262,9 +263,8 @@ export class OpenCodeBotAi implements ChatbotAi {
       userId: input.sessionUserId ?? input.userId,
       sharedSession: input.sharedSession === true,
     }
-    // fail-closed（SEC-11）：启用发送工具或文档/read 模式时，不允许在未隔离的默认权限会话里继续对话。
-    // 若已到重试窗口，允许 ensureSession 重新尝试带 permissions 的新会话；仍失败则抛 503。
-    if ((this.contextReadEnabled || this.sendToolEnabled) && !this.permissionsSupported && Date.now() < this.permissionsRetryAt) {
+    // 到重试窗口时由下一次请求重建并验证会话。
+    if (!this.permissionsSupported && (this.probingPermissions || Date.now() < this.permissionsRetryAt)) {
       throw this.isolationError()
     }
     const session = await this.ensureSession(target, input.sessionTitle)
@@ -353,7 +353,6 @@ export class OpenCodeBotAi implements ChatbotAi {
     const sessionId = await this.createSession(
       normalizeSessionTitle(input.sessionTitle, 'AntifieldComplexx Memory'),
       DENY_ALL_PERMISSIONS,
-      { requirePermissions: true },
     )
     const maxOps = Math.max(1, Math.min(20, Math.floor(input.maxOps)))
     const existing = input.existing
@@ -490,12 +489,11 @@ export class OpenCodeBotAi implements ChatbotAi {
         "SELECT session_id FROM chatbot_ai_sessions WHERE chatbot_id = ? AND target_external_id = ? AND user_id = ? AND mode = 'chat'",
       )
       .get(target.chatbotId, target.targetExternalId, target.userId) as AiSessionRow | undefined
-    if (existing?.session_id) return { sessionId: existing.session_id, created: false }
+    if (existing?.session_id && this.permissionsSupported) return { sessionId: existing.session_id, created: false }
 
     const sessionId = await this.createSession(
       normalizeSessionTitle(title, 'AntifieldComplexx Chat'),
       chatbotPermissions(this.searchToolEnabled, this.sendToolEnabled, this.chatReadPatterns(target)),
-      { requirePermissions: this.contextReadEnabled || this.sendToolEnabled },
     )
     const now = new Date().toISOString()
     // 并发首次对话可能同时创建远端会话；以最后一次写入为准，避免主键冲突导致整次对话失败。
@@ -509,6 +507,9 @@ export class OpenCodeBotAi implements ChatbotAi {
            updated_at = excluded.updated_at`,
       )
       .run(target.chatbotId, target.targetExternalId, target.userId, sessionId, this.modelLabel, now, now)
+    if (existing?.session_id && existing.session_id !== sessionId) {
+      void this.deleteSession(existing.session_id).catch(() => undefined)
+    }
     return { sessionId, created: true }
   }
 
@@ -540,19 +541,20 @@ export class OpenCodeBotAi implements ChatbotAi {
   private async createSession(
     title: string,
     permissions: Record<string, unknown>[],
-    options: { requirePermissions: boolean },
   ): Promise<string> {
-    // 降级期间到重试窗口后，重新尝试带 permissions；成功则恢复隔离，失败则继续降级并延长窗口。
-    const wasSupported = this.permissionsSupported
-    const retryDue = !this.permissionsSupported && Date.now() >= this.permissionsRetryAt
-    const includePermissions = this.permissionsSupported || retryDue
-    if (!includePermissions && options.requirePermissions) throw this.isolationError()
-    let result = await this.request(
-      'POST',
-      '/api/session',
-      this.sessionBody(includePermissions ? permissions : null, title),
-    )
-    if (result.status === 400 && includePermissions && isPermissionRejection(result.body)) {
+    const probing = !this.permissionsSupported
+    if (probing && (this.probingPermissions || Date.now() < this.permissionsRetryAt)) throw this.isolationError()
+    if (probing) this.probingPermissions = true
+    try {
+      return await this.createIsolatedSession(title, permissions, probing)
+    } finally {
+      if (probing) this.probingPermissions = false
+    }
+  }
+
+  private async createIsolatedSession(title: string, permissions: Record<string, unknown>[], probing: boolean): Promise<string> {
+    const result = await this.request('POST', '/api/session', this.sessionBody(permissions, title))
+    if (result.status === 400 && isPermissionRejection(result.body)) {
       this.permissionsSupported = false
       this.permissionsFallbackCount += 1
       this.permissionsFallbackAt = new Date().toISOString()
@@ -561,34 +563,31 @@ export class OpenCodeBotAi implements ChatbotAi {
       this.log?.('warn', 'OpenCode 拒绝 permissions 字段，AI 工具隔离不可用', {
         status: 400,
         fallbackCount: this.permissionsFallbackCount,
-        firstFallback: wasSupported,
+        firstFallback: !probing,
         retryInMs: PERMISSIONS_RETRY_WINDOW_MS,
       })
-      // 文档/read 或发送工具依赖隔离：fail-closed，不再以默认权限创建会话（SEC-11/D-12）。
-      if (options.requirePermissions) throw this.isolationError()
-      result = await this.request('POST', '/api/session', this.sessionBody(null, title))
-    } else if (includePermissions && !wasSupported && this.isOk(result.status)) {
-      // 从降级恢复：记录恢复时间，便于状态/审计观察。
+      throw this.isolationError()
+    }
+    if (!this.isOk(result.status)) throw this.httpError(result.status)
+    const data = recordOf(recordOf(result.body)?.data)
+    const id = typeof data?.id === 'string' ? data.id.trim() : ''
+    if (!id) throw new AppError(502, 'chatbot_ai_invalid_response', 'AI 会话创建失败')
+    if (probing) {
       this.permissionsSupported = true
       this.permissionsRetryAt = 0
       this.log?.('info', 'OpenCode 重新接受 permissions，AI 工具隔离已恢复')
     }
-    if (!this.isOk(result.status)) throw this.httpError(result.status)
-
-    const data = recordOf(recordOf(result.body)?.data)
-    const id = typeof data?.id === 'string' ? data.id.trim() : ''
-    if (!id) throw new AppError(502, 'chatbot_ai_invalid_response', 'AI 会话创建失败')
     return id
   }
 
   private sessionBody(
-    permissions: Record<string, unknown>[] | null,
+    permissions: Record<string, unknown>[],
     title: string,
   ): Record<string, unknown> {
     return {
       title,
       ...(this.modelRef ? { model: this.modelRef } : {}),
-      ...(permissions === null ? {} : { permissions }),
+      permissions,
     }
   }
 

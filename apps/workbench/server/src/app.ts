@@ -225,7 +225,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       const status = await mc.status()
       return { online: status.online, error: status.error }
     },
-    notifyEvent: (event) => chatbots.notifyAlert(event),
+    notifyEvent: (event, durable) => chatbots.notifyAlert(event, durable),
     mcbotHealth: () => mcbotHealth.read?.() ?? null,
   })
   // mcbot 轮询依赖 AlertService.recordExternal；禁用时无定时器、无网络请求。
@@ -256,7 +256,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       else app.log.info(payload, message)
     },
   })
-  const uploads = new UploadService(db, config, files)
+  const uploads = new UploadService(db, config, files, (id) => app.log.warn({ id }, '上传完成后的分片目录清理失败'))
 
   await app.register(cookie)
   // octet-stream 全局兜底只使用实例默认 1 MiB 上限；分片上传的 8 MiB 级 raw body 上限
@@ -407,7 +407,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   app.addHook('onClose', async () => {
     // mcbot.stop() 为异步收口：中止在途轮询并 await 结束，停止后不再写告警游标。
     await mcbot.stop()
-    alerts.stop()
+    await alerts.stop()
     metricsSampler.stop()
     // ARCH-04：关闭前有限等待 Chatbot 在途回复/工具缓冲/投递排空，避免部署/重启丢回复或重复投递。
     // 最多等 15s，超时仍继续关闭（不阻塞 systemd stop），并记录警告。
