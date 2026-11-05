@@ -10,6 +10,9 @@
 - Workbench release `/opt/antifieldcloud/releases/20261105T021739Z` 已迁移到 schema 20。迁移前快照 `db-predeploy-20261105T021746014Z.sqlite` 确认为 schema 19，`quick_check=ok`，SHA-256 为 `8e2defe852a12e60d367dc11a407ccdc7b73b7591a09957960af05a697ab3a8a`。部署内 smoke 为 26 通过、0 失败、1 警告（演练状态当时为 schema 19）、2 跳过（整包加密、异地副本关闭）。
 - 过渡检查使用新 Workbench 客户端读取生产 mcbot v1，状态有效，`sayEnabled=false`，发言返回 `mcbot_say_unavailable`，转发写请求数为 0。切至 mcbot release `/opt/mcbot/releases/20261105T021915Z` 后，读 Token 可读状态，控制 Token 被拒绝读取；发言接口拒绝读 Token，控制 Token 通过鉴权并到达未连接分支。Minecraft 进程启动时间核对一致。
 - schema 20 拉取并确认 `snapshot-20261105T022131628Z-inc.tar.gz`，隔离演练 `20261105T022152Z` 通过，全量 + 9 个增量，`db-20261105T022131628Z.sqlite` 完整性与外键校验通过，文件哈希 1/1、缺失和异常均为 0。世界归档完成隔离解包并校验 `level.dat`，状态已回写 Pi。
+- Windows 每日备份与每周世界拉取任务于 `2026-11-05T07:16:49Z` 重新安装，标记为 `1.0.8`。两项均为 Ready，任务的 `-File` 路径正确，已安装脚本的 SHA-256 均与仓库一致。
+- 从 Pi 出口运行完整 Access smoke，结果为 **36 通过、0 失败、0 警告、2 跳过**。通过项包含 Windows 安装标记、schema 20 恢复演练状态、mcbot 契约 v2、公网 Access、安全头、公开分享和 PWA 静态资源。两项跳过对应关闭的整包加密和异地副本。
+- 前端夹具验证登录后恢复管理页深链（含查询参数和锚点）、匿名公开分享和已有 Service Worker 控制器换版后的更新提示。
 
 ### v1.0.7 运行时可信（2026-11-04，已部署）
 
