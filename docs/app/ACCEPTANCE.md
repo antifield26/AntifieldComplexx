@@ -1,12 +1,15 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.8（工作区，待部署）。生产为 v1.0.7（commit `b17102b`、schema 19、mcbot 契约 v1、OpenCode v2.2.5）。
+> 当前版本 v1.0.8（2026-11-05 已部署，运行 commit `2440758`、schema 20、mcbot 契约 v2、OpenCode v2.2.5）。
 
-### v1.0.8 Patch（部署前）
+### v1.0.8 Patch（2026-11-05）
 
 - 2026-11-05 使用新版脚本离线复核 PC 归档，schema 19 全量 + 8 增量，文件哈希 1/1，缺失与损坏均为 0。
 - 世界归档 SHA-256 与临时目录完整解包通过，`world/level.dat` 为 537 字节。演练报告编号 `20261105T015503Z`，生产状态未回写。
-- 发布门禁为 schema 20 迁移、v1/v2 过渡、Windows 任务标记、部署后归档演练及完整 Access smoke。
+- 本地 `npm run check`、构建、版本检查和三套覆盖率门禁通过。Workbench 服务端及脚本 612 通过 / 1 跳过，前端 280 通过，mcbot 147 通过。mcbot 行、分支、函数覆盖率分别为 69.32%、69.55%、67.66%；登录静态 JS 合计压缩前 411.90 kB。运行提交的 8 个 CI 作业通过（含 Windows PowerShell 真实归档演练）。
+- Workbench release `/opt/antifieldcloud/releases/20261105T021739Z` 已迁移到 schema 20。迁移前快照 `db-predeploy-20261105T021746014Z.sqlite` 确认为 schema 19，`quick_check=ok`，SHA-256 为 `8e2defe852a12e60d367dc11a407ccdc7b73b7591a09957960af05a697ab3a8a`。部署内 smoke 为 26 通过、0 失败、1 警告（演练状态当时为 schema 19）、2 跳过（整包加密、异地副本关闭）。
+- 过渡检查使用新 Workbench 客户端读取生产 mcbot v1，状态有效，`sayEnabled=false`，发言返回 `mcbot_say_unavailable`，转发写请求数为 0。切至 mcbot release `/opt/mcbot/releases/20261105T021915Z` 后，读 Token 可读状态，控制 Token 被拒绝读取；发言接口拒绝读 Token，控制 Token 通过鉴权并到达未连接分支。Minecraft 进程启动时间核对一致。
+- schema 20 拉取并确认 `snapshot-20261105T022131628Z-inc.tar.gz`，隔离演练 `20261105T022152Z` 通过，全量 + 9 个增量，`db-20261105T022131628Z.sqlite` 完整性与外键校验通过，文件哈希 1/1、缺失和异常均为 0。世界归档完成隔离解包并校验 `level.dat`，状态已回写 Pi。
 
 ### v1.0.7 运行时可信（2026-11-04，已部署）
 

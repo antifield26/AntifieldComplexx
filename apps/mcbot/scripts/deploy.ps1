@@ -188,14 +188,15 @@ try {
   # release 根包含完整 node_modules（约 0.5 GiB）；不清理会在反复部署后耗尽 SD 卡。
   $keep = [Math]::Max(2, $KeepReleases)
   $cleanup = @"
+set -e -o pipefail
 cur=`$(readlink -f /opt/mcbot/current 2>/dev/null || true)
 prev='$previousTarget'
-ls -1dt /opt/mcbot/releases/* 2>/dev/null | awk -v c="`$cur" -v p="`$prev" -v k=$keep 'NR>k && `$0 != c && `$0 != p' | xargs -r sudo rm -rf
+ls -1dt /opt/mcbot/releases/* 2>/dev/null | awk -v c="`$cur" -v p="`$prev" -v k=$keep 'NR>k && `$0 != c && `$0 != p' | xargs -r sudo rm -rf --
 echo "retained: `$(ls -1dt /opt/mcbot/releases/* | head -n $keep | tr '\n' ' ')"
 "@
   try {
     Write-Host "== cleaning old releases (keep=$keep) =="
-    Write-Host (Invoke-Remote -Command $cleanup -Label "cleanup releases").Output
+    Write-Host (Must-Remote -Command ($cleanup -replace "`r", "") -Label "cleanup releases")
   } catch {
     Write-Warning "旧 release 清理失败（不影响当前服务）：$($_.Exception.Message)"
   }

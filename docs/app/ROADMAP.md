@@ -1,6 +1,6 @@
 # 路线图
 
-## v1.0.8（补丁，待部署）
+## v1.0.8（补丁，2026-11-05 已部署）
 
 - 修复恢复链、上传原子性、外部告警投递、Chat 隔离和 mcbot 生命周期。schema 20、mcbot 契约 v2，Workbench 过渡兼容 v1。
 - 前端路由拆包，Windows 演练端到端夹具，mcbot 覆盖率门禁。发布验收见 [ACCEPTANCE](ACCEPTANCE.md)。

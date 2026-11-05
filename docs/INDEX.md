@@ -1,6 +1,6 @@
 # AntifieldComplexx 文档索引
 
-> 工作区 v1.0.8（待部署），schema 20 / mcbot 契约 v2。当前生产 v1.0.7（schema 19 / mcbot 契约 v1 / OpenCode 2.2.5）。
+> 当前生产 v1.0.8（2026-11-05 已部署），schema 20 / mcbot 契约 v2 / OpenCode 2.2.5。
 > 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
 
 ## 应用（apps/workbench，Web 端）

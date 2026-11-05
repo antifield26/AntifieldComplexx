@@ -4,9 +4,11 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.0.8（工作区，待部署）**：schema 20 新增外部告警投递箱；mcbot 契约 v2 将发言划入控制权限，Workbench 兼容 v1 读取及既有控制。恢复演练核对链与文件，分片登记与完成原子提交。
+**当前版本 v1.0.8（2026-11-05 已部署，运行 commit `2440758`）**：schema 20 新增外部告警投递箱；mcbot 契约 v2 将发言划入控制权限，Workbench 兼容 v1 读取及既有控制。恢复演练核对链与文件，分片登记与完成原子提交。
 
-**当前生产 v1.0.7（2026-11-04 已部署，commit `b17102b`）**：schema v19 为 `alert_events.dedupe_key`；mcbot 快照下发 `lastSuccessAt`；mcbot 进程不在或轮询过期走 `service_down`；寻路兜底进入自主重决策（不新增 MCP 工具，不挖掘/不放置/不跑酷）。OpenCode **v2.2.5** 已在树莓派运行，回滚备份 timestamp `20261104T062115Z`。生产 app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19）、mcbot `/opt/mcbot/releases/20261104T092858Z`。npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
+生产 app `/opt/antifieldcloud/releases/20261105T021739Z`，mcbot `/opt/mcbot/releases/20261105T021915Z`。迁移前 schema 19 快照为 `db-predeploy-20261105T021746014Z.sqlite`。schema 20 演练 `20261105T022152Z` 已校验文件与世界隔离解包，证据见 [ACCEPTANCE](docs/app/ACCEPTANCE.md)。
+
+**v1.0.7 基线（2026-11-04 已部署，commit `b17102b`）**：schema v19 为 `alert_events.dedupe_key`；mcbot 快照下发 `lastSuccessAt`；mcbot 进程不在或轮询过期走 `service_down`；寻路兜底进入自主重决策（不新增 MCP 工具，不挖掘/不放置/不跑酷）。OpenCode **v2.2.5** 已在树莓派运行，回滚备份 timestamp `20261104T062115Z`。v1.0.7 app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19）、mcbot `/opt/mcbot/releases/20261104T092858Z`。npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
 权威文档：
 - `docs/app/PLAN.md`：范围、决策、阶段与验收
