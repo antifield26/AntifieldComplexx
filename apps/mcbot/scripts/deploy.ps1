@@ -2,6 +2,7 @@
   [string]$PiHost = "169.254.77.10",
   [string]$PiUser = "antifield",
   [switch]$SkipChecks,
+  [switch]$OfflineInstall,
   [switch]$AllowDirty,
   [switch]$Provision,
   [switch]$ServerConfig,
@@ -116,7 +117,8 @@ try {
   }
 
   Write-Host "== installing release =="
-  $install = "sudo install -d -m 0755 $releaseDir && sudo tar -xzf /tmp/mcbot-$tag.tar.gz -C $releaseDir && cd $releaseDir && sudo timeout 900 /usr/local/bin/npm ci --omit=dev --ignore-scripts --no-audit --no-fund && sudo chown -R root:root $releaseDir && sudo chmod -R u+rwX,go-w $releaseDir"
+  $cacheFlag = if ($OfflineInstall) { " --offline" } else { "" }
+  $install = "sudo install -d -m 0755 $releaseDir && sudo tar -xzf /tmp/mcbot-$tag.tar.gz -C $releaseDir && cd $releaseDir && sudo timeout 900 /usr/local/bin/npm ci$cacheFlag --omit=dev --ignore-scripts --no-audit --no-fund && sudo chown -R root:root $releaseDir && sudo chmod -R u+rwX,go-w $releaseDir"
   Must-Remote -Command $install -Label "install release" | Write-Host
 
   $previousTarget = (Invoke-Remote -Command "readlink -f $currentLink 2>/dev/null || true" -Label "read current").Output

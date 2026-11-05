@@ -3,6 +3,7 @@
   [string]$PiUser = "antifield",
   [switch]$SkipChecks,
   [switch]$SkipBuild,
+  [switch]$OfflineInstall,
   [switch]$AllowDirty,
   [switch]$AllowSmokeFailure,
   [int]$CommandTimeoutSec = 120,
@@ -378,7 +379,8 @@ try {
   if ($remoteVersion -ne $expectedVersion) {
     throw "远端 release workbench 版本（$remoteVersion）与本地 apps/workbench/package.json（$expectedVersion）不一致"
   }
-  $install = "cd $releaseDir && sudo /usr/local/bin/npm ci --omit=dev --ignore-scripts --no-audit --no-fund && sudo chown -R root:root $releaseDir && sudo chmod -R u+rwX,go-w $releaseDir"
+  $cacheFlag = if ($OfflineInstall) { " --offline" } else { "" }
+  $install = "cd $releaseDir && sudo /usr/local/bin/npm ci$cacheFlag --omit=dev --ignore-scripts --no-audit --no-fund && sudo chown -R root:root $releaseDir && sudo chmod -R u+rwX,go-w $releaseDir"
   $installResult = Invoke-NativeWithTimeout -FilePath "ssh.exe" -Arguments @(
     "-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15",
     "-o", "ServerAliveCountMax=2", $target, $install

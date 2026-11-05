@@ -22,6 +22,8 @@
 3. 升级 mcbot，核对契约 2，验证发言仅接受控制 Token。本机调用方同步切换令牌。重新安装 Windows 备份任务，拉取并确认 schema 20 归档，重跑演练与完整 Access smoke。
 4. mcbot 可单独回退到 v1。Workbench 回退时先留存 v20 数据库副本，再恢复迁移前 schema 19 快照和旧 release。有新增写入时优先前向修复。Minecraft 维持运行，整包加密、异地副本及 Pi sudo 收权另行排期。
 
+Pi 的在线安装停滞且已用同一锁文件验证缓存完整时，可给两个部署脚本传 `-OfflineInstall`。仍执行 `npm ci`，缺缓存即停止部署。
+
 > **v1.0.7 部署（2026-11-04 已完成，commit `b17102b`）**：OpenCode 2.2.5 已按 §3.2 升级，运行中 `/api/info` 为 2.2.5，矩阵见 §3.2，回滚备份 timestamp `20261104T062115Z`。app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19），迁移前 DB 快照 `db-predeploy-20261104T093146763Z.sqlite`（sha256 `1b09c9…fa03`）。mcbot `/opt/mcbot/releases/20261104T092858Z`。完整 Access smoke **36/0/1/2**。同日实机：5 格密封箱触发区内安全传送与一次自主重决策。演练 `20261104T103202Z` 通过（schema 19，full + 7 inc，世界归档未解包）。早先 smoke 的 schema-18 WARN 是演练前快照，未重跑 smoke。回退应用必须先恢复该快照。不重启 Minecraft，不启用异地副本。已发布 annotated Tag `v1.0.7` 与 GitHub Release。
 
 > **v1.0.6 部署（2026-10-30，已实施）**：MC Bot 统一寻路层（确定性 A* + 受控执行 + AI 路点 + 安全兜底）、`navigation` 状态与 app 面板显示；app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`；核心矩阵通过。回滚：mcbot `/opt/mcbot/releases/20261030T120449Z`、app `/opt/antifieldcloud/releases/20261030T110436Z`，并可先关闭 `PATH_PLANNER_ENABLED`/`PATH_AI_ENABLED`。mcbot 部署脚本默认保留最新 3 个 release 并保护 current/previous；2026-10-31 已清理历史 release，详见 [AUDIT 附录 B](AUDIT.md)。
