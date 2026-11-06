@@ -23,6 +23,8 @@
 4. 完整 Access smoke 要求 0 失败、0 警告。只允许已确认关闭的整包加密和异地副本记为跳过。验收通过后把证据写入 [ACCEPTANCE](ACCEPTANCE.md)，再打附注 Tag `v1.0.9`。
 5. 回滚：mcbot 可独立切回 `/opt/mcbot/releases/20261105T021915Z`。Workbench 回退保全现行 schema 20 数据库和待投递任务，切回 `/opt/antifieldcloud/releases/20261105T021739Z`，核对队列收口，再生成并验证新的全量。部署前快照只用于恢复当前数据库本身。从 v1.0.8 再退到 v1.0.7 仍须先恢复 schema 19 快照 `db-predeploy-20261105T021746014Z.sqlite`。
 
+> **v1.0.9 部署（2026-11-06，运行 commit `7cfbf2d`）**：Workbench `/opt/antifieldcloud/releases/20261106T134109Z`（schema 20），迁移前快照 `db-predeploy-20261106T134205714Z.sqlite`。mcbot `/opt/mcbot/releases/20261106T134625Z`（契约 v2）。部署内 smoke **26/0/0/2**，完整 Access smoke **36/0/0/2**。演练 `20261106T135130Z`。Minecraft 与 OpenCode 未重启。验收见 [ACCEPTANCE](ACCEPTANCE.md)。
+
 ## v1.0.8 发布顺序
 
 1. 用修正后的 `drill.ps1 -ExpectedSchemaVersion 19 -IncludeWorld -RequireWorld` 复核现有链和文件。可用 `-ReportRoot` 将报告与保留清理隔离到指定目录。若缺档或缺件，保全原归档并验证新全量基线。

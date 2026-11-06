@@ -1,11 +1,20 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.9（待生产验收，schema 20、mcbot 契约 v2、OpenCode v2.2.5）。
+> 当前版本 v1.0.9（2026-11-06 已部署，schema 20、mcbot 契约 v2、OpenCode v2.2.5）。
 
-### v1.0.9（待生产验收）
+### v1.0.9（2026-11-06）
 
 - 范围：增量按最近有效全量链的清单覆盖；主机告警进入既有投递箱；告警列表只读展示 `deliveries`；mcbot `eventGap`；`drill.ps1 -RestoreOutputDir`；smoke 核对计划任务 `-File` 与已安装脚本 SHA-256。schema 保持 20，契约保持 v2。
-- 生产路径、演练编号、Access smoke 汇总和 Tag 在验收通过后写入本节。
+- 本地门禁：`npm run check` 与 `npm run build` 通过。app **625**（624 pass、1 skip）+ web **283** + mcbot **147**。功能提交 `7cfbf2d`，CI 作业 `42229847392`。
+- 部署前用新脚本离线复核既有 schema 20 链：full `snapshot-20261102T014632977Z-full.tar.gz` + 12 个增量，文件哈希 1/1，缺失与损坏均为 0。世界归档隔离解包通过，`level.dat` 为 537 字节。报告 `20261106T132433Z`，当时未回写生产状态。现行库 schema 20，`quick_check=ok`，外键违规 0。schema 19 快照 `db-predeploy-20261105T021746014Z.sqlite` 的 SHA-256 仍为 `8e2defe852a12e60d367dc11a407ccdc7b73b7591a09957960af05a697ab3a8a`。
+- Workbench release `/opt/antifieldcloud/releases/20261106T134109Z`。迁移前快照 `db-predeploy-20261106T134205714Z.sqlite` 为 schema 20，`quick_check=ok`，SHA-256 `fb57be80ba19e377f8ed6bf1ecf13fe300e1ed754d8da87d68bc37110e5030a5`。部署内 smoke **26/0/0/2**。切换前，新 Workbench 读取仍在运行的 mcbot v1.0.8：契约 v2，`bootId=24e55fbc`，最新事件 `24e55fbc-3`，游标一致，没有 `eventGap`。
+- mcbot release `/opt/mcbot/releases/20261106T134625Z`（契约 v2）。回滚 release 为 `/opt/mcbot/releases/20261105T021915Z`，再上一份为 `/opt/mcbot/releases/20261104T092858Z`。切换后读取为 v1.0.9，新 `bootId=f6460493`，游标停在 `f6460493-1`，meta 中没有事件缺口。Minecraft 与 OpenCode 的进程启动时间未变，OpenCode 运行中版本仍为 2.2.5。
+- 新全量 `snapshot-20261106T134859122Z-full.tar.gz`（1057365 bytes，SHA-256 `0e5c65bb91a490874c0bbd1efbbd6298fbad59a327ccf59bc41681749f30f14f`）已拉取并确认。随后增量 `snapshot-20261106T135001842Z-inc.tar.gz`（639663 bytes，SHA-256 `1a730e613d4b58b3cd883718417471464e9615d429a2192c0baee128bea0b10f`）已拉取并确认。两轮密钥包均为 ok。
+- 隔离演练 `20261106T135130Z` 通过：上述全量 + 1 个增量，数据库 schema 20，完整性与外键通过，文件哈希 1/1。`-RestoreOutputDir` 发布的目录含 `db.sqlite` 与 1 个引用文件，复核 schema 20、`quick_check=ok`、外键违规 0。世界归档再次隔离解包并校验 `level.dat`。状态已回写 Pi。未把该目录切换为生产库。
+- Windows 每日备份与每周世界拉取任务于 `2026-11-06T13:49:03Z` 重新安装，标记为 `1.0.9`。两项均为 Ready。已安装脚本 SHA-256 与仓库一致：每日 `7febb768…636d`，世界拉取 `75f0df76…6607`。未安装异地任务。
+- 从 Pi 出口运行完整 Access smoke，结果为 **36 通过、0 失败、0 警告、2 跳过**。跳过项是关闭的整包加密和异地副本。通过项包含 Windows 任务 `-File` 与脚本 SHA、schema 20 演练状态、mcbot 1.0.9 契约 v2。
+- 告警投递文案和事件缺口提示由前端测试覆盖。本次没有浏览器点击验收。
+- 回滚：mcbot 可独立切回 `/opt/mcbot/releases/20261105T021915Z`。Workbench 回退保留 schema 20 数据库和待投递任务，切回 `/opt/antifieldcloud/releases/20261105T021739Z`，核对队列后再生成并验证新全量。部署前快照只用于恢复当前数据库。再退到 v1.0.7 须先恢复 `db-predeploy-20261105T021746014Z.sqlite`。
 
 ### v1.0.8 Patch（2026-11-05）
 
