@@ -78,7 +78,7 @@
 
 ## v0.8.1 历史范围（保留）
 
-> 以下自“v0.8.1 历史内容”起均为 v0.8.1 及更早的计划与验收记录，不再代表当前版本；v1.0.0 当前事实以 README/AGENTS/ROADMAP/CHANGELOG/DEPLOY/ACCEPTANCE 为准。
+> 以下自“v0.8.1 历史内容”起均为 v0.8.1 及更早的计划与验收记录，不再代表当前版本。当前事实以 README/AGENTS/ROADMAP/CHANGELOG/DEPLOY/ACCEPTANCE 为准。
 ### v0.8.1 历史内容
 
 - **修复 SEC6-01（P1）/say 分块命令注入**：`POST /api/mcbot/say` 现在**必须启用控制 Token**（只读模式 `503 lofii_control_disabled`）；拒绝**任意位置 ASCII `/`**（含填充 240 字符后放在切分第二行的命令）与 C0 控制字符/DEL；上游 mcbot v0.6.1 的 `splitOutgoing` 逐行把行首 `/` 中和为全角 `／`（防御纵深，新增 239/240/255/480 边界测试）。

@@ -508,7 +508,7 @@ sudo systemctl restart antifieldcloud
 
 ### 3.8 mcbot Bot 对接（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-> 前置：mcbot 作为独立服务部署，仅监听 `127.0.0.1:3010`。`/healthz` 与 `/status` 的版本需一致。Workbench 接受契约 v1/v2，v2 发言须使用控制 Token；v1 保留读取及既有控制。应用只读取对接 Token。生产 release 与回退记录见上方 v1.0.8 部署记录。
+> 前置：mcbot 作为独立服务部署，仅监听 `127.0.0.1:3010`。`/healthz` 与 `/status` 的版本需一致。Workbench 接受契约 v1/v2，v2 发言须使用控制 Token；v1 保留读取及既有控制。应用只读取对接 Token。生产 release 与回退记录见上方 v1.0.9 部署记录。
 
 1. **前置只读检查**（root；不需要 Token）：
    ```bash

@@ -33,7 +33,7 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
 ```json
 {
   "status": "ok",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "contractVersion": 2,
   "uptimeSec": 123,
   "state": "connected",
@@ -51,7 +51,7 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
 
 ```json
 {
-  "version": "1.0.8",
+  "version": "1.0.9",
   "contractVersion": 2,
   "uptimeSec": 123,
   "state": "connected",
@@ -211,7 +211,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 
 ```json
 {
-  "version": "1.0.8",
+  "version": "1.0.9",
   "bootId": "036e732d",
   "lastEventId": "036e732d-10",
   "resync": false,
@@ -482,9 +482,9 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 
 ## 12. v1.0.2/v1.0.3 AI 自主会话（OpenCode 原生 MCP 工具）
 
-自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产当前为 v1.0.3 已启用（`AUTONOMY_ENABLED=true`），仍仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
+自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.0.9，`AUTONOMY_ENABLED=true`，仍仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
 
-v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱动重决策；生产已部署 v1.0.3，应用对缺失字段/工具保持兼容。
+v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱动重决策；应用对缺失字段/工具保持兼容。
 
 ### 12.1 GET /autonomy
 

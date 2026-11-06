@@ -1,19 +1,19 @@
 # 部署与运维（mcbot）
 
-> 目标 Pi：`antifield@169.254.77.10`（Raspberry Pi 5，Debian 13，Node `/usr/local/bin/node` v26.12.1）。v1.0.8 已部署 release `/opt/mcbot/releases/20261105T021915Z`；回滚目标为 v1.0.7 release `/opt/mcbot/releases/20261104T092858Z`。
+> 目标 Pi：`antifield@192.0.2.10`（TEST-NET 占位；Raspberry Pi 5，Debian 13，Node `/usr/local/bin/node` v26.12.1。实际主机见 `.local/DEPLOYMENT.md`）。v1.0.9 已部署 release `/opt/mcbot/releases/20261106T134625Z`；回滚目标为 v1.0.8 release `/opt/mcbot/releases/20261105T021915Z`。
 > 服务器：Paper 26.1.2，`~/minecraft-server`，RCON 已启用。
 > 所有操作从 Windows 工作区通过 SSH/SCP 执行；不使用 Docker。
 
 ## 0. 前置条件
 
-- 本机：Node 26、npm、`ssh.exe`/`scp.exe`/`tar.exe`；已能把密钥登录到 Pi（`ssh antifield@169.254.77.10 true`）。
+- 本机：Node 26、npm、`ssh.exe`/`scp.exe`/`tar.exe`；已能把密钥登录到 Pi（`ssh antifield@192.0.2.10 true`，主机按实际值替换）。
 - Pi：免密 sudo；Node v26.12.1；`~/minecraft-server` 正在运行；OpenCode 服务 `127.0.0.1:4096` 可用。
 - 首次部署会修改服务器 `max-players`、白名单、OP 并重启 Paper；请确认没有玩家在线。
 
 ## 1. 首次部署
 
 ```powershell
-cd C:\Users\25371\projects\mcbot
+cd apps\mcbot
 npm install
 npm run check
 

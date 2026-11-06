@@ -32,7 +32,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
  ├─ Cloudflare Access（app.* 策略；bypass：/api/chatbot/webhook/*、/healthz、/s/*、/api/public/shares/*）
  ├─ antifieldcloud-world.service/.timer（root，周日 12:00，flock，4h 超时，沙箱）
  ├─ antifieldcloud-health.service/.timer（root，60s 写 /run/antifieldcloud/pi-health.json）
- ├─ mcbot.service（独立附属服务，仅 127.0.0.1:3010，契约 v1；不对外、不进入 Cloudflare ingress）
+ ├─ mcbot.service（独立附属服务，仅 127.0.0.1:3010，契约 v2；不对外、不进入 Cloudflare ingress）
  ├─ opencode.service / minecraft.service / cloudflared.service（现有）
  └─ nftables（默认拒绝；22/25565 限网段，22 限速；25575 仅 loopback）
 ```
@@ -111,7 +111,7 @@ Bot 出站为 Pi 直连；PC 无代理隧道脚本/计划任务，生产 env 不
 | 模块 | 职责 |
 |---|---|
 | `server/src/config.ts` | 读取 env 文件/环境变量、数值与安全组合校验 |
-| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema **v18**）、事务；迁移 13 删除非 QQ Bot 及级联数据；迁移 14 结构化记忆两表；迁移 16 群聊角色卡；迁移 17 `audit_write_failures`；迁移 18 将 `bot_*` 更名为 `chatbot_*`，并把 `lofii.event_cursor` 改为 `mcbot.event_cursor`（均不可逆） |
+| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema **v20**；v19 `dedupe_key`，v20 `external_alert_deliveries`）、事务；迁移 13 删除非 QQ Bot 及级联数据；迁移 14 结构化记忆两表；迁移 16 群聊角色卡；迁移 17 `audit_write_failures`；迁移 18 将 `bot_*` 更名为 `chatbot_*`，并把 `lofii.event_cursor` 改为 `mcbot.event_cursor`（均不可逆） |
 | `auth/` | scrypt、TOTP、恢复码、挑战、会话、CSRF、限流、审计（字段截断 + 失败诊断 `getAuditDiagnostics`） |
 | `files/` | 目录树、上传落库、配额、搜索、回收站、文本预览、MIME 安全分类、`origin` 可见性、物理孤儿回收 |
 | `uploads/` | 分片上传会话/块索引、配额预留、断点状态、原子拼接、过期/终态清理 |
@@ -136,7 +136,7 @@ Bot 出站为 Pi 直连；PC 无代理隧道脚本/计划任务，生产 env 不
 
 ## 4. 数据模型
 
-SQLite（WAL）核心表（schema v19）：
+SQLite（WAL）核心表（schema v20）：
 
 - `users`：单管理员；scrypt 哈希 + salt；TOTP secret；`totp_last_step` 防重放；恢复码哈希 JSON。
 - `auth_challenges`：密码通过后的 5 分钟一次性挑战（只存 token 哈希）。
@@ -256,7 +256,7 @@ SQLite（WAL）核心表（schema v19）：
 - Bot 部署：`bootstrap-env.sh` 生成/复用 `CHATBOT_SECRET_KEY` 并纳管 `CHATBOT_AI_*`、Chat/记忆键、连通性键、回答/图片键、`CHATBOT_MEMORY_*`；
   `CHATBOT_AI_VISION_ENABLED` 默认 true；`CHATBOT_ENABLED` 默认 false。当前 schema v20；从 v1.0.8 退回 v1.0.7 必须先恢复 schema 19 迁移前 DB 快照；QQ 入站图片需 OpenCode prompt files + 支持 image 的模型；平台仅 QQ 官方 Bot，无 Gateway/平台前置配置。
   Cloudflare Access 需对 Bot Webhook/health/公开分享路径 bypass（边缘配置，不在仓库内）；`smoke.ps1` 可选用 Access service token。
-- mcbot 部署（v0.8.0 引入，v0.8.1 安全加固；默认关闭）：mcbot v1.0.9（最低 v0.6.0，契约 v2）作为独立服务仅监听 `127.0.0.1:3010`（不经 Cloudflare/nftables 对外）；应用 env 由 `bootstrap-env.sh` 纳管 `MCBOT_*`，Token 由 root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 同步（`--check` 只比较；同目录临时文件 + `mv` 原子替换）；启用顺序为 mcbot 就绪 → 同步 Token → `MCBOT_ENABLED=true` → 重启应用；关闭对接设 `MCBOT_ENABLED=false` 并重启，不单独改 schema；`smoke.ps1 -ExpectedMcbotVersion 1.0.9 -ExpectedMcbotContractVersion 2`（最低 0.6.0）/`-SkipMcbot` 覆盖只读检查。上一生产 release `/opt/mcbot/releases/20261105T021915Z`，再往前的回滚 v1.0.7 为 `/opt/mcbot/releases/20261104T092858Z`。v0.8.1 曾于 2026-10-27 部署（release `20261027T113055Z`/commit `5405a8d`，当时 mcbot v0.6.1 release `20261027T111640Z`/commit `a0a28da`）。
+- mcbot 部署（v0.8.0 引入，v0.8.1 安全加固；默认关闭）：mcbot v1.0.9（最低 v0.6.0，契约 v2）作为独立服务仅监听 `127.0.0.1:3010`（不经 Cloudflare/nftables 对外）；应用 env 由 `bootstrap-env.sh` 纳管 `MCBOT_*`，Token 由 root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 同步（`--check` 只比较；同目录临时文件 + `mv` 原子替换）；启用顺序为 mcbot 就绪 → 同步 Token → `MCBOT_ENABLED=true` → 重启应用；关闭对接设 `MCBOT_ENABLED=false` 并重启，不单独改 schema；`smoke.ps1 -ExpectedMcbotVersion 1.0.9 -ExpectedMcbotContractVersion 2`（最低 0.6.0）/`-SkipMcbot` 覆盖只读检查。当前生产 release `/opt/mcbot/releases/20261106T134625Z`。上一生产 release `/opt/mcbot/releases/20261105T021915Z`，再往前的回滚 v1.0.7 为 `/opt/mcbot/releases/20261104T092858Z`。v0.8.1 曾于 2026-10-27 部署（release `20261027T113055Z`/commit `5405a8d`，当时 mcbot v0.6.1 release `20261027T111640Z`/commit `a0a28da`）。
 - fail2ban：dbfile 持久化封禁；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后以 `systemd-run --collect --on-active=3` 异步重启 fail2ban，从数据库恢复 set；手工 `systemctl reload nftables` 不触发 `ExecStartPost`，仍需 `systemctl restart fail2ban`。
 - 世界备份/健康探针 timer 由 root 运行；世界备份 unit 只读整机、仅 `/var/lib/antifieldcloud` 可写、flock 串行、4h 超时。
 

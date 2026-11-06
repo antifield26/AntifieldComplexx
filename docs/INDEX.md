@@ -15,16 +15,16 @@
 | [BACKUP](app/BACKUP.md) | 应用归档、世界备份、恢复演练 |
 | [SECURITY](app/SECURITY.md) | 安全模型、边界与加固 |
 | [CHATBOT](app/CHATBOT.md) | QQ chatbot 子系统（原 bot，schema v18 更名） |
-| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.0.7 实机兜底、演练与历史版本结果） |
+| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.0.9 与历史版本结果） |
 | [ROADMAP](app/ROADMAP.md) | 版本边界与后续路线 |
-| [AUDIT](app/AUDIT.md) | 审计与修复总记录（含 v1.0.7、v1.0.6 寻路、v1.0.5 Debug、磁盘审计附录） |
+| [AUDIT](app/AUDIT.md) | 审计与修复总记录（含 v1.0.9 至 v1.0.5、磁盘审计附录） |
 
 ## Minecraft bot（apps/mcbot）
 
 | 文档 | 内容 |
 |---|---|
 | [README](mcbot/README.md) | mcbot 能力、架构、安全约束与快速开始 |
-| [API](mcbot/API.md) | 本机 HTTP/SSE 契约（读/控制 Token、contract v1） |
+| [API](mcbot/API.md) | 本机 HTTP/SSE 契约（读/控制 Token、contract v2） |
 | [DEPLOY](mcbot/DEPLOY.md) | 部署、bootstrap、回滚 |
 | [ROADMAP](mcbot/ROADMAP.md) | mcbot 版本边界与后续规划 |
 | [ACCEPTANCE](mcbot/ACCEPTANCE.md) | mcbot 验收记录（含 Agentic 离线/实机流程） |
