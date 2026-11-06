@@ -5,7 +5,7 @@
 ### v1.0.9（2026-11-06）
 
 - 范围：增量按最近有效全量链的清单覆盖；主机告警进入既有投递箱；告警列表只读展示 `deliveries`；mcbot `eventGap`；`drill.ps1 -RestoreOutputDir`；smoke 核对计划任务 `-File` 与已安装脚本 SHA-256。schema 保持 20，契约保持 v2。
-- 本地门禁：`npm run check` 与 `npm run build` 通过。app **625**（624 pass、1 skip）+ web **283** + mcbot **147**。功能提交 `7cfbf2d`。Windows 演练夹具按真实路径比较恢复目录。
+- 本地门禁：`npm run check` 与 `npm run build` 通过。app **625**（624 pass、1 skip）+ web **283** + mcbot **147**。功能提交 `7cfbf2d`。Windows 演练夹具按目录标识比较恢复目录。
 - 部署前用新脚本离线复核既有 schema 20 链：full `snapshot-20261102T014632977Z-full.tar.gz` + 12 个增量，文件哈希 1/1，缺失与损坏均为 0。世界归档隔离解包通过，`level.dat` 为 537 字节。报告 `20261106T132433Z`，当时未回写生产状态。现行库 schema 20，`quick_check=ok`，外键违规 0。schema 19 快照 `db-predeploy-20261105T021746014Z.sqlite` 的 SHA-256 仍为 `8e2defe852a12e60d367dc11a407ccdc7b73b7591a09957960af05a697ab3a8a`。
 - Workbench release `/opt/antifieldcloud/releases/20261106T134109Z`。迁移前快照 `db-predeploy-20261106T134205714Z.sqlite` 为 schema 20，`quick_check=ok`，SHA-256 `fb57be80ba19e377f8ed6bf1ecf13fe300e1ed754d8da87d68bc37110e5030a5`。部署内 smoke **26/0/0/2**。切换前，新 Workbench 读取仍在运行的 mcbot v1.0.8：契约 v2，`bootId=24e55fbc`，最新事件 `24e55fbc-3`，游标一致，没有 `eventGap`。
 - mcbot release `/opt/mcbot/releases/20261106T134625Z`（契约 v2）。回滚 release 为 `/opt/mcbot/releases/20261105T021915Z`，再上一份为 `/opt/mcbot/releases/20261104T092858Z`。切换后读取为 v1.0.9，新 `bootId=f6460493`，游标停在 `f6460493-1`，meta 中没有事件缺口。Minecraft 与 OpenCode 的进程启动时间未变，OpenCode 运行中版本仍为 2.2.5。

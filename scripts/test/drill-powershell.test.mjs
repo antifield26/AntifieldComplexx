@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -91,8 +91,17 @@ test('Windows 演练端到端校验增量覆盖、物理文件和世界解包', 
   }
 })
 
+/** 托管机临时目录可能是 8.3 短名，演练报告保存 .NET 展开后的长路径。按目录标识比较。 */
+function assertSameDirectory(actual, expected) {
+  const left = statSync(actual)
+  const right = statSync(expected)
+  assert.equal(left.isDirectory(), true)
+  assert.equal(right.isDirectory(), true)
+  assert.equal(`${left.dev}:${left.ino}`, `${right.dev}:${right.ino}`)
+}
+
 test('RestoreOutputDir 只在校验通过后发布，失败和已存在目录都不改归档', { skip: process.platform !== 'win32', timeout: 180_000 }, () => {
-  const root = mkdtempSync(join(tmpdir(), 'antifield-drill-restore-'))
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'antifield-drill-restore-')))
   const start = '2026-06-01T00:00:00.000Z'
   const end = '2026-06-03T00:00:00.000Z'
   const hashed = ['aa-hashed', 'keep', sha256('keep'), 'note']
@@ -130,7 +139,7 @@ test('RestoreOutputDir 只在校验通过后发布，失败和已存在目录都
     assert.equal(existsSync(join(output, 'db.sqlite')), true)
     assert.equal(existsSync(join(output, 'backups')), false)
     const successReport = JSON.parse(readFileSync(join(successBackup, 'drills', readdirSync(join(successBackup, 'drills'))[0], 'report.json'), 'utf8'))
-    assert.equal(realpathSync(successReport.restoreOutput).toLowerCase(), realpathSync(output).toLowerCase())
+    assertSameDirectory(successReport.restoreOutput, output)
 
     const gapBackup = join(root, 'gap')
     chain(gapBackup, '2026-06-02T00:00:00.000Z')
