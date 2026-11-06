@@ -33,8 +33,8 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
 ```json
 {
   "status": "ok",
-  "version": "1.0.1",
-  "contractVersion": 1,
+  "version": "1.0.8",
+  "contractVersion": 2,
   "uptimeSec": 123,
   "state": "connected",
   "connected": true
@@ -43,7 +43,7 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
 
 `state`：`idle` / `connecting` / `connected` / `backoff` / `cooldown`。动态模式下 `idle` 是正常状态（无玩家在线）。
 
-`contractVersion` 为只读契约版本（当前 `1`），与 `/events/recent` 返回值一致；新增可选字段不升版本，破坏性变更才递增。
+`contractVersion` 为只读契约版本（当前 `2`），与 `/status`、`/events/recent` 返回值一致；新增可选字段不升版本，破坏性变更才递增。契约 v2 把发言划入控制 Token。
 
 ## 3. GET /status
 
@@ -51,7 +51,8 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
 
 ```json
 {
-  "version": "1.0.1",
+  "version": "1.0.8",
+  "contractVersion": 2,
   "uptimeSec": 123,
   "state": "connected",
   "minecraft": {
@@ -210,7 +211,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 
 ```json
 {
-  "version": "1.0.1",
+  "version": "1.0.8",
   "bootId": "036e732d",
   "lastEventId": "036e732d-10",
   "resync": false,
@@ -285,7 +286,7 @@ Authorization: Bearer <HTTP_TOKEN>
 
 ```json
 {
-  "contractVersion": 1,
+  "contractVersion": 2,
   "bootId": "036e732d",
   "lastEventId": "036e732d-10",
   "events": [
@@ -296,7 +297,7 @@ Authorization: Bearer <HTTP_TOKEN>
 ```
 
 - `events` 按发生顺序（旧 → 新）升序排列，最多 `min(limit, ring 内事件数)` 条；ring 为空时 `events: []`、`lastEventId: null`。
-- 事件 envelope 与 SSE 一致（`id/type/ts/data`），但**不含 `hello`**；`contractVersion` 当前为 `1`。
+- 事件 envelope 与 SSE 一致（`id/type/ts/data`），但**不含 `hello`**；`contractVersion` 当前为 `2`。
 - `bootId` 与 `lastEventId` 用于增量判断：`bootId` 变化说明进程重启，面板应重新拉 `/status`/`/task`；`lastEventId` 可保存用于去重或作为 SSE `Last-Event-ID` 的参考。
 - 错误：401 `unauthorized`（缺失/错误 Token；控制 Token 不适用）；400 `invalid_request`（`limit` 非法）；405 `method_not_allowed`（非 GET）。
 - 只读接口：不改 ring、不产生事件、不写审计；`/events`（SSE）行为不变。
@@ -585,7 +586,7 @@ AUTONOMY_TASKS=fishing,farming,woodcutting,mining,forest,sleep,patrol,guard,esco
 
 ### 12.7 `autonomy` 事件
 
-SSE `/events` 与 `/events/recent` 新增 `type:"autonomy"`，data 形如 `{action,state,reason,error}`；应用用于展示自主状态变化，`contractVersion` 仍为 1（仅追加）。
+SSE `/events` 与 `/events/recent` 新增 `type:"autonomy"`，data 形如 `{action,state,reason,error}`；应用用于展示自主状态变化。该事件是追加字段。当前契约为 2，发言使用控制 Token。
 ## 11. 对接建议
 
 - 面板后端用 `fetch` + `Authorization` 消费 `/events`，不要用浏览器 EventSource 直连。

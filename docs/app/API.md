@@ -31,7 +31,7 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "1.0.6", "schemaVersion": 18, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
+{ "ok": true, "version": "1.0.8", "schemaVersion": 20, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
 ```
 
 - `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
@@ -394,7 +394,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "1.0.6", "schemaVersion": 18, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
+- `GET /api/version`（需要会话）：`{ "version": "1.0.8", "schemaVersion": 20, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
   - `schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。旧服务端不下发时前端按关闭/未配置/null 降级。
   - `mcbotEnabled`/`mcbotControlEnabled`（v0.8.0）：mcbot 集成是否启用、控制接口是否可用（`MCBOT_ENABLED=true` 且 `MCBOT_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 mcbot 标签与控制操作。两者都不含 mcbot 地址/Token。
   - schema **17**；`audit.persisted` 表示诊断是否来自 DB 持久化行（DB 不可用时 false，回退内存计数）。
@@ -766,17 +766,17 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
   "sayEnabled": true,
   "alertsEnabled": true,
   "eventsSupported": true,
-  "version": "0.6.1",
-  "contractVersion": 1,
+  "version": "1.0.8",
+  "contractVersion": 2,
   "lastPollAt": "2026-10-27T09:00:00.000Z",
   "lastSuccessAt": "2026-10-27T09:00:00.000Z",
   "error": null,
-  "status": { "version": "0.6.1", "uptimeSec": 123, "state": "connected", "minecraft": { "connected": true, "username": "lofii" }, "player": { "health": 20, "food": 20 }, "server": { "reachable": true, "online": 1, "max": 6 }, "task": { "enabled": true, "active": false, "name": null, "state": "idle", "pendingResume": null, "queue": [] }, "admin": { "rcon": true, "tps": { "one": 19.9, "five": 19.8, "fifteen": 19.7 } } },
+  "status": { "version": "1.0.8", "contractVersion": 2, "uptimeSec": 123, "state": "connected", "minecraft": { "connected": true, "username": "lofii" }, "player": { "health": 20, "food": 20 }, "server": { "reachable": true, "online": 1, "max": 6 }, "task": { "enabled": true, "active": false, "name": null, "state": "idle", "pendingResume": null, "queue": [] }, "admin": { "rcon": true, "tps": { "one": 19.9, "five": 19.8, "fifteen": 19.7 } } },
   "events": [ { "id": "036e732d-10", "type": "presence", "ts": "2026-10-27T08:59:58.000Z", "data": {} } ]
 }
 ```
 
-- `status`：上游 `/status` 快照（契约 v1，最低兼容 mcbot v0.6.0；示例里的版本号只说明字段形状），不含 Token/记忆正文；**不承诺固定字段**，前端对缺失嵌套段（`task`/`admin`/`ai`/`memory`/`minecraft`/`player`/`server`）安全读取并显示“—”，不会整页崩溃。
+- `status`：上游 `/status` 快照（契约 v2，兼容已声明的契约 v1，最低兼容 mcbot v0.6.0；示例里的版本号只说明字段形状），不含 Token/记忆正文；**不承诺固定字段**，前端对缺失嵌套段（`task`/`admin`/`ai`/`memory`/`minecraft`/`player`/`server`）安全读取并显示“—”，不会整页崩溃。
 - `stale`：连续 3 个轮询周期无成功或距上次成功超过 3 个周期；`reachable=false` 时保留最后一次成功快照。
 - `eventsSupported`：上游是否提供 `/events/recent`（旧版 404 时 false）；字段缺失/`undefined` 时前端**不把 undefined 当作支持**，回退为按 `contractVersion`（仅 number 有效）或已有事件数组判断；`contractVersion` 仅接受 number（否则显示“—”，不显示 `vundefined`）。
 - `events`：内存环最近事件，**newest-first，最多 100 条且序列化总字节 ≤512 KiB**；服务端重启清空；不写入 DB/日志。

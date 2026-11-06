@@ -345,7 +345,7 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
 - **群共享记忆**：群 scope 为 `group:<targetExternalId>`；条目 key 前缀为稳定 `<member_openid>:`，显示名只存 value（`<用户名>：<记忆>`），
   同名/改名成员不能互相覆盖/删除；启动一次性迁移旧显示名 key（无法唯一映射加 `legacy:` 保留）；`/forget confirm` 清本人在各群条目并取消在途抽取；
   管理端清空群记忆会取消在途抽取；管理员 `DELETE /api/chatbots/:id/group-memories/:scope` 清空该群共享记忆（审计 `chatbot.memory.delete_user`）。
-- **当前 schema v17**：`chatbot_memory_items`/`chatbot_memory_state` 为结构化记忆表；`scripts/deploy.ps1` 切换前自动做迁移前 DB 快照；回滚必须恢复迁移前快照。
+- **当前 schema v20**：记忆表仍是 `chatbot_memory_items`/`chatbot_memory_state`。schema 20 另增 `external_alert_deliveries`，按通道记录外部告警的 Webhook 与 QQ 入队。`scripts/deploy.ps1` 切换前自动做迁移前 DB 快照；从 v1.0.8 退回 v1.0.7 必须先恢复迁移前快照。
 - **写入**：抽取批处理按 Bot×用户串行；一次性 OpenCode 会话（`finally` 删除）；服务端严格校验 ops、敏感过滤（密钥/URL/内部路径/UNC/提示结构标记，key/value/legacy 均过滤）、容量清理（默认 200，先淘汰低重要度非核心条目）；更新续期；ops=0 不置 legacy 迁移标记。
 - **读取/召回**：核心层优先 + 关键词相关层，预算 3000 字/12 条；命中更新 `last_used_at`；`/memory off` 无注入；未迁移旧摘要 fallback 注入（受 `CHATBOT_AI_MEMORY_MAX_CHARS` legacy 上限约束）。文档模式把同一召回文本写入 `memory.md`（每轮 AI 调用前刷新），prompt 只保留条数；模型按需 `read`。
 - **TTL**：profile/preference 不过期；fact/project/relationship 365 天（`CHATBOT_AI_MEMORY_RETENTION_DAYS`）；episode 90 天（`CHATBOT_MEMORY_TTL_EPISODE_DAYS`）；task 30 天（`CHATBOT_MEMORY_TTL_TASK_DAYS`）；过期条目清理并从召回/列表排除。

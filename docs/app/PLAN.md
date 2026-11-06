@@ -1,10 +1,18 @@
-# AntifieldComplexx v1.0.7 实施计划（当前状态）
+# AntifieldComplexx v1.0.8 实施计划（当前状态）
 
-本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`；v1.0.7 审计见 `docs/app/AUDIT.md`。
+本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`；审计见 `docs/app/AUDIT.md`。
 
 > 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
 
-## v1.0.7 当前状态（已部署，已发布 Tag/Release）
+## v1.0.8 当前状态（已部署）
+
+- **版本**：**v1.0.8**；schema **v20**；OpenCode **v2.2.5**；mcbot **v1.0.8**（契约 v2）。
+- **范围**：恢复演练核对链与引用文件；分片登记与完成放在同一事务；schema 20 持久化外部告警的 Webhook 与 QQ 入队，重启后续投；QQ Chat 全模式要求工具隔离；mcbot 契约 v2 发言使用控制 Token，Workbench 兼容契约 v1 的读取与既有控制；收口自主启动/急停、决策超时和移动取消。
+- **边界**：不挖掘/不放置/不跑酷。应用从本版退回 v1.0.7 必须先恢复 schema 19 迁移前快照。mcbot 可独立切回 v1.0.7 release。
+- **状态**：运行 commit `2440758`。app `/opt/antifieldcloud/releases/20261105T021739Z`、mcbot `/opt/mcbot/releases/20261105T021915Z`；迁移前快照 `db-predeploy-20261105T021746014Z.sqlite`；演练 `20261105T022152Z` 为 schema 20；Windows 任务已重装为 1.0.8；Access smoke **36/0/0/2**。Tag `v1.0.8` 指向 `6ad9449`。
+- **测试基线**：app **613**（612 pass、1 skip）+ web **280** + mcbot **147**。
+
+## v1.0.7 已部署状态（历史）
 
 - **版本**：**v1.0.7**；schema **v19**；OpenCode **v2.2.5**；mcbot **v1.0.7**（契约 v1）。
 - **范围**：`alert_events.dedupe_key`；mcbot `lastSuccessAt`；mcbot 进程或轮询过期进入 `service_down`；周度世界拉取安装到 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`；寻路兜底进入自主重决策。
