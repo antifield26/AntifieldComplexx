@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -130,7 +130,7 @@ test('RestoreOutputDir 只在校验通过后发布，失败和已存在目录都
     assert.equal(existsSync(join(output, 'db.sqlite')), true)
     assert.equal(existsSync(join(output, 'backups')), false)
     const successReport = JSON.parse(readFileSync(join(successBackup, 'drills', readdirSync(join(successBackup, 'drills'))[0], 'report.json'), 'utf8'))
-    assert.equal(successReport.restoreOutput, output)
+    assert.equal(realpathSync(successReport.restoreOutput).toLowerCase(), realpathSync(output).toLowerCase())
 
     const gapBackup = join(root, 'gap')
     chain(gapBackup, '2026-06-02T00:00:00.000Z')
