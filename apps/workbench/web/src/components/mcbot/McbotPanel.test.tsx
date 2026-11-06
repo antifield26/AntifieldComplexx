@@ -316,6 +316,17 @@ describe('McbotPanel 状态与降级', () => {
     expect(screen.getAllByText('事件流').length).toBeGreaterThan(0)
   })
 
+  it('事件缺口提示保留当前 Bot 状态', async () => {
+    mocks.status.mockResolvedValue(
+      snapshot({
+        eventGap: { bootId: 'b1', fromSeq: 2, toSeq: 201, discoveredAt: '2026-10-27T08:00:00.000Z' },
+      }),
+    )
+    renderPanel()
+    expect(await screen.findByText(/缺少序号 2–201/)).toBeTruthy()
+    expect(screen.getByText('已连接（mcbot）')).toBeTruthy()
+  })
+
   it('status 可达但事件轮询/游标失败时显示可见警告', async () => {
     mocks.status.mockResolvedValue(
       snapshot({ reachable: true, error: 'mcbot_upstream_error', eventsSupported: true }),

@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AlertsCard } from './AlertsCard'
+import type { AlertEvent } from '../../api/types'
 
 const mocks = vi.hoisted(() => ({ list: vi.fn() }))
 
@@ -21,7 +22,7 @@ vi.mock('../../meta/MetaContext', () => ({
   }),
 }))
 
-function alertItem(id: number) {
+function alertItem(id: number): AlertEvent {
   return {
     id,
     event: 'disk_low',
@@ -35,7 +36,7 @@ function alertItem(id: number) {
   }
 }
 
-function result(items = [alertItem(1)], total = 1) {
+function result(items: AlertEvent[] = [alertItem(1)], total = 1) {
   return {
     items,
     state: [],
@@ -155,5 +156,30 @@ describe('AlertsCard 筛选与分页', () => {
     // 事件筛选包含 mcbot 条件
     const eventSelect = screen.getByLabelText('按事件筛选告警历史')
     expect(within(eventSelect).getByRole('option', { name: 'mcbot 血量过低' })).toBeTruthy()
+  })
+
+  it('没有投递详情时沿用旧的失败文案', async () => {
+    mocks.list.mockResolvedValue(result([{ ...alertItem(1), deliveryError: '连接失败' }]))
+    renderCard()
+    expect(await screen.findByText('通知发送失败：连接失败')).toBeTruthy()
+  })
+
+  it('投递详情按通道显示，跳过不再标成发送失败', async () => {
+    mocks.list.mockResolvedValue(
+      result([
+        {
+          ...alertItem(1),
+          deliveryError: '未配置 webhook URL',
+          deliveries: {
+            webhook: { status: 'skipped', attempts: 0, nextAttemptAt: '2026-10-20T00:00:00.000Z', error: '未配置 webhook URL' },
+            qq: { status: 'done', attempts: 1, nextAttemptAt: '2026-10-20T00:00:00.000Z', error: null },
+          },
+        },
+      ]),
+    )
+    renderCard()
+    expect(await screen.findByText('Webhook：跳过')).toBeTruthy()
+    expect(screen.getByText('QQ：入队处理完成')).toBeTruthy()
+    expect(screen.queryByText(/通知发送失败/)).toBeNull()
   })
 })

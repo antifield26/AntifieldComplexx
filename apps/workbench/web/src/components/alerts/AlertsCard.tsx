@@ -169,7 +169,16 @@ function buildEventOptions(data: AlertsResult | null): { value: string; label: s
   return [{ value: '', label: '全部事件' }, ...options]
 }
 
+function deliveryLabel(channel: 'webhook' | 'qq', status: string, attempts: number): string {
+  if (status === 'done') return channel === 'qq' ? '入队处理完成' : '已送达'
+  if (status === 'skipped') return '跳过'
+  if (status === 'dead') return '投递失败'
+  if (status === 'pending') return attempts > 0 ? '待重试' : '待投递'
+  return status
+}
+
 function EventRow({ item }: { item: AlertEvent }) {
+  const deliveries = item.deliveries
   return (
     <li className="alert-event">
       <span className={cx('alert-event-dot', `alert-event-${severityTone(item.severity)}`)} aria-hidden="true" />
@@ -180,7 +189,22 @@ function EventRow({ item }: { item: AlertEvent }) {
           <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
         </div>
         {item.message ? <p className="alert-event-message">{item.message}</p> : null}
-        {item.deliveryError ? (
+        {deliveries ? (
+          <>
+            {deliveries.webhook ? (
+              <p className={cx('alert-event-delivery', deliveries.webhook.status === 'dead' ? 'text-warning' : undefined)}>
+                Webhook：{deliveryLabel('webhook', deliveries.webhook.status, deliveries.webhook.attempts)}
+                {deliveries.webhook.status === 'dead' && deliveries.webhook.error ? `：${deliveries.webhook.error}` : ''}
+              </p>
+            ) : null}
+            {deliveries.qq ? (
+              <p className={cx('alert-event-delivery', deliveries.qq.status === 'dead' ? 'text-warning' : undefined)}>
+                QQ：{deliveryLabel('qq', deliveries.qq.status, deliveries.qq.attempts)}
+                {deliveries.qq.status === 'dead' && deliveries.qq.error ? `：${deliveries.qq.error}` : ''}
+              </p>
+            ) : null}
+          </>
+        ) : item.deliveryError ? (
           <p className="alert-event-delivery text-warning">通知发送失败：{item.deliveryError}</p>
         ) : null}
       </div>

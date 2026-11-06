@@ -668,7 +668,27 @@ if (-not $SkipLocalTaskCheck) {
       $localSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $localScript).Hash.ToLower()
       if ([string]$marker.scriptSha256 -ne $localSha) { throw "安装标记 scriptSha256 与仓库 backup-pull.ps1 不一致（请重装计划任务）" }
     }
-    "version=$($marker.appVersion) scriptSha256 一致"
+    $backupTask = Get-ScheduledTask -TaskName "AntifieldCloud-Backup-Pull" -ErrorAction SilentlyContinue
+    if (-not $backupTask) { throw "缺少计划任务 AntifieldCloud-Backup-Pull" }
+    $worldTask = Get-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -ErrorAction SilentlyContinue
+    if (-not $worldTask) { throw "缺少计划任务 AntifieldCloud-World-Pull" }
+    $installedBackup = Join-Path $env:LOCALAPPDATA "AntifieldCloud\backup-pull.ps1"
+    $installedWorld = Join-Path $env:LOCALAPPDATA "AntifieldCloud\world-pull.ps1"
+    $backupArgs = @($backupTask.Actions | ForEach-Object { [string]$_.Arguments }) -join " "
+    $worldArgs = @($worldTask.Actions | ForEach-Object { [string]$_.Arguments }) -join " "
+    if ($backupArgs -notlike "*$installedBackup*") { throw "每日备份任务 -File 不是已安装副本：$installedBackup" }
+    if ($worldArgs -notlike "*$installedWorld*") { throw "世界拉取任务 -File 不是已安装副本：$installedWorld" }
+    foreach ($pair in @(
+      @{ Installed = $installedBackup; Repo = (Join-Path $PSScriptRoot "backup-pull.ps1"); Expected = [string]$marker.scriptSha256; Label = "backup-pull.ps1" },
+      @{ Installed = $installedWorld; Repo = (Join-Path $PSScriptRoot "world-pull.ps1"); Expected = [string]$marker.worldPullScriptSha256; Label = "world-pull.ps1" }
+    )) {
+      if (-not (Test-Path -LiteralPath $pair.Installed)) { throw "缺少已安装脚本：$($pair.Installed)" }
+      $installedSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $pair.Installed).Hash.ToLower()
+      $repoSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $pair.Repo).Hash.ToLower()
+      if ($installedSha -ne $repoSha) { throw "$($pair.Label) 已安装副本与仓库 SHA 不一致" }
+      if ($pair.Expected -and $installedSha -ne $pair.Expected.ToLower()) { throw "$($pair.Label) 已安装副本与安装标记 SHA 不一致" }
+    }
+    "version=$($marker.appVersion) scriptSha256 一致，计划任务 -File 与已安装副本一致"
   }
 }
 

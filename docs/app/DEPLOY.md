@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.8）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.9）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -14,6 +14,14 @@
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v20**（生产）：新增外部告警 Webhook 和 QQ 入队状态。迁移前保存并核验 schema 19 快照。生产版本见下方记录。
+
+## v1.0.9 发布顺序
+
+1. 用本版 `drill.ps1` 复核现有 schema 20 归档和世界隔离解包。保存并校验部署前数据库快照。若发现断链或缺件，保全旧归档，建立并验证新的全量基线后再继续。
+2. 先部署 Workbench 1.0.9，核对旧版 mcbot 的读取与告警联动，再部署 mcbot 1.0.9。Minecraft 进程保持运行。不重启 OpenCode，不改 `opencode.json`。
+3. 刷新 Windows 每日备份与周度世界拉取两项任务。拉取并确认一份新全量，再生成并拉取一个增量。用 `drill.ps1 -RestoreOutputDir` 做隔离恢复。世界解包仍单独验收。
+4. 完整 Access smoke 要求 0 失败、0 警告。只允许已确认关闭的整包加密和异地副本记为跳过。验收通过后把证据写入 [ACCEPTANCE](ACCEPTANCE.md)，再打附注 Tag `v1.0.9`。
+5. 回滚：mcbot 可独立切回 `/opt/mcbot/releases/20261105T021915Z`。Workbench 回退保全现行 schema 20 数据库和待投递任务，切回 `/opt/antifieldcloud/releases/20261105T021739Z`，核对队列收口，再生成并验证新的全量。部署前快照只用于恢复当前数据库本身。从 v1.0.8 再退到 v1.0.7 仍须先恢复 schema 19 快照 `db-predeploy-20261105T021746014Z.sqlite`。
 
 ## v1.0.8 发布顺序
 
@@ -214,25 +222,24 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 - 手工等价步骤（仅在脚本不可用时）：解包 → `npm ci --omit=dev --ignore-scripts` → 先跑
   `node scripts/backup.mjs --snapshot-db` → 写入/校验 `APP_VERSION` → `ln -sfn` → `systemctl restart antifieldcloud` → `curl /healthz`。
 
-### 3.0 应用部署步骤（v1.0.8；schema v20）
+### 3.0 应用部署步骤（v1.0.9；schema v20）
 
 1. **本地发布前校验**（PC）：`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格模式，含 schema/OpenCode 交叉校验）、
-   `node scripts/check-prod-deps.mjs`。check-version 期望 app/mcbot `1.0.8`、schema `20`、OpenCode `2.2.5`、mcbot 契约 `2`。
+   `node scripts/check-prod-deps.mjs`。check-version 期望 app/mcbot `1.0.9`、schema `20`、OpenCode `2.2.5`、mcbot 契约 `2`。
    测试、覆盖率与生产证据见 [ACCEPTANCE](ACCEPTANCE.md)。
 2. **部署前只读检查**：`backup.mjs --pending` 无异常、PC 最新 `.sha256` 可校验、`secretsOk=true`；`df -hT /` 余量充足（开启加密后按 2× 归档空间预留）；
-   记录当前 `/healthz` 与 OpenCode 运行中版本；`deploy/tool-versions.json` 为期望 schema/OpenCode 来源。
-3. **OpenCode 2.2.5**：核对运行中 `/api/info` 与进程 exe，本补丁沿用 2.2.5。升级与回滚演练见 §3.2。
+   记录当前 `/healthz` 与 OpenCode 运行中版本；`deploy/tool-versions.json` 为期望 schema/OpenCode 来源。用本版 `drill.ps1` 复核现有 schema 20 链。
+3. **OpenCode 2.2.5**：核对运行中 `/api/info` 与进程 exe，本补丁沿用 2.2.5，不重启、不改配置。升级与回滚演练见 §3.2。
 4. **部署**：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；脚本执行预检/构建/上传 tar SHA-256 校验/`npm ci --omit=dev`/迁移前 DB 快照/
-   `APP_VERSION=1.0.8` 注入/切换 current/restart（失败进入回滚）/健康检查/只读 smoke；成功后写 `release.json`/`deploy-history.log`。
-   **4.1 mcbot**：先用新 Workbench 验收契约 v1 的状态与发言禁用，再部署 mcbot v1.0.8（契约 v2）。检查 `/healthz`、`/api/mcbot/status`（含 `lastSuccessAt`、`sayEnabled`）、`/api/mcbot/presence`、`/api/mcbot/goals`。
-5. **验证**：预期 `/healthz` = `{"ok":true,"version":"1.0.8","schemaVersion":20,...}`；smoke 使用
-   `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.8 -ExpectedSchemaVersion 20 -ExpectedOpenCodeVersion 2.2.5 -ExpectedMcbotVersion 1.0.8 -ExpectedMcbotContractVersion 2`
-   （未启用 mcbot 时追加 `-SkipMcbot`；带 Access token 再跑完整版）。检查包括 OpenCode `/api/info` 与进程 exe 非 deleted、MCP 进程、`/api/mcp`、fail2ban、unit 漂移、env 漂移、加密配置、异地状态、mcbot 服务与版本、本地任务安装标记；
-   缺状态文件返回 `SKIP:` 不计入 PASS。
-6. **加密/异地（默认关闭，按需）**：按 §9.10 启用备份整包加密（先私钥解密演练）、§9.11 启用异地副本；默认不启用时状态卡显示“未启用/未配置”。
-7. **部署后备份与证据**：完成 `snapshot-*.tar.gz`（或 `.age` + `.meta.json`）+ 密钥包，PC 拉取/ack；回填 `docs/app/ACCEPTANCE.md` 待填清单、
-   CHANGELOG/README/AGENTS/DEPLOY 证据；用户验收后再 Tag/GitHub Release。
-8. **回滚**：Workbench 回退按 §11 保全 schema 20 数据库并恢复对应的 schema 19 快照，再切回 v1.0.7 及对应 `APP_VERSION`。mcbot 可独立回退到契约 v1，Workbench 届时禁用发言。
+   `APP_VERSION=1.0.9` 注入/切换 current/restart（失败进入回滚）/健康检查/只读 smoke；成功后写 `release.json`/`deploy-history.log`。
+   **4.1 mcbot**：先用新 Workbench 核对正在运行的 mcbot v1.0.8（契约 v2）读取与告警联动，再部署 mcbot v1.0.9。检查 `/healthz`、`/api/mcbot/status`（含 `lastSuccessAt`、`sayEnabled`、`eventGap`）、`/api/mcbot/presence`、`/api/mcbot/goals`。Minecraft 进程保持运行。
+5. **验证**：预期 `/healthz` = `{"ok":true,"version":"1.0.9","schemaVersion":20,...}`；smoke 使用
+   `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.9 -ExpectedSchemaVersion 20 -ExpectedOpenCodeVersion 2.2.5 -ExpectedMcbotVersion 1.0.9 -ExpectedMcbotContractVersion 2`
+   （未启用 mcbot 时追加 `-SkipMcbot`；带 Access token 再跑完整版）。检查包括 OpenCode `/api/info` 与进程 exe 非 deleted、MCP 进程、`/api/mcp`、fail2ban、unit 漂移、env 漂移、加密配置、异地状态、mcbot 服务与版本、本地任务安装标记与已安装脚本 SHA-256；
+   缺状态文件返回 `SKIP:` 不计入 PASS。整包加密与异地副本保持关闭，对应项可以跳过。
+6. **加密/异地（默认关闭，按需）**：按 §9.10 启用备份整包加密（先私钥解密演练）、§9.11 启用异地副本；默认不启用时状态卡显示“未启用/未配置”。本版不启用这两项。
+7. **部署后备份与证据**：刷新两项 Windows 任务，拉取并确认新全量后再做一个增量；用 `drill.ps1 -RestoreOutputDir` 做隔离恢复。回填 `docs/app/ACCEPTANCE.md`，再发布附注 Tag `v1.0.9`。
+8. **回滚**：mcbot 可独立切回 `/opt/mcbot/releases/20261105T021915Z`。Workbench 回退保全现行 schema 20 数据库和待投递任务，切回 `/opt/antifieldcloud/releases/20261105T021739Z`，核对队列收口，再生成并验证新的全量。部署前快照只用于恢复当前数据库本身。再退到 v1.0.7 必须先恢复 schema 19 快照。
 
 ## 3.2 OpenCode v2.2.5 升级与兼容性复核（本机执行，发布门禁）
 
@@ -504,7 +511,7 @@ sudo systemctl restart antifieldcloud
 1. **前置只读检查**（root；不需要 Token）：
    ```bash
    systemctl is-active mcbot                 # active
-   curl -fsS http://127.0.0.1:3010/healthz       # {"status":"ok","version":"1.0.8","contractVersion":2,...}
+   curl -fsS http://127.0.0.1:3010/healthz       # {"status":"ok","version":"1.0.9","contractVersion":2,...}
    curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3010/status   # 无 Token 应为 401（确认仅 loopback 可达）
    ```
    已知契约下，事件端点故障单独报告，状态仍可展示。契约未知或版本不一致时暂停控制与事件处理。
@@ -534,7 +541,7 @@ sudo systemctl restart antifieldcloud
    ```
    登录后 `GET /api/mcbot/status` 期望 `enabled=true/reachable=true/eventsSupported=true/controlEnabled` 与 Token 配置一致；`/minecraft?tab=mcbot` 可打开面板；首次成功轮询后 `meta.mcbot.event_cursor` 建立基线（`sqlite3 /var/lib/antifieldcloud/db.sqlite "SELECT value FROM meta WHERE key='mcbot.event_cursor';"`），不重放旧告警。v1.0.0 迁移把旧键 `lofii.event_cursor` 改名为 `mcbot.event_cursor`。
 
-5. **smoke**：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.8 -ExpectedSchemaVersion 20 -ExpectedOpenCodeVersion 2.2.5 -ExpectedMcbotVersion 1.0.8 -ExpectedMcbotContractVersion 2`（校验 `systemctl is-active mcbot`、`/healthz.version` 和契约）；未启用 mcbot 时用 `-SkipMcbot`，不得把跳过项计为 PASS。
+5. **smoke**：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.9 -ExpectedSchemaVersion 20 -ExpectedOpenCodeVersion 2.2.5 -ExpectedMcbotVersion 1.0.9 -ExpectedMcbotContractVersion 2`（校验 `systemctl is-active mcbot`、`/healthz.version` 和契约）；未启用 mcbot 时用 `-SkipMcbot`，不得把跳过项计为 PASS。
 
 6. **启用模式/回滚**：
    - **只读模式**：清空 `MCBOT_CONTROL_TOKEN`（`MCBOT_READ_TOKEN` 保留）并重启；`mcbotControlEnabled=false`，面板禁用任务/移动/聊天，`/status`、`/history` 可读，`/say` 返回 `503 mcbot_control_disabled`（v0.8.1 起聊天属于写操作）。
@@ -688,7 +695,7 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 6. **service token（供 smoke/CI）**：Zero Trust → Access → Service Auth → Create Service Token，绑定到主应用 `Service Auth` 策略；
    把 Client ID/Secret 通过命令行传给 smoke：
    ```powershell
-   .\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.8 -ExpectedSchemaVersion 20 -ExpectedOpenCodeVersion 2.2.5 -ExpectedMcbotVersion 1.0.8 -ExpectedMcbotContractVersion 2 `
+   .\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.9 -ExpectedSchemaVersion 20 -ExpectedOpenCodeVersion 2.2.5 -ExpectedMcbotVersion 1.0.9 -ExpectedMcbotContractVersion 2 `
      -AccessClientId "<id>" -AccessClientSecret "<secret>"
    ```
    两者必须同时提供，否则脚本直接报错；凭据只用于请求头，不打印/不写仓库。建议专用、最小范围、定期轮换；
@@ -707,7 +714,7 @@ curl -H 'Host: app.example.com' -fsS http://127.0.0.1:3000/healthz
 
 ```powershell
 .\scripts\smoke.ps1 -PiHost 192.0.2.10 -AppUrl https://app.<domain> -AiUrl https://ai.<domain> `
-  -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedVersion 1.0.8 -ExpectedSchemaVersion 20 -ExpectedOpenCodeVersion 2.2.5 -ExpectedMcbotVersion 1.0.8 -ExpectedMcbotContractVersion 2
+  -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedVersion 1.0.9 -ExpectedSchemaVersion 20 -ExpectedOpenCodeVersion 2.2.5 -ExpectedMcbotVersion 1.0.9 -ExpectedMcbotContractVersion 2
 ```
 
 未启用 mcbot 时追加 `-SkipMcbot`（跳过 `systemctl is-active mcbot` 与 `/healthz.contractVersion` 检查），不得把跳过项计为 PASS。

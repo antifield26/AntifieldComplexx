@@ -4,9 +4,9 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.0.8（2026-11-05 已部署，运行 commit `2440758`）**：schema 20 新增外部告警投递箱；mcbot 契约 v2 将发言划入控制权限，Workbench 兼容 v1 读取及既有控制。恢复演练核对链与文件，分片登记与完成原子提交。
+**当前版本 v1.0.9（代码已落地，生产验收前仍运行 v1.0.8）**：schema 20。增量按最近有效全量链的清单覆盖；主机告警进入既有投递箱；告警列表返回只读投递详情；同一 bootId 的事件序号空洞写入 `eventGap`。契约 v2，OpenCode **v2.2.5**。
 
-生产 app `/opt/antifieldcloud/releases/20261105T021739Z`，mcbot `/opt/mcbot/releases/20261105T021915Z`。迁移前 schema 19 快照为 `db-predeploy-20261105T021746014Z.sqlite`。schema 20 演练 `20261105T022152Z` 已校验文件与世界隔离解包，证据见 [ACCEPTANCE](docs/app/ACCEPTANCE.md)。
+上一生产 app `/opt/antifieldcloud/releases/20261105T021739Z`，mcbot `/opt/mcbot/releases/20261105T021915Z`。迁移前 schema 19 快照为 `db-predeploy-20261105T021746014Z.sqlite`。schema 20 演练 `20261105T022152Z` 已校验文件与世界隔离解包，证据见 [ACCEPTANCE](docs/app/ACCEPTANCE.md)。
 
 **v1.0.7 基线（2026-11-04 已部署，commit `b17102b`）**：schema v19 为 `alert_events.dedupe_key`；mcbot 快照下发 `lastSuccessAt`；mcbot 进程不在或轮询过期走 `service_down`；寻路兜底进入自主重决策（不新增 MCP 工具，不挖掘/不放置/不跑酷）。OpenCode **v2.2.5** 已在树莓派运行，回滚备份 timestamp `20261104T062115Z`。v1.0.7 app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19）、mcbot `/opt/mcbot/releases/20261104T092858Z`。npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
@@ -63,7 +63,7 @@ npm run check:docs     # mcbot 文档声明/代码实现一致性检查
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-本地门禁（v1.0.8，2026-11-05）：`npm run check` 与 `npm run build` 通过；app **613**（612 pass、1 skip）+ web **280** + mcbot **147**；`check-naming`、`check:docs` 通过。上一版本基线（v1.0.7，2026-11-04）：app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。v1.0.8 已部署，完整 Access smoke **36/0/0/2**。同日演练 `20261105T022152Z` 为 schema 20。
+本地门禁（v1.0.9）：`npm run check` 与 `npm run build` 通过；app **625**（624 pass、1 skip）+ web **283** + mcbot **147**；`check-naming`、`check:docs` 通过。上一版本基线（v1.0.8，2026-11-05）：app **613**（612 pass、1 skip）+ web **280** + mcbot **147**。v1.0.7：app **608**（607 pass、1 skip）+ web **279**（50 文件）+ mcbot **144**。v1.0.8 已部署，完整 Access smoke **36/0/0/2**。同日演练 `20261105T022152Z` 为 schema 20。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 

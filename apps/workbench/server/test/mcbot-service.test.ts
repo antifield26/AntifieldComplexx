@@ -8,6 +8,7 @@ import { McbotClient, type McbotEvent } from '../src/mcbot/client.ts'
 import {
   MCBOT_EVENT_CACHE_LIMIT,
   MCBOT_EVENT_CURSOR_KEY,
+  MCBOT_EVENT_GAP_KEY,
   McbotService,
   eventsAfterCursor,
   mapLofiiAlert,
@@ -793,4 +794,153 @@ test('导出函数：eventsAfterCursor 窗口内/窗口外/时间兜底，mapLof
   // 无法判断时序时不重复告警。
   assert.equal(eventsAfterCursor(weird, { bootId: 'b1', lastEventId: 'b1-x', lastTs: null }).length, 0)
   assert.equal(mapLofiiAlert(ev('b1-9', 'task', 9)), null)
+})
+
+function gapWindow(): McbotEvent[] {
+  const events: McbotEvent[] = []
+  for (let seq = 202; seq <= 401; seq += 1) events.push(ev(`b1-${seq}`, 'task', seq))
+  return events
+}
+
+test('事件缺口：窗口空洞记一次并保留，重启、网络失败和游标写入失败不把它清掉', async () => {
+  for (const contractVersion of [1, 2] as const) {
+    let phase: 'baseline' | 'gap' | 'down' | 'reboot' = 'baseline'
+    const fx = serviceFixture({
+      contractVersion,
+      handler: handlerFor({
+        status: () => {
+          if (phase === 'down') return Promise.reject(new Error('network down'))
+          return json(statusBody(contractVersion === 2 ? { contractVersion: 2 } : {}))
+        },
+        recent: () => {
+          if (phase === 'down') return Promise.reject(new Error('network down'))
+          if (phase === 'reboot') {
+            return json({ contractVersion, bootId: 'b2', lastEventId: 'b2-1', events: [ev('b2-1', 'task', 1)] })
+          }
+          if (phase === 'baseline') {
+            return json({ contractVersion, bootId: 'b1', lastEventId: 'b1-1', events: [ev('b1-1', 'task', 1)] })
+          }
+          return json({ contractVersion, bootId: 'b1', lastEventId: 'b1-401', events: gapWindow() })
+        },
+      }),
+    })
+    try {
+      await fx.service.pollOnce()
+      assert.equal(fx.service.snapshot().eventGap, null, '首次连接只建基线')
+      assert.equal(fx.logs.some((entry) => entry.message === 'mcbot 事件缺口'), false)
+
+      phase = 'gap'
+      await fx.service.pollOnce()
+      const gap = fx.service.snapshot().eventGap
+      assert.deepEqual(
+        gap && { bootId: gap.bootId, fromSeq: gap.fromSeq, toSeq: gap.toSeq },
+        { bootId: 'b1', fromSeq: 2, toSeq: 201 },
+      )
+      assert.equal(gap?.discoveredAt, T0)
+      assert.equal(fx.service.snapshot().reachable, true)
+      assert.equal(fx.service.snapshot().status?.state, 'connected')
+      assert.equal(cursor(fx.db)?.lastEventId, 'b1-401', '窗口内事件处理完后推进游标')
+      assert.equal(fx.logs.filter((entry) => entry.message === 'mcbot 事件缺口').length, 1)
+
+      fx.clock.advance(60_000)
+      await fx.service.pollOnce()
+      assert.equal(fx.service.snapshot().eventGap?.discoveredAt, T0, '同一缺口不改写发现时间')
+      assert.equal(fx.logs.filter((entry) => entry.message === 'mcbot 事件缺口').length, 1)
+
+      const cachedState = fx.service.snapshot().status?.state
+      phase = 'down'
+      await fx.service.pollOnce()
+      assert.equal(fx.service.snapshot().reachable, false)
+      assert.equal(fx.service.snapshot().eventGap?.fromSeq, 2)
+      assert.equal(fx.service.snapshot().status?.state, cachedState, '网络失败保留上次状态')
+
+      phase = 'reboot'
+      await fx.service.pollOnce()
+      assert.equal(fx.service.snapshot().eventGap?.bootId, 'b1', '新的启动周期不清除已发现缺口')
+      assert.equal(cursor(fx.db)?.bootId, 'b2')
+
+      const restored = new McbotService({
+        db: fx.db,
+        config: fx.config,
+        alerts: { recordExternal: () => 1 },
+        now: fx.clock.now,
+      })
+      assert.equal(restored.snapshot().eventGap?.toSeq, 201)
+      restored.stop()
+    } finally {
+      fx.close()
+    }
+  }
+
+  const fresh = serviceFixture({
+    handler: handlerFor({
+      recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: 'b1-50', events: [ev('b1-50', 'task', 50)] }),
+    }),
+  })
+  try {
+    await fresh.service.pollOnce()
+    assert.equal(fresh.service.snapshot().eventGap, null, '没有游标时高序号只是基线')
+    assert.equal(fresh.logs.some((entry) => entry.message === 'mcbot 事件缺口'), false)
+  } finally {
+    fresh.close()
+  }
+
+  const cursorFailure = serviceFixture({
+    handler: handlerFor({
+      recent: () => {
+        const established = cursor(cursorFailure.db)
+        const events = established
+          ? gapWindow()
+          : [ev('b1-1', 'task', 1)]
+        return json({
+          contractVersion: 1,
+          bootId: 'b1',
+          lastEventId: events.at(-1)?.id ?? null,
+          events,
+        })
+      },
+    }),
+  })
+  try {
+    await cursorFailure.service.pollOnce()
+    cursorFailure.db.exec(
+      "CREATE TRIGGER cursor_update_failed BEFORE UPDATE ON meta WHEN OLD.key = 'mcbot.event_cursor' BEGIN SELECT RAISE(ABORT, 'cursor_update_failed'); END",
+    )
+    await cursorFailure.service.pollOnce()
+    assert.equal(cursor(cursorFailure.db)?.lastEventId, 'b1-1')
+    assert.equal(cursorFailure.service.snapshot().error, 'mcbot_cursor_failed')
+    assert.equal(cursorFailure.service.snapshot().reachable, true)
+    assert.equal(cursorFailure.service.snapshot().eventGap?.fromSeq, 2)
+    assert.equal(cursorFailure.service.snapshot().status?.state, 'connected')
+  } finally {
+    cursorFailure.close()
+  }
+
+  const gapWrite = serviceFixture({
+    handler: handlerFor({
+      recent: () => {
+        const established = cursor(gapWrite.db)
+        const events = established ? gapWindow() : [ev('b1-1', 'task', 1)]
+        return json({
+          contractVersion: 1,
+          bootId: 'b1',
+          lastEventId: events.at(-1)?.id ?? null,
+          events,
+        })
+      },
+    }),
+  })
+  try {
+    await gapWrite.service.pollOnce()
+    gapWrite.db.exec(
+      "CREATE TRIGGER gap_insert_failed BEFORE INSERT ON meta WHEN NEW.key = 'mcbot.event_gap' BEGIN SELECT RAISE(ABORT, 'gap_write_failed'); END",
+    )
+    await gapWrite.service.pollOnce()
+    assert.equal(getMeta(gapWrite.db, MCBOT_EVENT_GAP_KEY), null)
+    assert.equal(gapWrite.service.snapshot().eventGap?.toSeq, 201)
+    assert.ok(gapWrite.logs.some((entry) => entry.message === 'mcbot 事件缺口未能写入'))
+    assert.equal(cursor(gapWrite.db)?.lastEventId, 'b1-401')
+  } finally {
+    gapWrite.close()
+  }
 })

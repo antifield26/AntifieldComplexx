@@ -1014,6 +1014,14 @@ export function McbotPanel() {
           </span>
         </div>
       ) : null}
+      {snapshot.eventGap ? (
+        <div className="notice notice-warning">
+          <span>
+            mcbot 事件缺口：启动 {snapshot.eventGap.bootId} 缺少序号 {snapshot.eventGap.fromSeq}–{snapshot.eventGap.toSeq}
+            （发现于 <RelativeTime ts={snapshot.eventGap.discoveredAt} />）。下方仍显示当前 Bot 状态。
+          </span>
+        </div>
+      ) : null}
       {snapshot.reachable && snapshot.error ? (
         <div className="notice notice-warning">
           <span>

@@ -7,7 +7,9 @@
  * - 日志与错误信息中绝不输出 webhook URL 与 secret；投递失败只记录脱敏后的原因。
  * - 状态机持久化在 alert_state：首次越界产生 firing 事件；持续越界按冷却时间重复通知；
  *   恢复时产生 resolved 事件。无法读取的指标视为 unknown：连续 N 次不可读后降级为
- *   unknown 事件（同一降级只发一次），数据源恢复后发 resolved；事件与状态写入在同一事务内。
+ *   unknown 事件（同一降级只发一次），数据源恢复后发 resolved。
+ * - 主机事件与外部事件都把 Webhook、QQ 两条通道写入既有投递箱，并与状态、事件同一事务提交。
+ *   关闭的通道记为跳过。手动测试接口仍直接投递，不进投递箱。
  * - alert_events 保留 90 天，评估周期内按小时节流清理旧事件。
  * - start()/stop() 由进程入口接入；构造函数不自行启动定时器。
  */
@@ -21,7 +23,7 @@ import type { Config } from '../config.ts'
 import { transaction } from '../db.ts'
 import { readOutboundHealth } from '../chatbot/outbound.ts'
 import { nowIso } from '../util/time.ts'
-import { ExternalAlertOutbox } from './outbox.ts'
+import { ExternalAlertOutbox, type InsertPlan } from './outbox.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -96,6 +98,19 @@ export interface AlertDeps {
   }, durable?: boolean) => void
 }
 
+export interface AlertDeliveryDetail {
+  status: 'pending' | 'done' | 'dead' | 'skipped'
+  attempts: number
+  nextAttemptAt: string
+  error: string | null
+}
+
+/** 无投递箱行时为 null。某一通道没有行时该通道为 null。 */
+export interface AlertDeliveries {
+  webhook: AlertDeliveryDetail | null
+  qq: AlertDeliveryDetail | null
+}
+
 export interface AlertEventItem {
   id: number
   event: string
@@ -107,6 +122,7 @@ export interface AlertEventItem {
   createdAt: string
   deliveredAt: string | null
   deliveryError: string | null
+  deliveries: AlertDeliveries | null
 }
 
 export interface AlertStateItem {
@@ -329,6 +345,8 @@ export class AlertService {
   private lastEventPruneAt = 0
   private timer: NodeJS.Timeout | null = null
   private running = false
+  /** stop 后拒绝新的评估与领取；已提交的投递行留待重启后续投。 */
+  private accepting = true
   private lastEvaluatedAt: string | null = null
   private readonly outbox: ExternalAlertOutbox
 
@@ -370,6 +388,7 @@ export class AlertService {
   /** 由进程入口调用；alertsEnabled=false 时不启动。定时器 unref，不阻止进程退出。 */
   start(): void {
     if (!this.config.alertsEnabled || this.timer) return
+    this.accepting = true
     this.outbox.start()
     const intervalMs = Math.max(60, this.config.alertCheckIntervalSeconds) * 1000
     this.timer = setInterval(() => {
@@ -384,6 +403,7 @@ export class AlertService {
   }
 
   async stop(): Promise<void> {
+    this.accepting = false
     if (this.timer) clearInterval(this.timer)
     this.timer = null
     await this.outbox.stop()
@@ -844,7 +864,7 @@ export class AlertService {
   async evaluateOnce(): Promise<EvaluateResult> {
     const evaluatedAt = this.deps.now()
     const evaluatedIso = evaluatedAt.toISOString()
-    if (!this.config.alertsEnabled) {
+    if (!this.config.alertsEnabled || !this.accepting) {
       return { skipped: true, evaluatedAt: evaluatedIso, checked: 0, firing: 0, resolved: 0, delivered: 0 }
     }
     if (this.running) {
@@ -859,21 +879,9 @@ export class AlertService {
         if (event) events.push(event)
       }
       let delivered = 0
-      for (const event of events) {
-        if (await this.deliver(event)) delivered += 1
-        try {
-          this.deps.notifyEvent?.({
-            id: event.id,
-            event: event.event,
-            severity: event.severity,
-            status: event.status,
-            title: event.title,
-            message: event.message,
-            createdAt: event.created_at,
-          })
-        } catch (error) {
-          this.deps.log('warn', 'Chatbot 告警通知入队失败', { error: this.sanitizeError(error) })
-        }
+      if (this.accepting && events.length > 0) {
+        await this.outbox.process()
+        delivered = this.countWebhookDone(events.map((event) => event.id))
       }
       try {
         this.pruneEventsIfDue()
@@ -918,6 +926,7 @@ export class AlertService {
              ON CONFLICT(event) DO UPDATE SET status = 'firing', last_fired_at = excluded.last_fired_at`,
           )
           .run(condition.event, event.created_at, state?.last_ok_at ?? null)
+        this.attachDeliveries(event.id)
         return event
       })
     }
@@ -943,6 +952,7 @@ export class AlertService {
         this.db
           .prepare("UPDATE alert_state SET status = 'ok', last_ok_at = ? WHERE event = ?")
           .run(event.created_at, condition.event)
+        this.attachDeliveries(event.id)
         return event
       })
     }
@@ -985,6 +995,7 @@ export class AlertService {
            ON CONFLICT(event) DO UPDATE SET status = 'unknown', last_fired_at = excluded.last_fired_at`,
         )
         .run(condition.event, event.created_at, state?.last_ok_at ?? null)
+      this.attachDeliveries(event.id)
       return event
     })
   }
@@ -1132,7 +1143,74 @@ export class AlertService {
 
   // ---------- 查询与测试 ----------
 
-  private toEventItem(row: AlertEventRow): AlertEventItem {
+  /** 通道关闭或没有可通知目标时在入库时跳过，避免把空入队标成完成。 */
+  private channelPlan(): InsertPlan {
+    const webhookOpen = this.config.alertWebhookUrl.trim().length > 0
+    const qqOpen = this.config.chatbotEnabled && this.hasNotificationTarget()
+    return {
+      webhook: webhookOpen ? 'pending' : 'skipped',
+      qq: qqOpen ? 'pending' : 'skipped',
+      webhookError: webhookOpen ? null : '未配置 webhook URL',
+      qqError: qqOpen ? null : '未启用或没有可通知的目标',
+    }
+  }
+
+  private hasNotificationTarget(): boolean {
+    const row = this.db.prepare(
+      `SELECT 1 AS ok FROM chatbots c
+       JOIN chatbot_targets t ON t.chatbot_id = c.id
+       WHERE c.enabled = 1 AND t.allow_notifications = 1
+       LIMIT 1`,
+    ).get() as { ok: number } | undefined
+    return row !== undefined
+  }
+
+  private attachDeliveries(eventId: number): void {
+    const plan = this.channelPlan()
+    this.outbox.insert(eventId, plan)
+    if (plan.webhook === 'skipped') this.markDelivery(eventId, null, plan.webhookError ?? '未配置 webhook URL')
+  }
+
+  private countWebhookDone(eventIds: number[]): number {
+    if (eventIds.length === 0) return 0
+    const row = this.db.prepare(
+      `SELECT COUNT(*) AS c FROM external_alert_deliveries
+       WHERE channel = 'webhook' AND status = 'done' AND event_id IN (${eventIds.map(() => '?').join(',')})`,
+    ).get(...eventIds) as { c: number }
+    return Number(row.c)
+  }
+
+  private deliveriesByEvent(eventIds: number[]): Map<number, AlertDeliveries> {
+    const map = new Map<number, AlertDeliveries>()
+    if (eventIds.length === 0) return map
+    const rows = this.db.prepare(
+      `SELECT event_id, channel, status, attempts, next_attempt_at, last_error
+       FROM external_alert_deliveries
+       WHERE event_id IN (${eventIds.map(() => '?').join(',')})`,
+    ).all(...eventIds) as unknown as {
+      event_id: number
+      channel: 'webhook' | 'qq'
+      status: AlertDeliveryDetail['status']
+      attempts: number
+      next_attempt_at: string
+      last_error: string | null
+    }[]
+    for (const row of rows) {
+      const current = map.get(row.event_id) ?? { webhook: null, qq: null }
+      const detail: AlertDeliveryDetail = {
+        status: row.status,
+        attempts: Number(row.attempts),
+        nextAttemptAt: row.next_attempt_at,
+        error: row.last_error ? this.sanitizeError(row.last_error) : null,
+      }
+      if (row.channel === 'webhook') current.webhook = detail
+      else current.qq = detail
+      map.set(row.event_id, current)
+    }
+    return map
+  }
+
+  private toEventItem(row: AlertEventRow, deliveries: AlertDeliveries | null = null): AlertEventItem {
     let details: Record<string, unknown> | null = null
     if (row.details_json) {
       try {
@@ -1153,6 +1231,7 @@ export class AlertService {
       createdAt: row.created_at,
       deliveredAt: row.delivered_at,
       deliveryError: row.delivery_error,
+      deliveries,
     }
   }
 
@@ -1203,6 +1282,7 @@ export class AlertService {
     const rows = this.db
       .prepare(`SELECT * FROM alert_events ${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
       .all(...params, limit, offset) as unknown as AlertEventRow[]
+    const deliveries = this.deliveriesByEvent(rows.map((row) => row.id))
     const states = this.db.prepare('SELECT * FROM alert_state ORDER BY event ASC').all() as unknown as AlertStateRow[]
     const stateItems: AlertStateItem[] = states.map((state) => {
       const last = this.db
@@ -1222,7 +1302,7 @@ export class AlertService {
       }
     })
     return {
-      items: rows.map((row) => this.toEventItem(row)),
+      items: rows.map((row) => this.toEventItem(row, deliveries.get(row.id) ?? null)),
       total: Number(total),
       state: stateItems,
       config: this.configSummary(),
@@ -1264,7 +1344,7 @@ export class AlertService {
            VALUES (?, ?, 'event', ?, ?, ?, ?, NULL, NULL, ?)`,
         ).run(event.event, event.severity, event.title, event.message, event.details_json, event.created_at, dedupeKey)
         const id = Number(result.lastInsertRowid)
-        this.outbox.insert(id)
+        this.attachDeliveries(id)
         return id
       })
     } catch (error) {

@@ -12,6 +12,8 @@
  *   首次/无游标/bootId 变化只建立基线，不重放 ring 内旧告警；之后只处理游标之后的 alert，
  *   并按游标去重。MCBOT_ALERTS_ENABLED=false 时仍推进游标但不写告警。
  * - 告警写入带幂等键 `mcbot:<bootId>:<eventId>`。同一键再次 recordExternal 不插入、不通知。
+ * - 同一 bootId 下，最早可用事件序号超过游标加 1 时记录一次缺口，写入 meta `mcbot.event_gap`。
+ *   首次连接、重启和单纯网络失败不记缺口；游标越过空洞后仍保留已发现的缺口。
  * - 快照 `lastSuccessAt` 只在拿到完整 /status 时更新；失败轮询只推进 `lastPollAt`。
  * - 聊天事件只进内存缓存（最多 100 条，newest-first），不落库、不写日志。
  * - 控制成功后立即刷新一次；start()/stop() 的定时器 unref，不阻止进程退出。
@@ -35,6 +37,8 @@ import {
 
 /** 告警游标 meta key；JSON {bootId,lastEventId,lastTs}。 */
 export const MCBOT_EVENT_CURSOR_KEY = 'mcbot.event_cursor'
+/** 事件缺口 meta key；JSON {bootId,fromSeq,toSeq,discoveredAt}。与游标分开，避免游标前进后缺口消失。 */
+export const MCBOT_EVENT_GAP_KEY = 'mcbot.event_gap'
 /** 事件内存缓存上限（API 最多返回 100 条）。 */
 export const MCBOT_EVENT_CACHE_LIMIT = 100
 /** 事件缓存总的序列化字节上限；防止大量大 JSON 事件长期占用内存。 */
@@ -48,6 +52,14 @@ export interface McbotAlertCursor {
   bootId: string
   lastEventId: string | null
   lastTs: string | null
+}
+
+/** 同一启动周期内观察到的序号空洞。discoveredAt 保持首次发现时间。 */
+export interface McbotEventGap {
+  bootId: string
+  fromSeq: number
+  toSeq: number
+  discoveredAt: string
 }
 
 export interface McbotServiceDeps {
@@ -82,6 +94,8 @@ export interface McbotSnapshot {
   autonomy: McbotAutonomySnapshot | null
   /** newest-first，最多 100 条。 */
   events: McbotEvent[]
+  /** 最近一次事件序号缺口。没有观察到时为 null；禁用快照固定为 null。 */
+  eventGap: McbotEventGap | null
 }
 
 export interface McbotPollResult {
@@ -261,6 +275,10 @@ export class McbotService {
   private failedPolls = 0
   /** 上一次记录到日志的错误，避免轮询失败期间每 5s 重复告警日志。 */
   private lastLoggedError: string | null = null
+  /** 最近一次事件缺口。网络失败和游标前进都不清除。 */
+  private eventGap: McbotEventGap | null = null
+  /** 已写过日志的缺口范围，同一进程内同一区间只记录一次。 */
+  private loggedGapKey: string | null = null
 
   constructor(deps: McbotServiceDeps) {
     this.db = deps.db
@@ -283,6 +301,8 @@ export class McbotService {
         controlToken: this.config.mcbotControlToken,
         timeoutMs: this.config.mcbotTimeoutMs,
       })
+    this.eventGap = this.readEventGap()
+    this.loggedGapKey = this.eventGap ? this.gapKey(this.eventGap) : null
   }
 
   // ---------- 生命周期 ----------
@@ -506,6 +526,66 @@ export class McbotService {
     setMeta(this.db, MCBOT_EVENT_CURSOR_KEY, JSON.stringify(cursor))
   }
 
+  private gapKey(gap: McbotEventGap): string {
+    return `${gap.bootId}:${gap.fromSeq}:${gap.toSeq}`
+  }
+
+  private readEventGap(): McbotEventGap | null {
+    const raw = getMeta(this.db, MCBOT_EVENT_GAP_KEY)
+    if (!raw) return null
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      return null
+    }
+    if (!isRecord(parsed)) return null
+    const bootId = typeof parsed.bootId === 'string' ? parsed.bootId : ''
+    const fromSeq = typeof parsed.fromSeq === 'number' ? parsed.fromSeq : Number.NaN
+    const toSeq = typeof parsed.toSeq === 'number' ? parsed.toSeq : Number.NaN
+    const discoveredAt = typeof parsed.discoveredAt === 'string' ? parsed.discoveredAt : ''
+    if (!bootId || !Number.isSafeInteger(fromSeq) || !Number.isSafeInteger(toSeq) || fromSeq > toSeq || !discoveredAt) return null
+    return { bootId, fromSeq, toSeq, discoveredAt }
+  }
+
+  /** 窗口最早序号越过游标时记下缺口。已记下的区间保持原发现时间，不因游标前进而清除。 */
+  private noteEventGap(recent: McbotRecentResult, cursor: McbotAlertCursor): void {
+    if (!cursor.lastEventId || cursor.bootId !== recent.bootId) return
+    const cursorSeq = eventSeq(cursor.lastEventId, cursor.bootId)
+    if (cursorSeq === null) return
+    let earliest = Number.POSITIVE_INFINITY
+    for (const event of recent.events) {
+      const seq = eventSeq(event.id, recent.bootId)
+      if (seq !== null && seq < earliest) earliest = seq
+    }
+    if (!Number.isFinite(earliest) || earliest <= cursorSeq + 1) return
+    const fromSeq = cursorSeq + 1
+    const toSeq = earliest - 1
+    const previous = this.eventGap
+    const same =
+      previous !== null &&
+      previous.bootId === recent.bootId &&
+      previous.fromSeq === fromSeq &&
+      previous.toSeq === toSeq
+    const gap: McbotEventGap = {
+      bootId: recent.bootId,
+      fromSeq,
+      toSeq,
+      discoveredAt: same && previous ? previous.discoveredAt : this.now().toISOString(),
+    }
+    this.eventGap = gap
+    const key = this.gapKey(gap)
+    if (this.loggedGapKey !== key) {
+      this.log('warn', 'mcbot 事件缺口', { bootId: gap.bootId, fromSeq: gap.fromSeq, toSeq: gap.toSeq })
+      this.loggedGapKey = key
+    }
+    try {
+      setMeta(this.db, MCBOT_EVENT_GAP_KEY, JSON.stringify(gap))
+    } catch (cause) {
+      this.log('warn', 'mcbot 事件缺口未能写入', { error: errorCodeOf(cause) })
+    }
+  }
+
   /**
    * 推进告警游标并处理游标之后的 alert：
    * - 无游标/首次/bootId 变化：只记录基线，不重放旧 ring 告警。
@@ -523,6 +603,7 @@ export class McbotService {
       this.writeCursor({ bootId: recent.bootId, lastEventId: lastId, lastTs })
       return 0
     }
+    this.noteEventGap(recent, cursor)
     // 基线建立时 ring 为空（lastEventId=null）：之后出现的事件都是新的；ring 非空时按游标过滤。
     const after = cursor.lastEventId ? eventsAfterCursor(recent.events, cursor) : [...recent.events]
     let count = 0
@@ -602,6 +683,7 @@ export class McbotService {
         status: null,
         autonomy: null,
         events: [],
+        eventGap: null,
       }
     }
     return {
@@ -620,6 +702,7 @@ export class McbotService {
       status: this.statusSnapshot,
       autonomy: this.autonomySnapshot,
       events: [...this.events],
+      eventGap: this.eventGap,
     }
   }
 

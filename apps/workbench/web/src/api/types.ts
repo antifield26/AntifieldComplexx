@@ -721,6 +721,18 @@ export interface AlertEvent {
   createdAt: string
   deliveredAt: string | null
   deliveryError: string | null
+  /** 投递箱详情。历史事件没有记录时为 null；旧服务端可能不下发。 */
+  deliveries?: {
+    webhook: AlertDeliveryDetail | null
+    qq: AlertDeliveryDetail | null
+  } | null
+}
+
+export interface AlertDeliveryDetail {
+  status: 'pending' | 'done' | 'dead' | 'skipped'
+  attempts: number
+  nextAttemptAt: string
+  error: string | null
 }
 
 export interface AlertState {
@@ -1587,6 +1599,13 @@ export interface McbotSnapshot {
   /** 旧版 mcbot 不返回该字段（可选）；缺失时为 null/undefined，UI 隐藏自主控制。 */
   autonomy?: McbotAutonomySnapshot | null
   events: McbotEvent[]
+  /** 最近一次事件序号缺口。没有观察到、或旧服务端不下发时为空。 */
+  eventGap?: {
+    bootId: string
+    fromSeq: number
+    toSeq: number
+    discoveredAt: string
+  } | null
 }
 
 export type McbotHistoryKind = 'samples' | 'alerts'

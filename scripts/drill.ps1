@@ -13,7 +13,8 @@
   [string]$PiHost = "",
   [string]$PiUser = "antifield",
   [string]$RemoteStatusPath = "/var/lib/antifieldcloud/drill-status.json",
-  [switch]$SkipRemoteStatus
+  [switch]$SkipRemoteStatus,
+  [string]$RestoreOutputDir = ""
 )
 
 # 恢复演练（只读）：用 PC 上已拉取的真实归档验证「全量 + 增量」链可解包、可校验、可打开。
@@ -26,6 +27,7 @@
 # 5) 世界归档默认只校验 SHA/列表/level.dat（-IncludeWorld 时才解包，且先检查临时盘空间）；
 # 6) 输出 %BackupRoot%\drills\<UTC>\report.json|report.md，失败退出码 1；
 # 7) 可选把 ASCII 状态写回 Pi /var/lib/antifieldcloud/drill-status.json（-PiHost 指定时）。
+# 8) -RestoreOutputDir 只在链、目标数据库和引用文件全部通过后，把 db.sqlite 与引用文件发布到尚不存在的目录。
 # 约束：绝不修改/删除归档；只删除 drills 下超过 KeepDays 的历史报告。私钥路径/明文内容不写日志与状态。
 # 所有外部命令都有硬超时；无 -AgeIdentityPath 且链中存在加密归档时明确失败（不跳过、不误判通过）。
 $ErrorActionPreference = "Stop"
@@ -38,6 +40,9 @@ $script:warnings = New-Object System.Collections.Generic.List[object]
 $script:startedAt = Get-Date
 $script:tempDir = $null
 $script:report = $null
+$script:restoreExtractDir = $null
+$script:restoreDbPath = $null
+$script:restoreOutput = $null
 
 $base = Join-Path $env:LOCALAPPDATA "AntifieldCloud"
 $logPath = Join-Path $base "drill.log"
@@ -737,6 +742,63 @@ function Build-ReportMarkdown {
   return ($lines -join "`r`n")
 }
 
+function Publish-RestoreDirectory {
+  if ([string]::IsNullOrWhiteSpace($RestoreOutputDir)) { return }
+  if ($script:errors.Count -gt 0) { return }
+  if (-not $script:restoreExtractDir -or -not $script:restoreDbPath) {
+    Add-DrillError -Code "restore_output_failed" -Message "校验未产生可发布的数据库，未创建恢复目录"
+    return
+  }
+  $destination = [System.IO.Path]::GetFullPath($RestoreOutputDir)
+  if (Test-Path -LiteralPath $destination) {
+    Add-DrillError -Code "restore_output_exists" -Message "恢复目录已存在，未改动：$destination"
+    return
+  }
+  $parent = Split-Path -Parent $destination
+  if ([string]::IsNullOrWhiteSpace($parent) -or -not (Test-Path -LiteralPath $parent -PathType Container)) {
+    Add-DrillError -Code "restore_output_parent_missing" -Message "恢复目录的上级不存在：$parent"
+    return
+  }
+  $staging = Join-Path $script:tempDir "restore-output"
+  New-Item -ItemType Directory -Force -Path $staging | Out-Null
+  Copy-Item -LiteralPath $script:restoreDbPath -Destination (Join-Path $staging "db.sqlite")
+  $listScript = Join-Path $script:tempDir "list-restore-files.mjs"
+  Write-Utf8NoBom -Path $listScript -Content @'
+import { DatabaseSync } from "node:sqlite"
+const db = new DatabaseSync(process.argv[2], { readOnly: true })
+const rows = db.prepare("SELECT id FROM files WHERE kind = 'file'").all()
+for (const row of rows) process.stdout.write(String(row.id) + "\n")
+db.close()
+'@
+  $listed = Invoke-NativeWithTimeout -FilePath $script:nodeBin -Arguments @($listScript, $script:restoreDbPath) -TimeoutSeconds 60 -Label "list restore files"
+  if ($listed.ExitCode -ne 0) {
+    Add-DrillError -Code "restore_output_failed" -Message "无法读取恢复数据库中的文件清单"
+    return
+  }
+  $ids = @($listed.StdOut -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -notmatch '[\\/]' -and $_ -ne '.' -and $_ -ne '..' })
+  foreach ($id in $ids) {
+    $prefixLength = [Math]::Min(2, $id.Length)
+    $prefix = $id.Substring(0, $prefixLength)
+    $source = Join-Path $script:restoreExtractDir (Join-Path "files" (Join-Path $prefix $id))
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+      Add-DrillError -Code "restore_output_failed" -Message "恢复目录缺少已校验文件：$id"
+      return
+    }
+    $destDir = Join-Path $staging (Join-Path "files" $prefix)
+    New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+    Copy-Item -LiteralPath $source -Destination (Join-Path $destDir $id)
+  }
+  try {
+    Move-Item -LiteralPath $staging -Destination $destination -ErrorAction Stop
+    $script:restoreOutput = $destination
+  } catch {
+    if (Test-Path -LiteralPath $destination) {
+      Remove-Item -Recurse -Force -LiteralPath $destination -ErrorAction SilentlyContinue
+    }
+    Add-DrillError -Code "restore_output_failed" -Message "发布恢复目录失败，已清理不完整的目标目录"
+  }
+}
+
 function Write-DrillReport {
   param([object]$Report, [string]$ReportDir)
   $jsonPath = Join-Path $ReportDir "report.json"
@@ -774,6 +836,17 @@ try {
   }
   if (-not (Test-Path -LiteralPath $BackupRoot)) {
     throw (New-DrillException -Code "backup_root_missing" -Message "备份目录不存在：$BackupRoot")
+  }
+  if (-not [string]::IsNullOrWhiteSpace($RestoreOutputDir)) {
+    $restoreFull = [System.IO.Path]::GetFullPath($RestoreOutputDir)
+    if (Test-Path -LiteralPath $restoreFull) {
+      Add-DrillError -Code "restore_output_exists" -Message "恢复目录已存在，未改动：$restoreFull"
+    } else {
+      $restoreParent = Split-Path -Parent $restoreFull
+      if ([string]::IsNullOrWhiteSpace($restoreParent) -or -not (Test-Path -LiteralPath $restoreParent -PathType Container)) {
+        Add-DrillError -Code "restore_output_parent_missing" -Message "恢复目录的上级不存在：$restoreParent"
+      }
+    }
   }
   $nodeVersion = Invoke-NativeWithTimeout -FilePath $script:nodeBin -Arguments @('--version') -TimeoutSeconds 30 -Label "node --version"
   if ($nodeVersion.ExitCode -ne 0) { throw (New-DrillException -Code "node_missing" -Message "node --version 失败：$($nodeVersion.StdErr)") }
@@ -862,6 +935,8 @@ try {
         if ($extractDir) {
           $dbPath = Join-Path $extractDir $chainChecks[-1].Manifest.database
           if (Test-Path -LiteralPath $dbPath -PathType Leaf) {
+            $script:restoreExtractDir = $extractDir
+            $script:restoreDbPath = $dbPath
             $dbName = Split-Path -Leaf $dbPath
             $dbArguments = @('--db', $dbPath, '--restored-root', $extractDir)
             if ($ExpectedSchemaVersion -gt 0) { $dbArguments += @('--schema-version', [string]$ExpectedSchemaVersion) }
@@ -899,6 +974,7 @@ try {
   }
 
   $worldResult = Test-WorldArchive
+  Publish-RestoreDirectory
   $removedReports = Invoke-DrillReportRetention
   if ($removedReports -gt 0) { Write-Log "清理过期演练报告 $removedReports 个" }
 } catch {
@@ -950,6 +1026,7 @@ try {
     report        = [ordered]@{ name = $reportDirName; json = (Join-Path $reportDir "report.json"); markdown = (Join-Path $reportDir "report.md") }
     errors        = [object[]]@($script:errors | ForEach-Object { [pscustomobject]@{ code = $_.code; message = $_.message } })
     warnings      = [object[]]@($script:warnings | ForEach-Object { [pscustomobject]@{ code = $_.code; message = $_.message } })
+    restoreOutput = $script:restoreOutput
   }
   Write-DrillReport -Report $script:report -ReportDir $reportDir
   Write-RemoteDrillStatus -Report $script:report

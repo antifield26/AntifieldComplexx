@@ -277,10 +277,10 @@ test('多 pending 顺序 ack 不丢 missing 重查集合：恢复后的文件由
     const first = runBackup(dir, ['--prepare', '--full'])
     assert.deepEqual(first.json.skippedMissing, [id])
 
-    // 第一个 pending 尚未 ack 时再 prepare：增量不会重复选择早于水位的文件，其 manifest.skippedMissing 为空。
+    // 第一个 pending 尚未 ack 时再 prepare：未覆盖的缺失文件会再次记入 skippedMissing。
     const second = runBackup(dir, ['--prepare'])
     assert.equal(second.json.mode, 'inc')
-    assert.deepEqual(second.json.skippedMissing, [])
+    assert.deepEqual(second.json.skippedMissing, [id])
 
     const pending = runBackup(dir, ['--pending']).json.pending as Array<Record<string, unknown>>
     assert.equal(pending.length, 2)

@@ -31,7 +31,7 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "1.0.8", "schemaVersion": 20, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
+{ "ok": true, "version": "1.0.9", "schemaVersion": 20, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
 ```
 
 - `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
@@ -394,7 +394,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "1.0.8", "schemaVersion": 20, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
+- `GET /api/version`（需要会话）：`{ "version": "1.0.9", "schemaVersion": 20, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
   - `schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。旧服务端不下发时前端按关闭/未配置/null 降级。
   - `mcbotEnabled`/`mcbotControlEnabled`（v0.8.0）：mcbot 集成是否启用、控制接口是否可用（`MCBOT_ENABLED=true` 且 `MCBOT_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 mcbot 标签与控制操作。两者都不含 mcbot 地址/Token。
   - schema **17**；`audit.persisted` 表示诊断是否来自 DB 持久化行（DB 不可用时 false，回退内存计数）。
@@ -447,14 +447,16 @@ RCON 不可用：`502 rcon_unavailable`。
 - `GET /api/alerts?limit=20`（会话）→：
 
 ```json
-{ "items": [{ "id":1,"event":"disk_low","severity":"critical","status":"firing","title":"…","message":"…","createdAt":"…","deliveredAt":null,"deliveryError":null }], "state": [{ "event":"disk_low","status":"firing","lastFiredAt":"…","lastOkAt":null }], "config": { "enabled":true,"webhookConfigured":false,"webhookType":"generic","diskFreePct":15,"tempC":80,"memoryUsedPct":90,"backupMaxAgeHours":48,"cooldownMinutes":360,"repeatHours":24,"checkIntervalSeconds":300,"lastEvaluatedAt":null } }
+{ "items": [{ "id":1,"event":"disk_low","severity":"critical","status":"firing","title":"…","message":"…","createdAt":"…","deliveredAt":null,"deliveryError":null,"deliveries":{ "webhook":{ "status":"pending","attempts":0,"nextAttemptAt":"…","error":null },"qq":{ "status":"skipped","attempts":0,"nextAttemptAt":"…","error":"未启用或没有可通知的目标" } } }], "state": [{ "event":"disk_low","status":"firing","lastFiredAt":"…","lastOkAt":null }], "config": { "enabled":true,"webhookConfigured":false,"webhookType":"generic","diskFreePct":15,"tempC":80,"memoryUsedPct":90,"backupMaxAgeHours":48,"cooldownMinutes":360,"repeatHours":24,"checkIntervalSeconds":300,"lastEvaluatedAt":null } }
 ```
 
-- `POST /api/alerts/test`（会话 + CSRF，10 次/小时）→ `{ok:true,delivered:boolean,message?}`；未配置 webhook 返回 200 `{ok:false,delivered:false,message:"未配置 webhook URL"}`。
+- 每条事件增加只读 `deliveries`。没有 `external_alert_deliveries` 行时为 `null`。有行时 `webhook` 与 `qq` 各自为 `{status,attempts,nextAttemptAt,error}`，缺该通道时为 `null`。`status` 取 `pending|done|dead|skipped`。`error` 已脱敏。本接口不提供重投。`deliveredAt` 与 `deliveryError` 保持原字段。
+- 主机条件的 `firing`、`resolved`、`unknown` 及周期重通知，与两条通道任务在同一 SQLite 事务提交。Webhook 最多同时处理 2 条，失败退避 1 秒、2 秒，最多 3 次，重试沿用同一 `Idempotency-Key`。同一条件、同一通道按事件顺序投递，前序进入 `done`、`skipped` 或 `dead` 后再处理后序。`status='event'` 不参与该顺序。通道关闭或没有可通知目标时插入即为 `skipped`。进程关闭时先停止评估和领取，再等待在途请求。不回补本版之前的历史事件。
+- `POST /api/alerts/test`（会话 + CSRF，10 次/小时）→ `{ok:true,delivered:boolean,message?}`；未配置 webhook 返回 200 `{ok:false,delivered:false,message:"未配置 webhook URL"}`。测试仍直接投递，不写投递箱。
 - Webhook 请求体 `{source,version,event,severity,status,title,message,details,at}`；可选 HMAC 头 `x-antifieldcloud-signature: sha256=<hex>`；10s 超时、最多 3 次尝试。
 - 告警条件：磁盘、温度、内存（默认 90%）、服务、备份超期、pending 备份、备份密钥包、MC、欠压（health probe JSON）、世界备份/世界拉取/恢复演练超期与异地副本超期（`offsite_overdue`）；同状态去重/冷却，恢复时发 resolved。`status` 可能为 `unknown`（连续 3 次数据源不可用后降级并产生一次事件）；`alert_events` 保留 90 天。
   `config` 含 `offsiteMaxAgeHours`（小时，0 表示关闭；状态文件缺失/未配置时该条件不进入列表，不误报）；`status` 字段另含世界备份/拉取/演练阈值。
-- 外部事件告警（v0.8.0，mcbot）：上游 `alert` 事件由服务端映射为 `status='event'` 写入 `alert_events`，**不写 `alert_state`、不参与 firing/resolved 状态机、不产生恢复通知**；`severity`：已知类型（low_health/chest_full/defense_retreat → warning，task_failed/disconnected → critical），未知类型上游 `severity='error'` 为 critical，否则 warning；`event` 名为 `mcbot_low_health`/`mcbot_task_failed`/`mcbot_disconnected`/`mcbot_chest_full`/`mcbot_defense_retreat`/`mcbot_alert`（未知），`details` 含 `source:"mcbot"`、`mcbotEventId`、`mcbotType` 与清洗后的上游 details（深度≤2、键≤20、数组≤20、字符串≤300）。写入后异步复用 webhook 投递与 Bot 通知，不阻塞请求；`ALERTS_ENABLED=false` 时不写库/不投递。schema v19 起 mcbot 告警带 `dedupe_key=mcbot:<bootId>:<eventId>`（各段去空白、拒绝控制字符、截断后拼接）。同一键再次写入返回已有 id，不新增行、不重复 webhook、不重复入队。空键或纯空白键视为无键，各自插入且 `dedupe_key` 为 NULL。
+- 外部事件告警（v0.8.0，mcbot）：上游 `alert` 事件由服务端映射为 `status='event'` 写入 `alert_events`，**不写 `alert_state`、不参与 firing/resolved 状态机、不产生恢复通知**；`severity`：已知类型（low_health/chest_full/defense_retreat → warning，task_failed/disconnected → critical），未知类型上游 `severity='error'` 为 critical，否则 warning；`event` 名为 `mcbot_low_health`/`mcbot_task_failed`/`mcbot_disconnected`/`mcbot_chest_full`/`mcbot_defense_retreat`/`mcbot_alert`（未知），`details` 含 `source:"mcbot"`、`mcbotEventId`、`mcbotType` 与清洗后的上游 details（深度≤2、键≤20、数组≤20、字符串≤300）。写入与两条通道任务在同一事务，随后由投递箱处理，不阻塞请求；`ALERTS_ENABLED=false` 时不写库/不投递。schema v19 起 mcbot 告警带 `dedupe_key=mcbot:<bootId>:<eventId>`（各段去空白、拒绝控制字符、截断后拼接）。同一键再次写入返回已有 id，不新增行、不重复 webhook、不重复入队。空键或纯空白键视为无键，各自插入且 `dedupe_key` 为 NULL。
 - 服务条件在 `MCBOT_ENABLED=true` 时包含 mcbot。systemd 为 `inactive`/`failed`，或轮询快照 `enabled && stale`，都记为 inactive 并走既有 `service_down`。单次失败且 `stale=false` 不触发。恢复后写 `resolved`，`alert_state` 回到 `ok`。这不把上游 `alert` 升格为 firing。
 
 ## 11. 备份管理 / 文件级恢复
@@ -508,7 +510,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ### 告警与审计筛选
 
-- `GET /api/alerts?limit=20&offset=0&event=&status=&severity=` → `{items,total,state,config}`；`status` 取值 `firing|resolved|unknown|event`（`event` 为 mcbot 等外部服务的事件记录），`event` 为条件名，全部参数可选。
+- `GET /api/alerts?limit=20&offset=0&event=&status=&severity=` → `{items,total,state,config}`；`status` 取值 `firing|resolved|unknown|event`（`event` 为 mcbot 等外部服务的事件记录），`event` 为条件名，全部参数可选。`items[].deliveries` 见 §10，分页与旧字段不变。
 - `GET /api/audit?limit=50&offset=0&action=&q=&from=&to=` → `{items,total}`；`q` 对 action/target/ip 做转义 LIKE 搜索；`from/to` 为 ISO 时间；参数可选。
 
 ### 备份状态对象
@@ -741,7 +743,7 @@ ChatbotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|proje
 
 ## 15. mcbot Bot 对接（v0.8.0 引入；v1.0.2 自主模式；v1.0.3 环境/动作工具；v1.0.5 在线模式/目标/自动生存；v1.0.6 寻路状态；v1.0.7 成功时间与兜底原因；默认关闭）
 
-mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。目标上游为 mcbot **v1.0.8**（契约 v2，兼容已声明契约 v1 的旧版本）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
+mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。目标上游为 mcbot **v1.0.9**（契约 v2，兼容已声明契约 v1 的旧版本）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，v1.0.9 增加可空 `eventGap`，旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
 
 ### 通用语义
 
@@ -766,12 +768,13 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
   "sayEnabled": true,
   "alertsEnabled": true,
   "eventsSupported": true,
-  "version": "1.0.8",
+  "version": "1.0.9",
   "contractVersion": 2,
   "lastPollAt": "2026-10-27T09:00:00.000Z",
   "lastSuccessAt": "2026-10-27T09:00:00.000Z",
   "error": null,
-  "status": { "version": "1.0.8", "contractVersion": 2, "uptimeSec": 123, "state": "connected", "minecraft": { "connected": true, "username": "lofii" }, "player": { "health": 20, "food": 20 }, "server": { "reachable": true, "online": 1, "max": 6 }, "task": { "enabled": true, "active": false, "name": null, "state": "idle", "pendingResume": null, "queue": [] }, "admin": { "rcon": true, "tps": { "one": 19.9, "five": 19.8, "fifteen": 19.7 } } },
+  "eventGap": null,
+  "status": { "version": "1.0.9", "contractVersion": 2, "uptimeSec": 123, "state": "connected", "minecraft": { "connected": true, "username": "lofii" }, "player": { "health": 20, "food": 20 }, "server": { "reachable": true, "online": 1, "max": 6 }, "task": { "enabled": true, "active": false, "name": null, "state": "idle", "pendingResume": null, "queue": [] }, "admin": { "rcon": true, "tps": { "one": 19.9, "five": 19.8, "fifteen": 19.7 } } },
   "events": [ { "id": "036e732d-10", "type": "presence", "ts": "2026-10-27T08:59:58.000Z", "data": {} } ]
 }
 ```
@@ -783,6 +786,7 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 - `error`：稳定错误码（如 `mcbot_unavailable`/`mcbot_auth_failed`/`mcbot_cursor_failed`/`mcbot_upstream_error`），不是上游原文。**`reachable=true` 时 `error` 仍可能非空**（如 `/status` 成功但 `/events/recent` 失败或游标写库失败），前端必须展示可见警告，不得把“可达”等同于“事件/告警正常”。
 - `lastPollAt` 为最近一次轮询**尝试**时间，失败也会更新。`lastSuccessAt` 只在 `/healthz` 契约与 `/status` 核心字段通过校验后更新；从未成功为 `null`。面板过期文案用 `lastSuccessAt`，null 时显示“尚无成功轮询”。
 - `navigation` 可选。v1.0.7 起含 `lastFallbackReason`（最近一次兜底原因，≤160 字符）；无兜底或旧版缺字段时为 `null`。该短文本只给面板，不进入自主提示。
+- `eventGap`：同一 `bootId` 下，最早可用事件序号超过已确认游标加 1 时为 `{bootId,fromSeq,toSeq,discoveredAt}`。只记录一次，`discoveredAt` 保持首次发现时间，游标越过空洞后仍保留。写入独立 meta `mcbot.event_gap`。首次连接、`bootId` 变化和单纯网络失败不新记缺口；`bootId` 变化不清掉已有缺口。集成关闭时为 `null`。契约版本不变。
 - 游标/告警重试：`recordExternal` 写告警失败时游标停在上一条**已完整处理**的事件，下一轮重新处理失败事件。同一 `dedupe_key` 再次写入视为已处理，游标可以前进，且不再通知。`MCBOT_ALERTS_ENABLED=false` 时仍推进游标但不写告警。
 
 ### GET /api/mcbot/history

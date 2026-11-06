@@ -7,7 +7,7 @@
 > 归档与密钥包只允许落在 Pi 本机、PC 备份目录或离线介质，不上传公开网盘；**Web 不持任何私钥**，加密归档只能在 PC 用
 > 离线私钥解密/校验/恢复；恢复演练由 `scripts/drill.ps1` 自动校验。
 
-v1.0.8 演练按 manifest 验证覆盖水位，允许重叠，发现空洞或水位倒退即失败。解包后对账目标 SQLite 中全部文件，校验大小与已有 SHA-256，历史无哈希项单独计数。链上曾缺失而后来补齐的文件可用于 Web 恢复。使用 `-IncludeWorld -RequireWorld` 在临时目录校验世界解包；运行报告可用 `-ReportRoot` 指定单独目录。
+演练按 manifest 验证覆盖水位，允许重叠，发现空洞或水位倒退即失败。解包后对账目标 SQLite 中全部文件，校验大小与已有 SHA-256，历史无哈希项单独计数。链上曾缺失而后来补齐的文件可用于 Web 恢复。使用 `-IncludeWorld -RequireWorld` 在临时目录校验世界解包；运行报告可用 `-ReportRoot` 指定单独目录。`-RestoreOutputDir` 只在链、目标库和引用文件全部通过后，把 `db.sqlite` 与引用文件发布到尚不存在的目录。世界解包与该目录相互独立。
 
 ## 1. 策略
 
@@ -24,8 +24,7 @@ v1.0.8 演练按 manifest 验证覆盖水位，允许重叠，发现空洞或水
   PC 未确认前 Pi 不删除 pending 归档，网络/PC 故障不会造成“归档已删但未备份”的数据丢失。
 - **应用归档频率**：每日一次；建议的“全量”条件为“无已确认全量或最近全量超过 7 天”，由 `--pending` 的
   `needsFull/recommendedMode` 计算，Windows 任务按推荐模式执行（错过的周日会在下一轮补做全量）。
-- **增量依据**：文件内容不可变，只备份 `created_at > 上次已确认备份时间` 的新增文件；重命名/移动只改元数据，由 DB 快照覆盖。
-  存在未确认 pending 时，增量起点取最新 pending 时间，避免重复打包；上次缺失（`skippedMissing`）的文件即使早于水位也强制纳入下次选择。
+- **增量依据**：从生成归档所用的同一 SQLite 快照读取全部 `kind='file'`，包括回收站和笔记附件。覆盖集是最近一条有效全量链的 `manifest_json.files`。已确认归档以 SHA 校验后的记录为准，Pi 上的副本可以已经清掉。参与该链的 pending 必须仍在磁盘上，大小与记录一致；加密包还要有有效 sidecar。pending 损坏或缺失时停止生成并留下证据，不删除该 pending。没有可用基线、链上出现已删除空洞，或 manifest 无法证明覆盖时改为新全量；这些检查通过后才允许 `--full`。已找回的 `skippedMissing` 会再次进入增量。归档时间取真实 UTC 与最近一份本机归档时间加 1 毫秒的较大值。时钟告警仍用真实 UTC。`import` 归档不参与这条时间。重命名/移动只改元数据，由 DB 快照覆盖。
 - **空间保护**：生成前检查剩余空间（本次估算 + 现有 pending + 仍占盘的已确认归档 + 孤儿归档 + 2 GiB），不足则返回 JSON 错误且不生成归档；
   **开启整包加密时本次估算按 2× 明文**（明文 tar 与密文峰值同时存在）+ 上述余量；世界备份按 `1.5 × 世界目录体积` 预检。
 - **完整性**：归档 SHA-256 写入 DB 与 PC 的 `.sha256` 旁文件（**加密归档的 `.sha256` 始终表示密文 SHA-256**）；`--ack` 会再次校验 Pi 上文件；PC 下载后校验再原子改名。
@@ -338,7 +337,21 @@ cd "$env:USERPROFILE\projects\AntifieldComplexx"
 
 ### 8.1 应用数据（整库离线恢复）
 
-1. **在 PC 上校验归档完整性**（PowerShell）：
+先在 PC 生成并核对恢复目录，再由管理员做生产切换。世界归档不在这一步解包，见 §8.2。
+
+1. **生成恢复目录**（PowerShell，目录必须尚不存在，父目录必须已存在）：
+
+```powershell
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -RestoreOutputDir "$env:USERPROFILE\AntifieldCloudBackups\restore-candidate" -ExpectedSchemaVersion 20
+```
+
+加密链另加 `-AgeIdentityPath`，解密只在这台持有离线私钥的 PC 上进行。报告 `errors` 为空且退出码为 0 后，该目录包含 `db.sqlite` 和目标库引用的 `files/<id 前两位>/<id>`。失败不创建目录，报告和原归档保留。目录已存在时报告 `restore_output_exists`，父目录不存在时报告 `restore_output_parent_missing`，两种情况都不改动已有内容。复制失败会删掉本次目标目录并记 `restore_output_failed`。
+
+2. **核对恢复目录**：确认 `db.sqlite` 可打开，抽查 `files/` 中的目标文件，阅读同一次演练的 `report.json`。这一步通过后再停生产服务。
+
+3. **生产切换**仍由管理员执行。停应用，把现有 `/var/lib/antifieldcloud` 改名保留，再把已核对的 `db.sqlite` 与 `files/` 放到新数据目录并修正属主后启动。下面的归档校验与 Pi 上叠加解包是同一切换的手工路径；使用恢复目录时，以目录里的 `db.sqlite` 与 `files/` 为复制源，不再在 Pi 上从 tar 里另选一份数据库。
+
+4. **在 PC 上校验归档完整性**（PowerShell）：
 
 ```powershell
 $root = "$env:USERPROFILE\AntifieldCloudBackups"
@@ -347,14 +360,14 @@ $expected = (Get-Content "$($latest.FullName).sha256").Split(' ')[0]
 if ((Get-FileHash -Algorithm SHA256 $latest.FullName).Hash.ToLower() -ne $expected) { throw "归档校验失败" }
 ```
 
-2. **把“最近一次全量 + 其后的全部增量”上传到 Pi**（按文件名时间排序）：
+5. **把“最近一次全量 + 其后的全部增量”上传到 Pi**（按文件名时间排序；若已采用恢复目录，改为上传该目录）：
 
 ```powershell
 scp "$env:USERPROFILE\AntifieldCloudBackups\weekly\<日期>\<full>.tar.gz" antifield@192.0.2.10:/tmp/
 scp "$env:USERPROFILE\AntifieldCloudBackups\daily\<日期>\<inc>.tar.gz" antifield@192.0.2.10:/tmp/
 ```
 
-3. **Pi 上解包并选择最新 DB**：
+6. **Pi 上解包并选择最新 DB**（恢复目录路径改为复制 `db.sqlite` 与 `files/`）：
 
 ```bash
 sudo systemctl stop antifieldcloud
@@ -494,8 +507,7 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 
 ### 本轮明确不修 / 已知残留（DR 系列）
 
-- **DR-1（时钟回拨/同毫秒）**：增量依赖 `created_at > 上次水位`；系统时钟回拨或同一毫秒内的写入仍可能漏备。
-  `--prepare` 会对“文件 `created_at` 晚于当前时间/水位倒退”写 `warnings` 与 `clockSkew` 状态，但不会自动修正；依赖 NTP 正常 + 每周全量兜底。
+- **DR-1（时钟回拨/同毫秒）**：增量按最近有效全量链的文件清单选择，同毫秒写入会进入下一次增量。归档时间不早于最近一份本机归档。`--prepare` 仍用真实 UTC 对“文件 `created_at` 晚于当前时间/水位倒退”写 `warnings` 与 `clockSkew`，不拿抬高后的归档时间判断回拨。无法证明覆盖时改为新全量。
 - **DR-7（导入归档无删除/保留策略）**：已由 `BACKUP_IMPORT_RETENTION_DAYS` 控制；活动恢复计划引用的归档不会删除。
 - **DR-22（告警跨周期不重投）**：持续 firing 按 `ALERT_REPEAT_HOURS`（默认 24，0=关闭）重发 webhook，状态仍为 firing。
 - **DR-23（锁心跳）**：`.backup.lock` 持有期间每 30s 刷新 mtime，超过 1 小时才按陈旧锁接管。

@@ -5,8 +5,10 @@
  * - 旧单阶段模式必须显式 `--legacy`（deprecated，仅排障用），无动作参数会直接报错。
  * - 输出附带 backups 目录中无 DB 记录的孤儿归档；只报告，不自动删除敏感数据。
  *
- * 一致性：所有文件内容不可变，增量只取 `created_at > 上次已确认备份时间` 的新增文件；
- * 重命名/移动只改元数据，由 DB 快照覆盖。
+ * 一致性：文件内容不可变。增量以最近一条有效全量链的 manifest.files 为覆盖依据，
+ * 打包尚未覆盖的全部 kind=file（含回收站与笔记附件），并补入已找回的缺失文件。
+ * 已确认归档以 SHA 校验后的记录为准，允许本机副本已被拉取清理；参与链的 pending
+ * 必须仍在本机、大小与记录一致，加密包还要有有效 sidecar。重命名/移动只改元数据。
  *
  * 安全边界：归档含用户/TOTP/会话与文件内容，落盘权限 0640；DB 快照与临时清单 0600；
  * pending 归档在 PC 确认前不删除；已确认归档最多保留 2 个。
@@ -19,6 +21,7 @@ import {
   chmodSync,
   createReadStream,
   existsSync,
+  readFileSync,
   mkdirSync,
   readdirSync,
   renameSync,
@@ -36,6 +39,8 @@ import { getMeta, openDatabase, setMeta, transaction } from '../db.ts'
 import { audit } from '../auth/audit.ts'
 import { acquireLock, releaseLock } from './backup-lock.ts'
 import {
+  AGE_RECIPIENT_PATTERN,
+  ARCHIVE_SIDECAR_SCHEMA,
   archiveSidecarName,
   assertAgeBinary,
   buildArchiveSidecar,
@@ -213,14 +218,6 @@ function sha256File(path: string): Promise<string> {
     stream.on('error', reject)
     stream.on('end', () => resolvePromise(hash.digest('hex')))
   })
-}
-
-function maxTimestamp(...values: Array<string | null | undefined>): string | null {
-  let max: string | null = null
-  for (const value of values) {
-    if (value && (max === null || value > max)) max = value
-  }
-  return max
 }
 
 function errorMessage(error: unknown): string {
@@ -465,9 +462,165 @@ function cleanupAbandonedPlainTemps(backupsDir: string, maxAgeMs = ABANDONED_PLA
   return removed
 }
 
+interface CoverageArchiveRow {
+  name: string
+  mode: ArchiveMode
+  created_at: string
+  sha256: string
+  size: number
+  acked_at: string | null
+  deleted_at: string | null
+  manifest_json: string | null
+}
+
+interface CoverageDecision {
+  mode: ArchiveMode
+  since: string | null
+  covered: Set<string>
+}
+
+/** 归档时间不得倒退到已有本机归档之前；时钟告警仍用真实 UTC。 */
+function archiveInstant(realNow: Date, latestCreatedAt: string | null): Date {
+  if (!latestCreatedAt) return realNow
+  const latestMs = Date.parse(latestCreatedAt)
+  if (!Number.isFinite(latestMs)) return realNow
+  const floor = new Date(latestMs + 1)
+  return floor.getTime() > realNow.getTime() ? floor : realNow
+}
+
+/** manifest.files 能逐条证明文件 ID 时返回覆盖集；旧 manifest 或缺字段时返回 null。 */
+function proveManifest(raw: string | null, mode: ArchiveMode): { files: Set<string>; since: string | null } | null {
+  if (!raw) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const record = parsed as Record<string, unknown>
+  if (!Array.isArray(record.files)) return null
+  const files = new Set<string>()
+  for (const entry of record.files) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
+    const id = (entry as Record<string, unknown>).id
+    if (typeof id !== 'string' || !id) return null
+    files.add(id)
+  }
+  if (mode === 'inc') {
+    if (typeof record.since !== 'string' || Number.isNaN(Date.parse(record.since))) return null
+    return { files, since: record.since }
+  }
+  return { files, since: null }
+}
+
+function sidecarMatches(path: string, row: CoverageArchiveRow): boolean {
+  try {
+    const text = readFileSync(path, 'utf8')
+    if (text.length > 65_536) return false
+    const parsed: unknown = JSON.parse(text)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false
+    const meta = parsed as Record<string, unknown>
+    return (
+      meta.schema === ARCHIVE_SIDECAR_SCHEMA &&
+      meta.name === row.name &&
+      meta.cipherSize === Number(row.size) &&
+      typeof meta.cipherSha256 === 'string' &&
+      meta.cipherSha256.toLowerCase() === row.sha256.toLowerCase() &&
+      typeof meta.plainSha256 === 'string' &&
+      /^[0-9a-fA-F]{64}$/.test(meta.plainSha256) &&
+      typeof meta.plainSize === 'number' &&
+      Number.isSafeInteger(meta.plainSize) &&
+      meta.plainSize >= 0 &&
+      typeof meta.recipient === 'string' &&
+      AGE_RECIPIENT_PATTERN.test(meta.recipient)
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 参与链的 pending 必须仍在本机。损坏或缺失时抛错并保留原归档，调用方不得生成新包。
+ * 已确认归档不要求本机副本仍在。
+ */
+function assertPendingUsable(rows: CoverageArchiveRow[], backupsDir: string): void {
+  for (const row of rows) {
+    if (row.acked_at) continue
+    const path = join(backupsDir, row.name)
+    const exists = existsSync(path)
+    let actualSize: number | null = null
+    if (exists) {
+      try {
+        const stats = statSync(path)
+        actualSize = stats.isFile() ? stats.size : null
+      } catch {
+        actualSize = null
+      }
+    }
+    const evidence: Record<string, unknown> = {
+      name: row.name,
+      expectedSize: Number(row.size),
+      actualSize,
+      exists: exists && actualSize !== null,
+    }
+    let reason = ''
+    if (!exists || actualSize === null) reason = 'missing'
+    else if (actualSize !== Number(row.size)) reason = 'size_mismatch'
+    else if (isEncryptedArchiveName(row.name)) {
+      const sidecarPath = join(backupsDir, archiveSidecarName(row.name))
+      const sidecarExists = existsSync(sidecarPath)
+      evidence.sidecar = sidecarExists ? archiveSidecarName(row.name) : null
+      if (!sidecarExists || !sidecarMatches(sidecarPath, row)) reason = sidecarExists ? 'sidecar_invalid' : 'sidecar_missing'
+    }
+    if (!reason) continue
+    evidence.reason = reason
+    throw new Error(
+      `pending 归档不可用，已停止生成：${row.name}。请管理员处置该归档后重跑。证据：${JSON.stringify(evidence)}`,
+    )
+  }
+}
+
+/**
+ * 决定本次是全量还是按覆盖集增量。
+ * 可用基线缺失、链上有删除空洞、增量 since 越水位，或 manifest 无法证明覆盖时改为全量。
+ */
+function resolveCoverage(db: DatabaseSync, backupsDir: string, forceFull: boolean): CoverageDecision {
+  const rows = db
+    .prepare(
+      `SELECT name, mode, created_at, sha256, size, acked_at, deleted_at, manifest_json
+       FROM backup_archives WHERE origin = 'pi' ORDER BY created_at ASC, name ASC`,
+    )
+    .all() as unknown as CoverageArchiveRow[]
+  const live = rows.filter((row) => !row.deleted_at)
+  let fullIndex = -1
+  for (let index = 0; index < live.length; index += 1) {
+    if (live[index]!.mode === 'full') fullIndex = index
+  }
+  const chain = fullIndex >= 0 ? live.slice(fullIndex) : live
+  assertPendingUsable(chain, backupsDir)
+  if (forceFull || fullIndex < 0) return { mode: 'full', since: null, covered: new Set() }
+  const full = chain[0]!
+  if (rows.some((row) => row.deleted_at && row.created_at > full.created_at)) {
+    return { mode: 'full', since: null, covered: new Set() }
+  }
+  const covered = new Set<string>()
+  let watermark = full.created_at
+  for (const row of chain) {
+    const proof = proveManifest(row.manifest_json, row.mode)
+    if (!proof) return { mode: 'full', since: null, covered: new Set() }
+    if (row.mode === 'inc' && (!proof.since || proof.since > watermark)) {
+      return { mode: 'full', since: null, covered: new Set() }
+    }
+    for (const id of proof.files) covered.add(id)
+    if (row.created_at > watermark) watermark = row.created_at
+  }
+  return { mode: 'inc', since: watermark, covered }
+}
+
 /**
  * 生成一个归档并写入 pending 记录，不推进 backup_state。
- * 增量起点取「上次已确认时间」与「最新 pending 时间」的较大者，避免 pending 未确认时重复打包。
+ * 增量打包最近一条有效全量链尚未覆盖的文件 ID；ack 成功后才推进确认状态。
  */
 async function createArchive(
   db: DatabaseSync,
@@ -476,9 +629,14 @@ async function createArchive(
   forceFull: boolean,
   legacy = false,
 ): Promise<ArchiveResult> {
-  const created = new Date()
+  const realNow = new Date()
+  const latestLocal = db
+    .prepare("SELECT MAX(created_at) AS created_at FROM backup_archives WHERE origin = 'pi'")
+    .get() as { created_at: string | null }
+  const created = archiveInstant(realNow, latestLocal?.created_at ?? null)
   const stamp = compactTimestamp(created)
   const createdAt = created.toISOString()
+  const realIso = realNow.toISOString()
   const dbSnapshotPath = join(backupsDir, `db-${stamp}.sqlite`)
   const manifestPath = join(backupsDir, `manifest-${stamp}.json`)
   const listPath = join(backupsDir, `.files-${stamp}.txt`)
@@ -521,11 +679,10 @@ async function createArchive(
     const ackedBytes = existingArchiveBytes(acked, backupsDir)
     const orphans = listOrphanArchives(db, backupsDir)
     const orphanBytes = orphans.reduce((sum, row) => sum + row.sizeBytes, 0)
-    const pendingStart = pending.length > 0 ? pending[pending.length - 1]!.created_at : null
     const previous = state?.last_backup_at ?? null
-    // 没有已确认历史且没有待拉取归档时才自动全量；已有 pending 全量时按增量继续。
-    const mode: ArchiveMode = forceFull || (!previous && pending.length === 0) ? 'full' : 'inc'
-    const since = mode === 'inc' ? maxTimestamp(previous, pendingStart) : null
+    const decision = resolveCoverage(snapshotDb, backupsDir, forceFull)
+    const mode = decision.mode
+    const since = decision.since
     // 归档名必须唯一：同一毫秒内重试时追加序号，避免覆盖未确认的 pending 归档。
     let archiveName = ''
     let archivePath = ''
@@ -546,21 +703,21 @@ async function createArchive(
     }
 
     const previousMissing = readMissingIds(snapshotDb)
-    const baseSelected = (
-      mode === 'full'
-        ? snapshotDb.prepare("SELECT id, size, created_at FROM files WHERE kind = 'file'").all()
-        : snapshotDb
-            .prepare("SELECT id, size, created_at FROM files WHERE kind = 'file' AND created_at > ?")
-            .all(since)
-    ) as unknown as FileEntry[]
-    // 上次缺失的文件即使早于水位也强制纳入本次选择：恢复后立即补入增量，避免水位越过永久漏备。
-    const selectedById = new Map(baseSelected.map((file) => [file.id, file]))
-    if (previousMissing.length > 0) {
-      const placeholders = previousMissing.map(() => '?').join(', ')
-      const recovered = snapshotDb
-        .prepare(`SELECT id, size, created_at FROM files WHERE id IN (${placeholders})`)
-        .all(...previousMissing) as unknown as FileEntry[]
-      for (const file of recovered) selectedById.set(file.id, file)
+    const allFiles = snapshotDb
+      .prepare("SELECT id, size, created_at FROM files WHERE kind = 'file'")
+      .all() as unknown as FileEntry[]
+    const selectedById = new Map(
+      (mode === 'full' ? allFiles : allFiles.filter((file) => !decision.covered.has(file.id))).map((file) => [
+        file.id,
+        file,
+      ]),
+    )
+    // 已找回的缺失文件即使已被某份 manifest 记为覆盖，也再次纳入，避免水位或旧清单漏备。
+    if (mode === 'inc' && previousMissing.length > 0) {
+      const wanted = new Set(previousMissing)
+      for (const file of allFiles) {
+        if (wanted.has(file.id)) selectedById.set(file.id, file)
+      }
     }
     const selected = [...selectedById.values()]
 
@@ -573,10 +730,10 @@ async function createArchive(
       if (existsSync(physicalPath)) files.push(file)
       else skippedMissing.push(file.id)
     }
-    // 时针回拨/未来时间戳检测：增量依赖 created_at > 上次水位，回拨会永久漏备。
+    // 时钟告警只看真实 UTC。归档名会把回拨后的时间抬到最近一份本机归档之后，不拿它判断回拨。
     const clockWarnings: string[] = []
-    const futureCount = files.filter((file) => file.created_at > createdAt).length
-    const watermarkRollback = Boolean(previous && previous > createdAt)
+    const futureCount = files.filter((file) => file.created_at > realIso).length
+    const watermarkRollback = Boolean(previous && previous > realIso)
     if (futureCount > 0) {
       clockWarnings.push(`${futureCount} 个文件 created_at 晚于当前时间，请检查系统时钟（NTP）`)
     }

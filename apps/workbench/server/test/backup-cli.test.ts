@@ -240,18 +240,20 @@ test('孤儿归档：--pending/--prepare 报告但不删除，且计入 orphanBy
 test('空间不足：prepare 失败且不生成 pending/归档', () => {
   const dir = tempDataDir()
   try {
-    // 先初始化 DB（不生成归档），再插入一个超大 pending Pi 归档行让空间预算失败
-    // （pendingBytes 计入预算，无需真的写大文件）。
+    // 先初始化 DB（不生成归档），再插入一条体积极大的文件行。
+    // 空间预算按记录大小计算，无需真的写大文件。
     const init = runBackup(dir, ['--pending'])
     assert.equal(init.status, 0)
     const dbPath = join(dir, 'db.sqlite')
     const rw = new DatabaseSync(dbPath)
     try {
       const now = new Date().toISOString()
+      mkdirSync(join(dir, 'files', 'hu'), { recursive: true })
+      writeFileSync(join(dir, 'files', 'hu', 'huge-file'), 'x')
       rw.prepare(
-        `INSERT INTO backup_archives (name, mode, created_at, sha256, size, file_count, pulled_at, acked_at, deleted_at, origin)
-         VALUES ('snapshot-huge-full.tar.gz', 'full', ?, ?, 1000000000000000, 1, NULL, NULL, NULL, 'pi')`,
-      ).run(now, '0'.repeat(64))
+        `INSERT INTO files (id, parent_id, name, kind, size, mime, sha256, storage_key, created_at, updated_at, deleted_at, deleted_parent_id)
+         VALUES ('huge-file', NULL, 'huge.bin', 'file', 1000000000000000, 'application/octet-stream', ?, 'huge-file', ?, ?, NULL, NULL)`,
+      ).run('3'.repeat(64), now, now)
     } finally {
       rw.close()
     }
@@ -260,7 +262,7 @@ test('空间不足：prepare 失败且不生成 pending/归档', () => {
     assert.notEqual(failed.status, 0)
     assert.equal(failed.json.ok, false)
     assert.match(String(failed.json.error), /磁盘空间不足/)
-    assert.equal(countPending(dir), 1, '失败不新增 pending（仅保留测试插入的超大行）')
+    assert.equal(countPending(dir), 0, '失败不新增 pending')
     const archiveCount = existsSync(join(dir, 'backups'))
       ? readdirSync(join(dir, 'backups')).filter((name) => name.endsWith('.tar.gz')).length
       : 0

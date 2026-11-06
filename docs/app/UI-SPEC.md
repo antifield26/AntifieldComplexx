@@ -230,6 +230,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 - Dashboard“告警”卡片：当前 active 条件、最近历史、webhook 状态、严重度中文标签。
 - 历史状态含 `firing/resolved/unknown/event`：`event` 显示“已记录”并使用中性色调，表示 mcbot 等外部服务的事件记录，**不当作活跃告警**；状态筛选含“已记录”；`mcbot_*` 事件名有中文映射（血量过低/任务失败/断线/箱子已满/防御撤退/告警）。
+- 事件带 `deliveries` 时，Webhook 与 QQ 各一行：完成分别显示「已送达」「入队处理完成」；`skipped` 显示「跳过」；`pending` 且 `attempts>0` 显示「待重试」，否则「待投递」；`dead` 显示「投递失败」并附脱敏原因。有投递详情时，`skipped` 不再显示旧的「通知发送失败」。`deliveries` 为 `null` 且存在 `deliveryError` 时仍显示「通知发送失败」。QQ 的实际发送结果在机器人管理页查看。本卡片只读，没有重投按钮。
 - Settings“监控告警”：只读阈值/检查间隔/webhook 是否配置/最近评估；“测试 Webhook”按钮（POST /api/alerts/test）。
 - 未配置 webhook 时仍显示面板告警，不阻塞。
 
@@ -469,6 +470,7 @@ mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbo
   - 等待首次轮询：`notice-muted`“正在等待 mcbot 首次轮询结果；轮询完成前状态可能为空，控制操作暂不可用。”
   - 不可达：`notice-warning`“无法连接 mcbot：<中文错误>。当前显示上次成功轮询的缓存数据，控制操作不可用。”
   - 数据过期：`notice-warning`“mcbot 数据已过期（上次成功轮询 …），请检查 mcbot 进程；新数据恢复前请勿依赖当前状态。”
+  - **事件缺口**：`eventGap` 非空时 `notice-warning`“mcbot 事件缺口：启动 <bootId> 缺少序号 <fromSeq>–<toSeq>（发现于 <相对时间>）。下方仍显示当前 Bot 状态。”该提示与当前状态同时可见，不替代状态卡。
   - **部分失败**：`notice-warning`“mcbot 状态可达，但事件流/告警游标异常：<中文错误>；事件流可能停止更新，控制仍可尝试。”——`reachable=true` 且 `error≠null` 时必须可见（v0.8.1），不得把“可达”当成“事件正常”。
   - 控制未启用：`notice-muted`“mcbot 控制未启用：仅展示状态、事件与历史，任务/移动/聊天操作已禁用。”（由 `mcbotControlEnabled` 驱动，不展示 env 名/Token）
 - 集成禁用（`mcbotEnabled=false`）：只显示 `notice-muted` 说明“mcbot 集成未启用（服务端 MCBOT_ENABLED=false）。启用后需要配置 mcbot 地址与 Token 并重启应用；本页不展示任何 Token、内部地址或凭据。”+“重新检测”按钮；不渲染任何数据/控制区。
@@ -537,7 +539,7 @@ mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbo
 ### 确认、降级与隐私
 
 - 二次确认：开始任务、停止/放弃任务、恢复任务、发送游戏内聊天均使用统一 `ConfirmDialog`（危险操作默认焦点“取消”，加载中禁止重复提交）。
-- 降级矩阵：禁用 → 仅说明；首次加载失败 → 卡片错误 + 重试；等待首次轮询 → 提示且控制禁用；不可达 → 缓存数据 + 警告 + 控制禁用；stale → 警告，时间用 `lastSuccessAt`，null 时为“尚无成功轮询”（不用失败轮询的 `lastPollAt`）；**可达但事件/游标失败 → 可见部分失败警告，控制仍可用但提示告警可能停更**；控制未启用 → 只读（聊天也禁用）。
+- 降级矩阵：禁用 → 仅说明，`eventGap` 为 null；首次加载失败 → 卡片错误 + 重试；等待首次轮询 → 提示且控制禁用；不可达 → 缓存数据 + 警告 + 控制禁用；stale → 警告，时间用 `lastSuccessAt`，null 时为“尚无成功轮询”（不用失败轮询的 `lastPollAt`）；**事件缺口 → 可见缺口区间，状态卡仍显示**；**可达但事件/游标失败 → 可见部分失败警告，控制仍可用但提示告警可能停更**；控制未启用 → 只读（聊天也禁用）。
 - 隐私与安全：不展示 mcbot URL/Token/内部路径/记忆正文；事件与聊天纯文本渲染；历史只显示白名单字段；所有控制按钮在 `mcbotControlEnabled=false` 时禁用；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符。
 - 历史错误码/错误提示使用中文映射（含 `mcbot_cursor_failed`/`mcbot_not_found`/`mcbot_history_disabled`），未知码原样显示；查表使用 own-property，不命中原型链。
 - 响应式/可访问性：390 px 下状态栅格与双列卡片纵向堆叠、不横向滚动；标签键盘可操作；图标按钮有 `aria-label`；表单 label 关联；错误 `role="alert"`；不引入第三方组件库，样式集中在 `web/src/styles/v08.css`。

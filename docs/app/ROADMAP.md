@@ -1,5 +1,10 @@
 # 路线图
 
+## v1.0.9（补丁，待生产验收）
+
+- 增量按清单覆盖；主机告警进入既有投递箱；告警列表只读展示投递详情；mcbot 事件缺口可见。schema 20、契约 v2 不变。
+- `drill.ps1` 可发布已校验的恢复目录。smoke 核对 Windows 计划任务的实际脚本。发布验收见 [ACCEPTANCE](ACCEPTANCE.md)。
+
 ## v1.0.8（补丁，2026-11-05 已部署）
 
 - 修复恢复链、上传原子性、外部告警投递、Chat 隔离和 mcbot 生命周期。schema 20、mcbot 契约 v2，Workbench 过渡兼容 v1。

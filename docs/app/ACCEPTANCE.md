@@ -1,6 +1,11 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.8（2026-11-05 已部署，运行 commit `2440758`、schema 20、mcbot 契约 v2、OpenCode v2.2.5）。
+> 当前版本 v1.0.9（待生产验收，schema 20、mcbot 契约 v2、OpenCode v2.2.5）。
+
+### v1.0.9（待生产验收）
+
+- 范围：增量按最近有效全量链的清单覆盖；主机告警进入既有投递箱；告警列表只读展示 `deliveries`；mcbot `eventGap`；`drill.ps1 -RestoreOutputDir`；smoke 核对计划任务 `-File` 与已安装脚本 SHA-256。schema 保持 20，契约保持 v2。
+- 生产路径、演练编号、Access smoke 汇总和 Tag 在验收通过后写入本节。
 
 ### v1.0.8 Patch（2026-11-05）
 
