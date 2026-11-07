@@ -90,7 +90,7 @@ export class MovementManager {
     movements.allowParkour = false
     movements.allowSprinting = true
     // PaperMC 高低差地形：允许安全的两格下落，避免一格台阶/坡道边缘被判定为不可达。
-    // 仍禁止挖掘、开门、跑酷、搭建与跨维度。
+    // pathfinder 仍不挖掘、不开门、不跑酷、不搭建。木门由确定性执行器打开，铁门只报告阻挡。
     movements.maxDropDown = 2
     movements.scafoldingBlocks = []
     bot.pathfinder.setMovements(movements)
@@ -333,10 +333,13 @@ export class MovementManager {
         const block = bot.blockAt(new Vec3(x, y, z), false)
         if (!block) return null
         const shapes = Array.isArray(block.shapes) ? block.shapes.map(shape => [...shape]) : []
+        const properties = typeof block.getProperties === 'function' ? block.getProperties() : null
+        const open = properties && typeof properties.open === 'boolean' ? properties.open : undefined
         return {
           name: block.name,
           boundingBox: block.boundingBox ?? 'empty',
-          shapes
+          shapes,
+          open
         }
       }
     }
@@ -374,7 +377,15 @@ export class MovementManager {
         return block ? block.name : null
       },
       forceGround: () => { if (!signal.aborted) this.refreshGround(bot) },
-      getControlState: control => bot.getControlState(control)
+      getControlState: control => bot.getControlState(control),
+      blockAt: (x, y, z) => this.navWorld(bot).blockAt(x, y, z),
+      activatePassage: async (x, y, z) => {
+        if (signal.aborted) return
+        const block = bot.blockAt(new Vec3(x, y, z), false)
+        if (!block) return
+        await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true)
+        await bot.activateBlock(block)
+      }
     }
   }
 

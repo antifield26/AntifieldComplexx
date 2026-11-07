@@ -23,6 +23,7 @@ import { runExplore } from './explore.ts'
 import { runClearing } from './clearing.ts'
 import { FOREST_SPECIES } from './resources.ts'
 import { countItem, countFood, findItem, isFood, isKeptItem } from './inventory.ts'
+import { chooseFoodReflex, droppedItemName, FOOD_PICKUP_RADIUS } from './food-reflex.ts'
 import { TaskStore, type PersistedQueueTask, type PersistedTask } from './store.ts'
 import {
   requireBot,
@@ -171,6 +172,11 @@ export class TaskManager implements TaskController {
   private persistTimer: NodeJS.Timeout | null = null
   private restocking = false
   private survivalBusy = false
+  private foodTriedPickup = false
+  private foodTriedChest = false
+  private foodTriedTask = false
+  private foodTaskAt = 0
+  private nextFoodTask: 'farming' | 'fishing' = 'farming'
 
   constructor (deps: TaskManagerDeps) {
     this.deps = deps
@@ -1035,8 +1041,8 @@ export class TaskManager implements TaskController {
   }
 
   /**
-   * 空闲自动生存：有敌对生物时先使用 Defender 白名单自保，然后进食/换装。
-   * 只在无任务/队列/待恢复时执行，不抢占任务、不移动容器物品；补货仍由 autoRestock 独立周期处理。
+   * 空闲自动生存：有敌对生物时先自保，然后按背包、掉落、食物箱、种田或钓鱼找食，再换装。
+   * 只在无任务/队列/待恢复时执行。找到食物前不会另开熔炉或打猎。
    */
   async autoSurvival (): Promise<void> {
     const { config } = this.deps
@@ -1061,22 +1067,15 @@ export class TaskManager implements TaskController {
         return
       }
       if (bot.food < config.autoEatBelow) {
-        const food = bot.inventory.items().find(item => isFood(bot, item))
-        if (food) {
-          await bot.equip(food, 'hand')
-          await bot.consume()
-          this.deps.state.setSurvival({ lastAction: `eat:${food.name}` })
-          this.deps.audit.append({
-            event: 'auto_survival',
-            source: 'task',
-            actor: 'lofii',
-            action: 'eat',
-            result: 'accepted',
-            details: { item: food.name }
-          })
+        const action = await this.seekFood(bot)
+        if (action) {
+          this.deps.state.setSurvival({ lastAction: action })
           return
         }
-        this.deps.state.setSurvival({ lastAction: 'eat:none', lastError: 'no food in inventory' })
+      } else {
+        this.foodTriedPickup = false
+        this.foodTriedChest = false
+        this.foodTriedTask = false
       }
       const armor = this.bestArmorUpgrade(bot)
       if (armor) {
@@ -1101,6 +1100,108 @@ export class TaskManager implements TaskController {
     } finally {
       this.survivalBusy = false
     }
+  }
+
+  /**
+   * 饥饿时每轮只做一步：吃背包、捡附近食物、去食物箱，仍没有则排队种田或钓鱼。
+   * 返回 null 表示这一轮没有动作，调用方可以继续换装。
+   */
+  private async seekFood (bot: Bot): Promise<string | null> {
+    const { config } = this.deps
+    if (this.foodTriedTask && Date.now() - this.foodTaskAt >= 60_000) this.foodTriedTask = false
+    const drops = this.nearbyFoodDrops(bot)
+    const step = chooseFoodReflex({
+      hungry: bot.food < config.autoEatBelow,
+      inventoryFood: countFood(bot),
+      nearbyDrops: drops.length,
+      triedPickup: this.foodTriedPickup,
+      triedChest: this.foodTriedChest,
+      triedTask: this.foodTriedTask
+    })
+    if (step === 'done') {
+      this.deps.state.setSurvival({ lastAction: 'eat:none', lastError: 'no food in inventory' })
+      return null
+    }
+    if (step === 'eat') {
+      const food = bot.inventory.items().find(item => isFood(bot, item))
+      if (!food) return null
+      await bot.equip(food, 'hand')
+      await bot.consume()
+      this.deps.audit.append({
+        event: 'auto_survival',
+        source: 'task',
+        actor: 'lofii',
+        action: 'eat',
+        result: 'accepted',
+        details: { item: food.name }
+      })
+      return `eat:${food.name}`
+    }
+    if (step === 'pickup') {
+      this.foodTriedPickup = true
+      const drop = drops[0]
+      if (!drop) return 'pickup:none'
+      try {
+        await this.deps.movement.goNearPoint(drop.x, drop.y, drop.z, 1, 6000, true)
+      } catch (error) {
+        this.logger.warn('auto survival food pickup failed', {
+          error: error instanceof Error ? error.message : String(error)
+        })
+      }
+      return 'pickup'
+    }
+    if (step === 'chest') {
+      this.foodTriedChest = true
+      const fake = this.createActive('fishing', randomUUID(), Date.now())
+      try {
+        await withdrawSupplies(this.context(fake, false), [{ name: 'food', count: 8 }])
+        this.deps.audit.append({
+          event: 'auto_survival',
+          source: 'task',
+          actor: 'lofii',
+          action: 'chest',
+          result: 'accepted',
+          details: {}
+        })
+      } catch (error) {
+        if (error instanceof TaskStopError) throw error
+        const message = error instanceof Error ? error.message : String(error)
+        this.logger.warn('auto survival food chest failed', { error: message })
+        this.deps.state.setSurvival({ lastError: message })
+      }
+      return 'chest'
+    }
+    this.foodTriedTask = true
+    this.foodTaskAt = Date.now()
+    if (!config.taskEnabled) return 'task:disabled'
+    const name = this.nextFoodTask
+    this.nextFoodTask = name === 'farming' ? 'fishing' : 'farming'
+    const result = await this.start(name, 'survival', 'http_control')
+    this.deps.audit.append({
+      event: 'auto_survival',
+      source: 'task',
+      actor: 'lofii',
+      action: name,
+      result: result.status === 'rejected' ? 'denied' : 'accepted',
+      details: { status: result.status }
+    })
+    return `task:${name}`
+  }
+
+  private nearbyFoodDrops (bot: Bot): Array<{ x: number, y: number, z: number }> {
+    const self = bot.entity
+    if (!self) return []
+    const found: Array<{ x: number, y: number, z: number, distance: number }> = []
+    for (const entity of Object.values(bot.entities)) {
+      if (!entity) continue
+      const name = droppedItemName(entity as never)
+      if (!name || !isFood(bot, { name } as never)) continue
+      const distance = self.position.distanceTo(entity.position)
+      if (distance > FOOD_PICKUP_RADIUS) continue
+      found.push({ x: entity.position.x, y: entity.position.y, z: entity.position.z, distance })
+    }
+    found.sort((left, right) => left.distance - right.distance)
+    return found
   }
 
   private bestArmorUpgrade (bot: Bot): { item: import('prismarine-item').Item, destination: 'head' | 'torso' | 'legs' | 'feet' } | null {

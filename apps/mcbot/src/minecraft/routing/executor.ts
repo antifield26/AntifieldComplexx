@@ -1,9 +1,11 @@
 /**
  * 路点执行器：按规划器输出的格子中心逐段行走，1 格抬高时显式起跳。
- * 安全边界：只操作移动控制键；不挖掘、不放置、不传送；取消/超时/停滞立即释放控制。
+ * 木门、栅栏门和木活板门在通过前打开一次；已经打开的不再操作。铁门和铁活板门停下并报告。
+ * 安全边界：不挖掘、不放置、不传送、不强制关门；取消/超时/停滞立即释放控制。
  */
 import { Vec3 } from 'vec3'
-import type { NavVector, RouteExecutionResult } from './types.ts'
+import { isIronPassage, isWoodenPassage } from './sampler.ts'
+import type { NavBlock, NavVector, RouteExecutionResult } from './types.ts'
 
 export interface ExecutorBot {
   entity: { position: Vec3 } | null
@@ -17,6 +19,10 @@ export interface ExecutorBot {
   blockAtFeet?: () => string | null
   forceGround?: () => void
   getControlState?: (control: 'forward' | 'jump' | 'sprint' | 'sneak') => boolean
+  /** 缺省时不检查门。返回 null 表示未加载，执行器把它当成空气。 */
+  blockAt?: (x: number, y: number, z: number) => NavBlock | null
+  /** 只对尚未打开的木制通道调用一次。 */
+  activatePassage?: (x: number, y: number, z: number) => Promise<void>
 }
 
 export interface ExecutorOptions {
@@ -63,8 +69,21 @@ function sleep (ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+/**
+ * 同一列只处理一次：铁门优先报告；木门只打开最下面那一格，避免上下两格连点把刚打开的门再关上。
+ */
+export function passageColumn (feet: NavBlock | null, head: NavBlock | null): 'iron' | 'clear' | 'feet' | 'head' {
+  if ((feet && isIronPassage(feet.name)) || (head && isIronPassage(head.name))) return 'iron'
+  if (feet && isWoodenPassage(feet.name) && feet.open !== true) return 'feet'
+  if (head && isWoodenPassage(head.name) && head.open !== true) return 'head'
+  return 'clear'
+}
+
 export class RouteExecutor {
+  private readonly openedColumns = new Set<string>()
+
   async run (bot: ExecutorBot, waypoints: NavVector[], options: ExecutorOptions): Promise<RouteExecutionResult> {
+    this.openedColumns.clear()
     if (waypoints.length === 0) return { status: 'arrived', reason: null }
     const perWaypointMs = Math.max(800, options.perWaypointMs ?? 2500)
     const deadline = Date.now() + Math.max(3000, options.totalMs ?? 25000)
@@ -72,6 +91,8 @@ export class RouteExecutor {
     let lastMovedAt = Date.now()
     try {
       for (const waypoint of waypoints) {
+        const blocked = await this.clearPassage(bot, waypoint)
+        if (blocked) return { status: 'stuck', reason: 'iron_door' }
         const target = new Vec3(waypoint.x + 0.5, waypoint.y, waypoint.z + 0.5)
         const waypointDeadline = Math.min(deadline, Date.now() + perWaypointMs)
         let recovered = false
@@ -168,5 +189,32 @@ export class RouteExecutor {
         // 清理失败不应掩盖导航结果
       }
     }
+  }
+
+  /** 检查脚下和路点所在列。返回 true 表示铁门挡住，调用方停止而不破坏方块。 */
+  private async clearPassage (bot: ExecutorBot, waypoint: NavVector): Promise<boolean> {
+    if (!bot.blockAt) return false
+    const columns: NavVector[] = [waypoint]
+    const position = bot.entity?.position
+    if (position) {
+      columns.push({ x: Math.floor(position.x), y: Math.floor(position.y), z: Math.floor(position.z) })
+    }
+    const seen = new Set<string>()
+    for (const column of columns) {
+      const key = `${column.x},${column.y},${column.z}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const feet = bot.blockAt(column.x, column.y, column.z)
+      const head = bot.blockAt(column.x, column.y + 1, column.z)
+      const decision = passageColumn(feet, head)
+      if (decision === 'iron') return true
+      if (decision === 'clear' || !bot.activatePassage) continue
+      const columnKey = `${column.x},${column.z}`
+      if (this.openedColumns.has(columnKey)) continue
+      this.openedColumns.add(columnKey)
+      const y = column.y + (decision === 'head' ? 1 : 0)
+      await bot.activatePassage(column.x, y, column.z)
+    }
+    return false
   }
 }

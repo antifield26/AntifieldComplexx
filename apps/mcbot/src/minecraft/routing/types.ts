@@ -14,6 +14,8 @@ export interface NavBlock {
   boundingBox: string
   /** 方块碰撞形状：每项为 [minX,minY,minZ,maxX,maxY,maxZ]。 */
   shapes: number[][]
+  /** 门、栅栏门、活板门的打开状态。缺省表示未知，执行器只在明确打开时跳过交互。 */
+  open?: boolean
 }
 
 export interface NavWorld {

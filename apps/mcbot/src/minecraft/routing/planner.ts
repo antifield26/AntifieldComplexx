@@ -2,7 +2,7 @@
  * 确定性 A*：在已有方块地形上寻路，支持 1 格抬高/2 格下落和台阶碰撞形状。
  * 安全边界：不修改世界；未知/未加载方块由 sampler 视为不可通行；超时或节点耗尽明确返回失败。
  */
-import { neighbors, startNode, targetNode, nodeKey } from './sampler.ts'
+import { ironPassageAdjacent, neighbors, startNode, targetNode, nodeKey } from './sampler.ts'
 import type { NavArea, NavVector, NavWorld, RoutePlan } from './types.ts'
 
 interface QueueNode {
@@ -70,6 +70,18 @@ class MinHeap {
   }
 }
 
+function betweenEnds (node: NavVector, start: NavVector, goal: NavVector): boolean {
+  const minX = Math.min(start.x, goal.x) - 1
+  const maxX = Math.max(start.x, goal.x) + 1
+  const minZ = Math.min(start.z, goal.z) - 1
+  const maxZ = Math.max(start.z, goal.z) + 1
+  const minY = Math.min(start.y, goal.y) - 2
+  const maxY = Math.max(start.y, goal.y) + 2
+  return node.x >= minX && node.x <= maxX &&
+    node.z >= minZ && node.z <= maxZ &&
+    node.y >= minY && node.y <= maxY
+}
+
 function heuristic (node: NavVector, goal: NavVector): number {
   return Math.hypot(node.x - goal.x, node.z - goal.z) + Math.abs(node.y - goal.y) * 0.8
 }
@@ -132,6 +144,7 @@ export function planRoute (
   best.set(startKey, 0)
   open.push({ node: start, g: 0, f: heuristic(start, goal) })
   let nodesVisited = 0
+  let sawIron = false
 
   while (open.size > 0) {
     if (Date.now() > deadline) {
@@ -160,6 +173,7 @@ export function planRoute (
       return { status: 'success', waypoints: compress(raw), nodesVisited, reason: null }
     }
 
+    if (betweenEnds(current.node, start, goal) && ironPassageAdjacent(world, current.node)) sawIron = true
     for (const neighbor of neighbors(world, area, current.node)) {
       const key = nodeKey(neighbor)
       if (visited.has(key)) continue
@@ -172,5 +186,5 @@ export function planRoute (
     }
   }
 
-  return { status: 'no_path', waypoints: [], nodesVisited, reason: 'exhausted' }
+  return { status: 'no_path', waypoints: [], nodesVisited, reason: sawIron ? 'iron_door' : 'exhausted' }
 }

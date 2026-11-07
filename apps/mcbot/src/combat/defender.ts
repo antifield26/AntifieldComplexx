@@ -1,3 +1,8 @@
+/**
+ * 任务中的近战反射：白名单内正在靠近的敌对生物用最好的武器或拳头处理。
+ * 不近战苦力怕、末影人和玩家。女巫不主动追，只有它已经在攻击时才还手。
+ * 不要求护甲或铁剑；低血、低饥饿和怪太多时仍撤退。
+ */
 import type { Bot } from 'mineflayer'
 import type { Vec3 as Vec3Type } from 'vec3'
 import type { AuditLogger } from '../audit.ts'
@@ -18,7 +23,35 @@ interface DefensibleEntity {
   health?: number
 }
 
-const FORBIDDEN_NAMES = new Set(['creeper', 'enderman', 'witch', 'player'])
+const NEVER_MELEE = new Set(['creeper', 'enderman', 'player'])
+const WEAPON_NAMES = [
+  'netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword',
+  'netherite_axe', 'diamond_axe', 'iron_axe', 'stone_axe', 'golden_axe', 'wooden_axe'
+]
+
+export function bestWeaponName (names: readonly string[]): string | null {
+  for (const name of WEAPON_NAMES) {
+    if (names.includes(name)) return name
+  }
+  return null
+}
+
+/** 女巫只有正在攻击 Bot 时才算威胁。显式标记优先，否则看它是否面向 Bot。 */
+export function mobIsAttacking (
+  mob: { attacking?: boolean, attackTarget?: number, yaw?: number, position: { x: number, z: number } },
+  bot: { id?: number, position: { x: number, z: number } }
+): boolean {
+  if (mob.attacking === true) return true
+  if (typeof mob.attackTarget === 'number' && bot.id !== undefined && mob.attackTarget === bot.id) return true
+  if (typeof mob.yaw !== 'number') return false
+  const dx = bot.position.x - mob.position.x
+  const dz = bot.position.z - mob.position.z
+  const distance = Math.hypot(dx, dz)
+  if (distance < 0.2 || distance > 8) return false
+  const lookX = -Math.sin(mob.yaw)
+  const lookZ = -Math.cos(mob.yaw)
+  return (lookX * dx + lookZ * dz) / distance > 0.85
+}
 const ARMOR = [
   { name: 'iron_helmet', slot: 'head' as const },
   { name: 'iron_chestplate', slot: 'torso' as const },
@@ -84,12 +117,7 @@ export class Defender implements TaskDefender {
         await this.retreat(ctx, '血量/食物偏低或怪太多')
         return 'retreat'
       }
-      const sword = findItem(bot, 'iron_sword')
-      if (!sword) {
-        await this.retreat(ctx, '没有铁剑')
-        return 'retreat'
-      }
-      await equipItem(bot, sword)
+      await this.equipBestWeapon(bot)
       await this.equipShield(bot)
       const target = threats[0]
       if (!target) return 'cleared'
@@ -118,16 +146,7 @@ export class Defender implements TaskDefender {
       while (Date.now() < until) {
         const live = bot.entities[target.id] as DefensibleEntity | undefined
         if (!live || (live.health !== undefined && live.health <= 0)) {
-          kills += 1
-          ctx.updateProgress({ mobsKilled: ctx.progress.mobsKilled + 1 })
-          this.deps.audit.append({
-            event: 'combat.kill',
-            source: 'combat',
-            actor: 'lofii',
-            action: target.name ?? 'hostile',
-            result: 'completed',
-            details: { kills, radius: this.deps.config.defenseRadius }
-          })
+          kills = this.noteKill(ctx, target.name, kills)
           break
         }
         if (bot.entity.position.distanceTo(live.position) > this.deps.config.defenseRadius + 1) break
@@ -139,6 +158,11 @@ export class Defender implements TaskDefender {
           await bot.lookAt(live.position.offset(0, 1.2, 0), true)
           const rawEntity = bot.entities[target.id]
           if (rawEntity) bot.attack(rawEntity)
+          const struck = bot.entities[target.id] as DefensibleEntity | undefined
+          if (!struck || (struck.health !== undefined && struck.health <= 0)) {
+            kills = this.noteKill(ctx, target.name, kills)
+            break
+          }
         } catch (error) {
           this.logger.warn('defense: attack failed', {
             target: target.name,
@@ -160,13 +184,30 @@ export class Defender implements TaskDefender {
     for (const entity of Object.values(bot.entities)) {
       if (!entity || entity === bot.entity) continue
       if (entity.type === 'player') continue
-      const name = (entity as { name?: string }).name
-      if (!name || FORBIDDEN_NAMES.has(name)) continue
-      if (!this.deps.config.defenseTargets.includes(name)) continue
+      const hostile = entity as DefensibleEntity & { attacking?: boolean, attackTarget?: number, yaw?: number }
+      if (typeof hostile.health === 'number' && hostile.health <= 0) continue
+      const name = hostile.name
+      if (!name || NEVER_MELEE.has(name)) continue
+      if (name === 'witch' && !mobIsAttacking(hostile, { id: bot.entity.id, position: bot.entity.position })) continue
+      if (name !== 'witch' && !this.deps.config.defenseTargets.includes(name)) continue
       if (bot.entity.position.distanceTo(entity.position) > this.deps.config.defenseRadius) continue
       result.push(entity as unknown as DefensibleEntity)
     }
     return result.sort((a, b) => bot.entity.position.distanceTo(a.position) - bot.entity.position.distanceTo(b.position))
+  }
+
+  private noteKill (ctx: TaskContext, name: string | undefined, kills: number): number {
+    const next = kills + 1
+    ctx.updateProgress({ mobsKilled: ctx.progress.mobsKilled + 1 })
+    this.deps.audit.append({
+      event: 'combat.kill',
+      source: 'combat',
+      actor: 'lofii',
+      action: name ?? 'hostile',
+      result: 'completed',
+      details: { kills: next, radius: this.deps.config.defenseRadius }
+    })
+    return next
   }
 
   private shouldRetreat (bot: Bot, threats: DefensibleEntity[]): boolean {
@@ -175,15 +216,20 @@ export class Defender implements TaskDefender {
     return threats.length > this.deps.config.defenseMaxHostiles
   }
 
-  private async equipGear (bot: Bot): Promise<void> {
-    const sword = findItem(bot, 'iron_sword')
-    if (sword) {
-      try {
-        await equipItem(bot, sword)
-      } catch {
-        // keep fighting with whatever is held
-      }
+  private async equipBestWeapon (bot: Bot): Promise<void> {
+    const name = bestWeaponName(bot.inventory.items().map(item => item.name))
+    if (!name) return
+    const weapon = findItem(bot, name)
+    if (!weapon) return
+    try {
+      await equipItem(bot, weapon)
+    } catch {
+      // 换装失败时继续用当前手上的东西或拳头
     }
+  }
+
+  private async equipGear (bot: Bot): Promise<void> {
+    await this.equipBestWeapon(bot)
     for (const armor of ARMOR) {
       if (bot.inventory.slots[this.slotFor(armor.slot)]?.name === armor.name) continue
       const item = findItem(bot, armor.name)

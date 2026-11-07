@@ -1,6 +1,7 @@
 /**
  * 导航采样器：把方块碰撞形状转换为“可站立节点/可走邻接”。
  * 安全边界：只读方块，不生成放置/挖掘动作；未知方块或未加载位置一律视为不可通行。
+ * 梯子和藤蔓只增加上下邻接。木门、栅栏门和木活板门可穿过，铁门与铁活板门保持阻挡。
  */
 import type { NavArea, NavBlock, NavVector, NavWorld } from './types.ts'
 
@@ -14,6 +15,13 @@ const NON_SOLID_NAMES = new Set([
   'dead_bush', 'torch', 'wall_torch', 'soul_torch', 'soul_wall_torch', 'rail',
   'powered_rail', 'detector_rail', 'activator_rail', 'redstone_wire', 'tripwire',
   'vine', 'ladder', 'snow'
+])
+
+const CLIMB_NAMES = new Set([
+  'ladder', 'vine',
+  'cave_vines', 'cave_vines_plant',
+  'weeping_vines', 'weeping_vines_plant',
+  'twisting_vines', 'twisting_vines_plant'
 ])
 
 export function isHazardBlock (block: NavBlock): boolean {
@@ -41,17 +49,40 @@ export function blockTop (block: NavBlock): number {
   return Math.max(0, Math.min(1, top))
 }
 
+export function isClimbable (block: NavBlock | null): boolean {
+  return Boolean(block && CLIMB_NAMES.has(block.name))
+}
+
+export function isIronPassage (name: string): boolean {
+  return name === 'iron_door' || name === 'iron_trapdoor'
+}
+
+export function isWoodenPassage (name: string): boolean {
+  if (isIronPassage(name)) return false
+  return name.endsWith('_door') || name.endsWith('_fence_gate') || name.endsWith('_trapdoor')
+}
+
 export function isPassable (block: NavBlock | null): boolean {
   if (!block) return false
   if (isHazardBlock(block)) return false
+  if (isIronPassage(block.name)) return false
+  if (isWoodenPassage(block.name)) return true
   if (!hasCollision(block)) return true
   return NON_SOLID_NAMES.has(block.name) || block.name.endsWith('_sign')
 }
 
 export function isSolidFloor (block: NavBlock | null): boolean {
   if (!block) return false
-  if (isHazardBlock(block)) return false
+  if (isHazardBlock(block) || isClimbable(block)) return false
   return hasCollision(block) && blockTop(block) > 0.05
+}
+
+/** 脚下方块本身是梯子或藤蔓，且头部可穿过或同样可爬。 */
+export function canClimb (world: NavWorld, area: NavArea, x: number, y: number, z: number): boolean {
+  if (!insideArea(area, x, y, z)) return false
+  if (!isClimbable(world.blockAt(x, y, z))) return false
+  const head = world.blockAt(x, y + 1, z)
+  return isPassable(head) || isClimbable(head)
 }
 
 export function nodeKey (node: NavVector): string {
@@ -89,6 +120,7 @@ export function startNode (world: NavWorld, area: NavArea, position: NavVector):
   const x = Math.floor(position.x)
   const z = Math.floor(position.z)
   const y = Math.floor(position.y)
+  if (canClimb(world, area, x, y, z)) return { x, y, z }
   for (let dy = -1; dy <= 2; dy += 1) {
     const candidate = findStanding(world, area, x, z, y + dy)
     if (candidate) return candidate
@@ -112,7 +144,9 @@ export function targetNode (
       const x = centerX + dx
       const z = centerZ + dz
       for (let dy = -2; dy <= 2; dy += 1) {
-        const candidate = findStanding(world, area, x, z, Math.floor(target.y) + dy)
+        const feetY = Math.floor(target.y) + dy
+        const climbed = canClimb(world, area, x, feetY, z) ? { x, y: feetY, z } : null
+        const candidate = climbed ?? findStanding(world, area, x, z, feetY)
         if (!candidate) continue
         const distance = Math.hypot(candidate.x + 0.5 - target.x, candidate.y - target.y, candidate.z + 0.5 - target.z)
         if (distance < bestDistance) {
@@ -132,6 +166,17 @@ const CARDINAL = [
   { dx: 0, dz: -1 }
 ] as const
 
+/** 四向邻格的脚部或头部出现铁门/铁活板门。规划失败时用来写明阻挡原因。 */
+export function ironPassageAdjacent (world: NavWorld, node: NavVector): boolean {
+  for (const direction of CARDINAL) {
+    for (const dy of [0, 1]) {
+      const block = world.blockAt(node.x + direction.dx, node.y + dy, node.z + direction.dz)
+      if (block && isIronPassage(block.name)) return true
+    }
+  }
+  return false
+}
+
 const DIAGONAL = [
   { dx: 1, dz: 1 },
   { dx: 1, dz: -1 },
@@ -145,9 +190,24 @@ const DIAGONAL = [
  */
 export function neighbors (world: NavWorld, area: NavArea, node: NavVector): NavVector[] {
   const found: NavVector[] = []
+  const seen = new Set<string>()
+  const push = (next: NavVector | null): void => {
+    if (!next) return
+    const key = nodeKey(next)
+    if (seen.has(key)) return
+    seen.add(key)
+    found.push(next)
+  }
   for (const direction of CARDINAL) {
-    const next = findStanding(world, area, node.x + direction.dx, node.z + direction.dz, node.y)
-    if (next) found.push(next)
+    const x = node.x + direction.dx
+    const z = node.z + direction.dz
+    push(findStanding(world, area, x, z, node.y))
+    if (canClimb(world, area, x, node.y, z)) push({ x, y: node.y, z })
+  }
+  if (canClimb(world, area, node.x, node.y, node.z)) {
+    if (canClimb(world, area, node.x, node.y + 1, node.z)) push({ x: node.x, y: node.y + 1, z: node.z })
+    if (canClimb(world, area, node.x, node.y - 1, node.z)) push({ x: node.x, y: node.y - 1, z: node.z })
+    else push(findStanding(world, area, node.x, node.z, node.y))
   }
   for (const direction of DIAGONAL) {
     const sideA = findStanding(world, area, node.x + direction.dx, node.z, node.y)
@@ -158,7 +218,7 @@ export function neighbors (world: NavWorld, area: NavArea, node: NavVector): Nav
     // 对角踏步需要同时跳上两侧墙角，Minecraft 物理与 pathfinder 都容易卡死；
     // 抬升/下落统一走四向，对角只允许同层平坦移动。
     if (sideA.y !== node.y || sideB.y !== node.y || next.y !== node.y) continue
-    found.push(next)
+    push(next)
   }
   return found
 }
