@@ -9,7 +9,7 @@
 - Workbench `/opt/antifieldcloud/releases/20261107T121119Z`。包 SHA-256 `f3d83afe7e063469de0315b6d55dba73ecf41048ac2ec0394d6435309b4bdf79`。迁移前快照 `db-predeploy-20261107T121225041Z.sqlite`，SHA-256 `9a0e60b1138ad220fc68851c4cd6aa82fcf050d86806479252592a1569a77fe9`，schema 仍为 20。切换当时的部署内 smoke **26/0/0/2**。mcbot `/opt/mcbot/releases/20261107T121646Z`（契约 v2），包 SHA-256 `021709a93be7a47430968a9c3f0d5e670a5c6b1b4a621fb7191930f177ddcb51`。重启后 `/healthz` 为 1.0.13、`state=idle`、`connected=false`。两侧都到 1.0.13 后，带 mcbot 契约和本地归档旁文件的 smoke 为 **28/0/0/2**（跳过公网与 Windows 任务标记）。
 - 立即回滚：mcbot `/opt/mcbot/releases/20261107T111407Z`（v1.0.12），Workbench `/opt/antifieldcloud/releases/20261107T105450Z` 并保留现行库。应用保留 3 份：`20261107T121119Z`、`20261107T105450Z`、`20261107T094000Z`。v1.0.9 应用 release `/opt/antifieldcloud/releases/20261106T134109Z` 已不在磁盘上。mcbot 按 5 份保留：`20261107T121646Z`、`20261107T111407Z`、`20261107T094221Z`、`20261107T084917Z`、`20261106T134625Z`。
 - Minecraft 启动时间仍为 2026-11-06 23:00:21 CST，OpenCode 仍为 2026-11-06 23:00:25 CST，运行中版本 2.2.5。antifieldcloud 于 2026-11-07 20:12:26 CST 重启，mcbot 于 2026-11-07 20:17:05 CST 重启。本次没有在服务器上重跑挖矿或天然林。这些行为由 mcbot 173 项单元测试覆盖。
-- Windows 计划任务标记仍是 1.0.12，installedAt `2026-11-07T11:43:26.7121209Z`。部署 smoke 与随后的 smoke 都使用 `-SkipLocalTaskCheck`。公网 Access smoke 这次没有跑。演练仍为 `20261106T135130Z`。Tag 待发布。
+- Windows 计划任务标记仍是 1.0.12，installedAt `2026-11-07T11:43:26.7121209Z`。部署 smoke 与随后的 smoke 都使用 `-SkipLocalTaskCheck`。公网 Access smoke 这次没有跑。演练仍为 `20261106T135130Z`。已发布 annotated Tag `v1.0.13`。
 
 ### v1.0.12（2026-11-07，含独立发布的 v1.0.11）
 

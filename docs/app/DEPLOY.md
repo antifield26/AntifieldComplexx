@@ -23,7 +23,7 @@ schema 保持 20，OpenCode 保持 2.2.5，契约保持 v2。Minecraft 启动时
 2. 已部署 Workbench `/opt/antifieldcloud/releases/20261107T121119Z` 与 mcbot `/opt/mcbot/releases/20261107T121646Z`。迁移前快照 `db-predeploy-20261107T121225041Z.sqlite`。antifieldcloud 于 2026-11-07 20:12:26 CST 重启，mcbot 于 2026-11-07 20:17:05 CST 重启。
 3. 部署内 smoke **26/0/0/2**，随后带 mcbot 契约和本地归档旁文件的 smoke **28/0/0/2**。公网 Access smoke 这次没有跑。
 4. 回滚：mcbot 切回 `/opt/mcbot/releases/20261107T111407Z`。Workbench 切回 `/opt/antifieldcloud/releases/20261107T105450Z` 并保留现行库。应用保留 3 份后，v1.0.9 应用 release `/opt/antifieldcloud/releases/20261106T134109Z` 已不在磁盘上。mcbot 保留 5 份，含 v1.0.12、v1.0.10、预发布 `20261107T084917Z` 与 v1.0.9 `20261106T134625Z`。
-5. Windows 计划任务标记仍是 1.0.12，installedAt `2026-11-07T11:43:26.7121209Z`。两次 smoke 都使用 `-SkipLocalTaskCheck`。Tag 待发布。
+5. Windows 计划任务标记仍是 1.0.12，installedAt `2026-11-07T11:43:26.7121209Z`。两次 smoke 都使用 `-SkipLocalTaskCheck`。已发布 annotated Tag `v1.0.13`。不移动已有 Tag。
 
 ## v1.0.12 发布记录
 

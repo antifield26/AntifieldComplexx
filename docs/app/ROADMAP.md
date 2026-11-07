@@ -2,7 +2,7 @@
 
 ## v1.0.13（补丁，2026-11-07）
 
-- 挖矿和天然林先读 `resource` 记忆坐标，失效后再做半径扫描。不新增工具、环境变量或模型调用。schema 20、契约 v2 不变。生产路径见 [ACCEPTANCE](ACCEPTANCE.md)。Tag 待发布。
+- 挖矿和天然林先读 `resource` 记忆坐标，失效后再做半径扫描。不新增工具、环境变量或模型调用。schema 20、契约 v2 不变。生产路径见 [ACCEPTANCE](ACCEPTANCE.md)。已发布 annotated Tag `v1.0.13`。
 
 ## v1.0.12（补丁，2026-11-07）
 
