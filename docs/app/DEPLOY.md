@@ -23,7 +23,7 @@
 4. 把 release 路径写入 [ACCEPTANCE](ACCEPTANCE.md)，再打附注 Tag `v1.0.10`。不移动已有 Tag。
 5. 回滚：mcbot 切回 `/opt/mcbot/releases/20261106T134625Z`。Workbench 切回 `/opt/antifieldcloud/releases/20261106T134109Z` 并保留现行 schema 20 库。部署前快照只用于恢复当前数据库本身。
 
-> **v1.0.10 部署**：路径与 smoke 见 [ACCEPTANCE](ACCEPTANCE.md)。预发布实机 release `/opt/mcbot/releases/20261107T084917Z` 的包版本仍报 1.0.9，不作为回滚目标。
+> **v1.0.10 部署（2026-11-07，功能提交 `2f19440`）**：Workbench `/opt/antifieldcloud/releases/20261107T094000Z`（schema 20），迁移前快照 `db-predeploy-20261107T094010353Z.sqlite`。mcbot `/opt/mcbot/releases/20261107T094221Z`（契约 v2）。部署内 smoke **26/0/0/2**，随后带 mcbot 契约的 smoke **28/0/0/2**。Minecraft 与 OpenCode 未重启。预发布实机 `/opt/mcbot/releases/20261107T084917Z` 的包版本仍报 1.0.9，不作为版本回滚目标。验收见 [ACCEPTANCE](ACCEPTANCE.md)。
 
 ## v1.0.9 发布顺序
 

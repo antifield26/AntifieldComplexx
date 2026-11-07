@@ -8,7 +8,10 @@
 - 本地门禁：`npm run check` 与 `npm run build` 通过。app **625**（624 pass、1 skip）+ web **283** + mcbot **154**。
 - 预发布实机（mcbot `/opt/mcbot/releases/20261107T084917Z`，当时包版本仍为 1.0.9）：巡逻中血量降到约 3.3 后，日志出现 `movement critical teleport home`，随后传送到基地 `175.5,64,410.5`。补给传送到食物箱锚点 `183.5,64,435.5` 仍发生。第三次巡逻走出旧矩形南边，采样位置约 `176.7,66.5,401.0`，任务完成且没有把区外目标点当作传送落点。回程停在约 `178.3,64,413.9`，规划器报 `waypoint_timeout`，兜底为停止。
 - 同一实机里，基地南缘没有铁剑时防御反复撤退并阵亡。管理员施加治疗、清掉近处敌对生物，并把 Bot 送到食物箱 `183.5,64,435.5` 后停止。结束时血量 20、饥饿 20、空闲、已连接。背包留有 8 个面包，用于通过既有补给门禁。中断的待恢复守卫任务已丢弃。Minecraft 与 OpenCode 进程启动时间未变。
-- 清洁部署路径、健康检查版本和 smoke 在发布时回填本节。回滚：mcbot 切回 `/opt/mcbot/releases/20261106T134625Z`；Workbench 切回 `/opt/antifieldcloud/releases/20261106T134109Z` 并保留现行 schema 20 库。Windows 计划任务脚本未改，版本标记仍要管理员重装后才与 1.0.10 一致。
+- 功能提交 `2f19440`。Workbench `/opt/antifieldcloud/releases/20261107T094000Z`。迁移前快照 `db-predeploy-20261107T094010353Z.sqlite`，SHA-256 `831d682d3093048111e8597fd73b5783cd7083ad142ce87bec93a6212879b532`，schema 仍为 20。切换当时的部署内 smoke **26/0/0/2**。两侧都到 1.0.10 后，带 mcbot 契约和本地归档旁文件的 smoke 为 **28/0/0/2**（跳过公网与 Windows 任务标记）。`/healthz` 为 1.0.10。
+- mcbot `/opt/mcbot/releases/20261107T094221Z`（契约 v2）。`/healthz` 为 1.0.10，部署后已连接。立即上一份是预发布 `/opt/mcbot/releases/20261107T084917Z`（行为相同，健康检查仍报 1.0.9）。版本回滚目标是 v1.0.9 `/opt/mcbot/releases/20261106T134625Z`。保留份数内还有该 v1.0.9 release。
+- Minecraft 启动时间仍为 2026-11-06 23:00:21 CST，OpenCode 仍为 2026-11-06 23:00:25 CST，运行中版本 2.2.5。
+- 回滚：mcbot 切回 `/opt/mcbot/releases/20261106T134625Z`；Workbench 切回 `/opt/antifieldcloud/releases/20261106T134109Z` 并保留现行 schema 20 库。部署前快照只用于恢复当前数据库。Windows 计划任务脚本未改，版本标记仍要管理员重装后才与 1.0.10 一致。本次 smoke 使用 `-SkipLocalTaskCheck`，不把该标记记为失败。
 
 ### v1.0.9（2026-11-06）
 

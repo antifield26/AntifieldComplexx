@@ -151,7 +151,7 @@
 - **告警联动**：`AlertService.recordExternal` 只写 `alert_events(status='event')`，不写 `alert_state`、不参与 firing/resolved；details 只保留清洗后的基础类型（深度≤2、键≤20、数组≤20、字符串≤300，跳过 `__proto__`/`constructor`/`prototype` 键），并附加 `source`/`mcbotEventId`/`mcbotType`；异步复用 webhook（可选 HMAC）与 Bot 通知，失败只记脱敏日志；游标 `meta.mcbot.event_cursor` 防重放（v1.0.0 迁移自 `lofii.event_cursor`）；**告警写入失败时游标停在上一条已处理事件，下一轮重试**（v0.8.1）。
 - **内存/降级**：每轮上游取最近 200 条；事件缓存 ≤100 条且序列化总字节 ≤512 KiB；`/status` 可达但 `/events/recent`/游标失败时前端展示可见警告（不静默停更）；前端对缺失嵌套段安全读取，不把整页交给 ErrorBoundary。v1.0.7 起快照下发 `lastSuccessAt`，面板过期文案用成功时间；从未成功时显示“尚无成功轮询”。失败轮询只推进 `lastPollAt`。
 - **浏览器边界**：前端不接触 mcbot Token/上游地址，不直连 SSE/mcbot；`/api/mcbot/status` 只返回聚合快照与内存事件；事件与聊天纯文本渲染，历史表格只显示白名单字段；控制未启用时全部写操作（含聊天）禁用。
-- **默认关闭/回滚**：`MCBOT_ENABLED=false` 默认；回滚设 false（可选清空 Token）并重启即可，无 schema/DB 变更；生产当前 **v1.0.10** 已启用（`MCBOT_ENABLED=true`，读/控制 Token 均配置且 `--check` match，仅 loopback；2026-11-07 发布）。v0.8.0、v0.8.1 与 v1.0.6 至 v1.0.9 均已发布 Tag+Release。v1.0.10 的 Tag 在本次发布后补上。
+- **默认关闭/回滚**：`MCBOT_ENABLED=false` 默认；回滚设 false（可选清空 Token）并重启即可，无 schema/DB 变更；生产当前 **v1.0.10** 已启用（`MCBOT_ENABLED=true`，读/控制 Token 均配置且 `--check` match，仅 loopback；2026-11-07 部署）。v0.8.0、v0.8.1 与 v1.0.6 至 v1.0.10 随各版本发布 Tag+Release。
 
 ### HTTP
 
