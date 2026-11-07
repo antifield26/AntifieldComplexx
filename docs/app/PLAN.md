@@ -9,7 +9,7 @@
 - **版本**：**v1.0.12**；schema **v20**；OpenCode **v2.2.5**；mcbot **v1.0.12**（契约 v2）。Workbench 继续兼容契约 v1 的读取与既有控制。
 - **范围**：v1.0.11 的空手战斗、找食、梯子和木门，加上 v1.0.12 的短环境快照和固定分类世界记忆。两个版本分开发布。生产部署一次，运行进程版本是 1.0.12。
 - **边界**：不启用整包加密与异地副本，不收紧 Pi sudo，不重启 Minecraft，不重启 OpenCode。记忆工具不启动任务。不新增环境变量。
-- **状态**：v1.0.11 提交 `c7dd74b`，v1.0.12 提交 `b349b80`。生产路径在部署验收后回填。回退到 v1.0.10：mcbot `/opt/mcbot/releases/20261107T094221Z`，Workbench `/opt/antifieldcloud/releases/20261107T094000Z` 并保留现行库。演练仍为 `20261106T135130Z`。
+- **状态**：v1.0.11 提交 `c7dd74b`，v1.0.12 功能提交 `b349b80`。app `/opt/antifieldcloud/releases/20261107T105450Z`、mcbot `/opt/mcbot/releases/20261107T111407Z`。回退到 v1.0.10：mcbot `/opt/mcbot/releases/20261107T094221Z`，Workbench `/opt/antifieldcloud/releases/20261107T094000Z` 并保留现行库。演练仍为 `20261106T135130Z`。部署内 smoke **26/0/0/2**，随后带 mcbot 契约的 smoke **28/0/0/2**。
 - **测试基线**：app **625**（624 pass、1 skip）+ web **283** + mcbot **168**。
 
 ## 计划中：v1.0.13

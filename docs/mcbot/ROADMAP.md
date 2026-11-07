@@ -6,7 +6,7 @@
 ## v1.0.12（2026-11-07）
 
 - **范围**：每次自主决策现场重建短快照。世界记忆与聊天记忆分开，分类固定为 `place`、`resource`、`food`、`danger`、`route`、`note`。模型通过 `memory_read`、`memory_write`、`memory_forget` 读写。提示词只带索引。
-- **状态**：代码边界 `b349b80`。与 v1.0.11 分开发布。生产进程版本是 1.0.12，路径在部署验收后回填。
+- **状态**：release `/opt/mcbot/releases/20261107T111407Z`。回滚目标为 v1.0.10 `/opt/mcbot/releases/20261107T094221Z`。
 
 ## v1.0.11（2026-11-07）
 

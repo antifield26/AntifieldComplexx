@@ -5,9 +5,12 @@
 ### v1.0.12（2026-11-07，含独立发布的 v1.0.11）
 
 - 范围：v1.0.11 增加空手或最好武器的近战、找食、梯子和木门。v1.0.12 在每次自主决策前重建短环境快照，并用固定分类的世界记忆工具读写。schema 保持 20，契约保持 v2，OpenCode 保持 2.2.5。应用无行为变更。
-- 代码边界：v1.0.11 为 `c7dd74b`，v1.0.12 为 `b349b80`。两个版本各有 Tag 和 GitHub Release。生产进程版本是 1.0.12。
-- 本地门禁：`npm run check` 通过。app **625**（624 pass、1 skip）+ web **283** + mcbot **168**。
-- 生产路径、迁移前快照和 smoke 计数在部署完成后回填。
+- 代码边界：v1.0.11 为 `c7dd74b`，v1.0.12 功能提交为 `b349b80`，版本轴提交为 `e248830`。两个版本各有 Tag 和 GitHub Release。生产进程版本是 1.0.12。
+- 本地门禁：部署脚本内 `npm run check` 与 `npm run build` 通过。app **625**（624 pass、1 skip）+ web **283** + mcbot **168**。
+- Workbench `/opt/antifieldcloud/releases/20261107T105450Z`。迁移前快照 `db-predeploy-20261107T105556057Z.sqlite`，SHA-256 `07a3ec3b4820a68863cfee0985522fa7f72bccbba7b103c92f9369341bb863b4`，schema 仍为 20。切换当时的部署内 smoke **26/0/0/2**。mcbot `/opt/mcbot/releases/20261107T111407Z`（契约 v2）。`/healthz` 为 1.0.12，部署后已连接。两侧都到 1.0.12 后，带 mcbot 契约和本地归档旁文件的 smoke 为 **28/0/0/2**（跳过公网与 Windows 任务标记）。
+- 立即回滚：mcbot `/opt/mcbot/releases/20261107T094221Z`（v1.0.10），Workbench `/opt/antifieldcloud/releases/20261107T094000Z` 并保留现行库。mcbot 另保留预发布 `/opt/mcbot/releases/20261107T084917Z` 与 v1.0.9 `/opt/mcbot/releases/20261106T134625Z`。应用保留 3 份，v1.0.8 应用 release `/opt/antifieldcloud/releases/20261105T021739Z` 已不在磁盘上。
+- Minecraft 启动时间仍为 2026-11-06 23:00:21 CST，OpenCode 仍为 2026-11-06 23:00:25 CST，运行中版本 2.2.5。本次没有在服务器上重跑空手战斗、找食、梯子、木门或世界记忆工具。这些行为由 mcbot 168 项单元测试覆盖。
+- Windows 计划任务脚本未改，版本标记仍要管理员重装后才与 1.0.12 一致。本次 smoke 使用 `-SkipLocalTaskCheck`，不把该标记记为失败。
 
 ### v1.0.10（2026-11-07）
 
