@@ -5,6 +5,7 @@ import { surveyRing } from './navigation.ts'
 import { depositProduce } from './deposit.ts'
 import { equipItem } from './inventory.ts'
 import { isExpired, requireBot, sleep, TaskError, TaskStopError, type TaskContext } from './types.ts'
+import { readResourceMemory, rememberedOreTargets, rememberedProbes } from './memory-points.ts'
 import { playerNear, scanExposedOres, type OreTarget } from './resources.ts'
 
 function freshPickaxe (bot: Bot): ReturnType<Bot['inventory']['items']>[number] | null {
@@ -44,9 +45,9 @@ async function mineOre (ctx: TaskContext, bot: Bot, target: OreTarget): Promise<
 }
 
 /**
- * Surface-only mining: scan loaded chunks, only mine ore blocks that already
- * have an air-facing side. No stone tunnels and no exploration outside the
- * configured safe zone.
+ * 只挖已经露出空气的煤、铁、铜。先用 resource 记忆里、两倍扫描半径内的坐标；
+ * 方块仍是可挖的矿才采用。坐标未加载时先走近再确认。都不成立时才按半径扫描。
+ * 不挖隧道，不调用模型。
  */
 export async function runMining (ctx: TaskContext): Promise<void> {
   const bot = requireBot(ctx)
@@ -55,7 +56,9 @@ export async function runMining (ctx: TaskContext): Promise<void> {
   let lastDeposit = Date.now()
   let cells = surveyCells(config, bot)
   let cellIndex = 0
-  let targets = scanExposedOres(bot, config)
+  const skipped = new Set<string>()
+  const triedProbes = new Set<string>()
+  let targets = rememberOres(bot, config, skipped)
 
   while (!isExpired(ctx)) {
     if (ctx.signal.aborted) throw new TaskStopError()
@@ -66,6 +69,23 @@ export async function runMining (ctx: TaskContext): Promise<void> {
     if (ctx.progress.oresMined >= config.mining.maxOres) return
     await ctx.defend()
 
+    if (targets.length === 0) targets = rememberOres(bot, config, skipped)
+    if (targets.length === 0) {
+      const probe = nextOreProbe(bot, config, skipped, triedProbes)
+      if (probe) {
+        const key = pointKey(probe)
+        triedProbes.add(key)
+        try {
+          await ctx.movement.goNearPoint(probe.x + 0.5, probe.y, probe.z + 0.5, 6, 15000, true)
+        } catch (error) {
+          ctx.logger.warn('mining: remembered move failed', {
+            error: error instanceof Error ? error.message : String(error)
+          })
+        }
+        targets = rememberOres(bot, config, skipped)
+        if (targets.length > 0) continue
+      }
+    }
     if (targets.length === 0) {
       if (cellIndex >= cells.length) {
         ctx.logger.info('mining: no exposed surface ore found')
@@ -82,16 +102,22 @@ export async function runMining (ctx: TaskContext): Promise<void> {
           error: error instanceof Error ? error.message : String(error)
         })
       }
-      targets = scanExposedOres(bot, config)
+      targets = scanExposedOres(bot, config).filter(target => !skipped.has(pointKey(target.position)))
       continue
     }
 
     const target = targets.shift()
     if (!target) continue
-    if (playerNear(bot, target.position, 8)) continue
+    if (playerNear(bot, target.position, 8)) {
+      skipped.add(pointKey(target.position))
+      continue
+    }
 
     const mined = await mineOre(ctx, bot, target)
-    if (!mined) continue
+    if (!mined) {
+      skipped.add(pointKey(target.position))
+      continue
+    }
     const next = {
       oresMined: ctx.progress.oresMined + 1,
       coalMined: ctx.progress.coalMined + (target.kind === 'coal' ? 1 : 0),
@@ -112,6 +138,25 @@ export async function runMining (ctx: TaskContext): Promise<void> {
     }
   }
   throw new TaskStopError('任务时间到了')
+}
+
+function pointKey (position: Vec3): string {
+  return `${position.x},${position.y},${position.z}`
+}
+
+function rememberOres (bot: Bot, config: Config, skipped: Set<string>): OreTarget[] {
+  return rememberedOreTargets(bot, config, readResourceMemory(config.dataDir))
+    .filter(target => !skipped.has(pointKey(target.position)))
+}
+
+function nextOreProbe (bot: Bot, config: Config, skipped: Set<string>, tried: Set<string>): Vec3 | null {
+  const origin = bot.entity?.position
+  if (!origin) return null
+  return rememberedProbes(bot, readResourceMemory(config.dataDir), 'ore', origin, config.scanRadius * 2)
+    .find(point => {
+      const key = pointKey(point)
+      return !skipped.has(key) && !tried.has(key)
+    }) ?? null
 }
 
 function surveyCells (config: Config, bot: Bot): Vec3[] {

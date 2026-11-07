@@ -2,7 +2,7 @@
 
 本审计以**代码/实际安全行为为真相**，覆盖根 README、AGENTS、docs/mcbot、docs/app/API 与 mcbot 环境模板。自动检查脚本：`scripts/check-mcbot-claims.mjs`（根 `npm run check:docs`，纳入 `npm run check`）。历史发布记录、`docs/legacy` 与已冻结的验收文本标为 `historical`，不回写历史，但会标注当前事实。
 
-> 当前版本是 v1.0.12 / schema v20 / mcbot 契约 v2 / OpenCode v2.2.5。下面的矩阵是 v1.0.6 审计快照。`check-mcbot-claims.mjs` 从当前包版本读取文档版本期望。自主工具为 13 个。v1.0.11 与 v1.0.12 分开发布，生产进程版本是 1.0.12。
+> 当前版本是 v1.0.13 / schema v20 / mcbot 契约 v2 / OpenCode v2.2.5。下面的矩阵是 v1.0.6 审计快照。`check-mcbot-claims.mjs` 从当前包版本读取文档版本期望。自主工具为 13 个。v1.0.13 只让挖矿和天然林读取已有 `resource` 坐标，不新增工具。
 
 ## 1. 声明矩阵
 

@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer'
 import { Vec3 } from 'vec3'
 import type { Config } from '../config.ts'
 import { depositProduce } from './deposit.ts'
+import { readResourceMemory, rememberedCoordinates, rememberedProbes } from './memory-points.ts'
 import { equipItem } from './inventory.ts'
 import { isExpired, requireBot, sleep, TaskError, TaskStopError, type TaskContext } from './types.ts'
 import { columnsWithinRadius, surveyRing } from './navigation.ts'
@@ -104,6 +105,64 @@ export function scanNaturalTrees (bot: Bot, config: Config): NaturalTree[] {
   return trees
 }
 
+/** 从一格原木确认是否仍是可砍的自然树。半径扫描仍走 scanNaturalTrees。 */
+export function naturalTreeAt (bot: Bot, config: Config, start: Vec3): NaturalTree | null {
+  const origin = bot.entity?.position
+  if (!origin) return null
+  const dx = start.x - origin.x
+  const dz = start.z - origin.z
+  const reach = config.scanRadius * 2
+  if (dx * dx + dz * dz > reach * reach) return null
+  const startBlock = bot.blockAt(start, false)
+  if (!startBlock) return null
+  const species = forestSpeciesForLog(config, startBlock.name)
+  if (!species) return null
+  const spec = FOREST_SPECIES[species]
+  if (!spec) return null
+  const seen = new Set<string>()
+  const logs: Vec3[] = []
+  const queue: Vec3[] = [start]
+  seen.add(seenKey(start))
+  while (queue.length > 0 && logs.length < 64) {
+    const current = queue.shift() as Vec3
+    logs.push(current)
+    for (const offset of [
+      new Vec3(1, 0, 0), new Vec3(-1, 0, 0),
+      new Vec3(0, 1, 0), new Vec3(0, -1, 0),
+      new Vec3(0, 0, 1), new Vec3(0, 0, -1)
+    ]) {
+      const next = current.plus(offset)
+      if (!inForestScan(next, start, 8) || seen.has(seenKey(next))) continue
+      const block = bot.blockAt(next, false)
+      if (!block || block.name !== spec.log) continue
+      seen.add(seenKey(next))
+      queue.push(next)
+    }
+  }
+  logs.sort((a, b) => a.y - b.y)
+  const base = logs[0]
+  if (!base) return null
+  if (insideProtected(config, base.x, base.z, config.forest.protectRadius)) return null
+  const below = bot.blockAt(base.offset(0, -1, 0), false)
+  if (!isSoil(below?.name)) return null
+  if (!logs.some(log => hasLeavesNear(bot, log, spec.leaves))) return null
+  if (playerNear(bot, base, 8)) return null
+  return { base, logs, species }
+}
+
+export function rememberedTrees (bot: Bot, config: Config, items: ReturnType<typeof readResourceMemory>): NaturalTree[] {
+  const origin = bot.entity?.position
+  if (!origin) return []
+  const trees: NaturalTree[] = []
+  for (const point of rememberedCoordinates(items, 'tree', origin, config.scanRadius * 2)) {
+    if (bot.blockAt(point, false) === null) continue
+    const tree = naturalTreeAt(bot, config, point)
+    if (tree) trees.push(tree)
+  }
+  trees.sort((a, b) => origin.distanceTo(a.base) - origin.distanceTo(b.base))
+  return trees
+}
+
 function freshAxe (bot: Bot): ReturnType<Bot['inventory']['items']>[number] | null {
   return bot.inventory.items()
     .filter(item => item.name === 'iron_axe')
@@ -166,6 +225,25 @@ async function plantSapling (ctx: TaskContext, bot: Bot, tree: NaturalTree): Pro
   }
 }
 
+function pointKey (position: Vec3): string {
+  return `${position.x},${position.y},${position.z}`
+}
+
+function rememberForest (bot: Bot, config: Config, skipped: Set<string>): NaturalTree[] {
+  return rememberedTrees(bot, config, readResourceMemory(config.dataDir))
+    .filter(tree => !skipped.has(pointKey(tree.base)))
+}
+
+function nextTreeProbe (bot: Bot, config: Config, skipped: Set<string>, tried: Set<string>): Vec3 | null {
+  const origin = bot.entity?.position
+  if (!origin) return null
+  return rememberedProbes(bot, readResourceMemory(config.dataDir), 'tree', origin, config.scanRadius * 2)
+    .find(point => {
+      const key = pointKey(point)
+      return !skipped.has(key) && !tried.has(key)
+    }) ?? null
+}
+
 function surveyCells (config: Config, bot: Bot): Vec3[] {
   const position = bot.entity?.position
   if (!position) return []
@@ -178,12 +256,30 @@ export async function runForest (ctx: TaskContext): Promise<void> {
   let lastDeposit = Date.now()
   let cells = surveyCells(config, bot)
   let cellIndex = 0
-  let trees = scanNaturalTrees(bot, config)
+  const skipped = new Set<string>()
+  const triedProbes = new Set<string>()
+  let trees = rememberForest(bot, config, skipped)
 
   while (!isExpired(ctx)) {
     if (ctx.signal.aborted) throw new TaskStopError()
     if (ctx.progress.naturalLogsChopped >= config.forest.maxLogs) return
     await ctx.defend()
+    if (trees.length === 0) trees = rememberForest(bot, config, skipped)
+    if (trees.length === 0) {
+      const probe = nextTreeProbe(bot, config, skipped, triedProbes)
+      if (probe) {
+        triedProbes.add(pointKey(probe))
+        try {
+          await ctx.movement.goNearPoint(probe.x + 0.5, probe.y, probe.z + 0.5, 6, 15000, true)
+        } catch (error) {
+          ctx.logger.warn('forest: remembered move failed', {
+            error: error instanceof Error ? error.message : String(error)
+          })
+        }
+        trees = rememberForest(bot, config, skipped)
+        if (trees.length > 0) continue
+      }
+    }
     if (trees.length === 0) {
       if (cellIndex >= cells.length) {
         ctx.logger.info('forest: no natural trees found')
@@ -200,7 +296,7 @@ export async function runForest (ctx: TaskContext): Promise<void> {
           error: error instanceof Error ? error.message : String(error)
         })
       }
-      trees = scanNaturalTrees(bot, config)
+      trees = scanNaturalTrees(bot, config).filter(tree => !skipped.has(pointKey(tree.base)))
       continue
     }
     const tree = trees.shift()
@@ -214,7 +310,10 @@ export async function runForest (ctx: TaskContext): Promise<void> {
       if (ctx.progress.naturalLogsChopped + chopped >= config.forest.maxLogs) break
       if (await digLog(ctx, bot, log)) chopped += 1
     }
-    if (chopped === 0) continue
+    if (chopped === 0) {
+      skipped.add(pointKey(tree.base))
+      continue
+    }
     ctx.updateProgress({
       forestTreesChopped: ctx.progress.forestTreesChopped + 1,
       naturalLogsChopped: ctx.progress.naturalLogsChopped + chopped

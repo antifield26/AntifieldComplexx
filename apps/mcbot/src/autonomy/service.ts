@@ -400,7 +400,7 @@ export class AutonomyService {
       '5. 需要更多环境信息时调用 observe；需要看附近容器时先 observe，再按坐标调用 inspect_chest（只读，不取物）。',
       '6. 目标完成、无法继续或需要结束会话时调用 finish。',
       '7. 不要尝试聊天、执行命令、生成坐标/玩家名，或使用未列出的工具。',
-      '8. 世界记忆只用 memory_read、memory_write、memory_forget。分类仅限 place、resource、food、danger、route、note。这些调用计入工具预算，不会启动任务。',
+      '8. 世界记忆只用 memory_read、memory_write、memory_forget。分类仅限 place、resource、food、danger、route、note。这些调用计入工具预算，不会启动任务。看到矿或自然树时，用 resource 记下种类和已经观察到的 x,y,z。挖矿和天然林会先读这些坐标。',
       formatEnvironment(environment),
       formatWorldMemoryIndex(this.worldMemory.index()),
       `可用工具（以工具列表名称为准）：${tools}`

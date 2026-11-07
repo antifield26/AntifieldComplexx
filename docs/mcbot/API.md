@@ -1,4 +1,4 @@
-# AntifieldComplexx 对接契约（mcbot v1.0.12 / v2）
+# AntifieldComplexx 对接契约（mcbot v1.0.13 / v2）
 
 > 契约 v2 的本机发言使用控制 Token。Workbench 可读取 v1 并沿用既有控制，v1 发言在 Workbench 停用。
 
@@ -482,7 +482,7 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 
 ## 12. v1.0.2/v1.0.3 AI 自主会话（OpenCode 原生 MCP 工具）
 
-自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.0.12，`AUTONOMY_ENABLED=true`，仍仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
+自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；上一生产进程为 v1.0.12，本版代码为 v1.0.13，`AUTONOMY_ENABLED=true`，仍仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
 
 v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱动重决策；应用对缺失字段/工具保持兼容。
 
@@ -531,7 +531,7 @@ v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱
 | `memory_write` | `run_id, category, key, text, reason` | 按分类和键写入或覆盖。键 1–64，正文 1–240，均不含控制字符。最多 200 条；已有键可更新，满额后拒绝新键。不启动任务 |
 | `memory_forget` | `run_id, category, key, reason` | 删除一条记忆。不存在则返回错误。不启动任务 |
 
-每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码、容器类型/摘要计数，不记录 prompt/Token/完整容器内容。记忆工具只记分类和键，不记正文。世界记忆文件为 `/var/lib/mcbot/world-memory.json`（0600），与聊天记忆分开；提示词只带分类计数和最近 8 个键。`observe` 仍返回半径内方块和容器，决策提示词本身不带完整方块清单。
+每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码、容器类型/摘要计数，不记录 prompt/Token/完整容器内容。记忆工具只记分类和键，不记正文。世界记忆文件为 `/var/lib/mcbot/world-memory.json`（0600），与聊天记忆分开；提示词只带分类计数和最近 8 个键。`observe` 仍返回半径内方块和容器，决策提示词本身不带完整方块清单。v1.0.13 的挖矿和天然林会只读 `resource` 坐标；工具表仍是上面 13 个，不新增环境变量。
 
 ### 12.8 v1.0.5 在线模式、长期目标与自动生存
 

@@ -1,6 +1,14 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.12（2026-11-07，schema 20、mcbot 契约 v2、OpenCode v2.2.5）。v1.0.11 与 v1.0.12 分开发布，生产部署一次。
+> 当前版本 v1.0.13（2026-11-07，schema 20、mcbot 契约 v2、OpenCode v2.2.5）。
+
+### v1.0.13（2026-11-07）
+
+- 范围：挖矿和天然林先读 `resource` 记忆坐标。坐标在两倍扫描半径内且方块仍有效时，本轮跳过半径扫描。区块未加载时走近一次再确认。不新增工具、环境变量或模型调用。schema 保持 20，契约保持 v2，OpenCode 保持 2.2.5。应用无行为变更。
+- 本地门禁：`npm run check` 通过。app **625**（624 pass、1 skip）+ web **283** + mcbot **173**。
+- 生产路径在本次部署后补记。回滚目标为 v1.0.12：Workbench `/opt/antifieldcloud/releases/20261107T105450Z`，mcbot `/opt/mcbot/releases/20261107T111407Z`。
+- Windows 计划任务标记仍是 1.0.12，installedAt `2026-11-07T11:43:26.7121209Z`。部署 smoke 使用 `-SkipLocalTaskCheck`。
+- 不在服务器上重跑挖矿或天然林。
 
 ### v1.0.12（2026-11-07，含独立发布的 v1.0.11）
 
@@ -10,7 +18,7 @@
 - Workbench `/opt/antifieldcloud/releases/20261107T105450Z`。迁移前快照 `db-predeploy-20261107T105556057Z.sqlite`，SHA-256 `07a3ec3b4820a68863cfee0985522fa7f72bccbba7b103c92f9369341bb863b4`，schema 仍为 20。切换当时的部署内 smoke **26/0/0/2**。mcbot `/opt/mcbot/releases/20261107T111407Z`（契约 v2）。`/healthz` 为 1.0.12，部署后已连接。两侧都到 1.0.12 后，带 mcbot 契约和本地归档旁文件的 smoke 为 **28/0/0/2**（跳过公网与 Windows 任务标记）。
 - 立即回滚：mcbot `/opt/mcbot/releases/20261107T094221Z`（v1.0.10），Workbench `/opt/antifieldcloud/releases/20261107T094000Z` 并保留现行库。mcbot 另保留预发布 `/opt/mcbot/releases/20261107T084917Z` 与 v1.0.9 `/opt/mcbot/releases/20261106T134625Z`。应用保留 3 份，v1.0.8 应用 release `/opt/antifieldcloud/releases/20261105T021739Z` 已不在磁盘上。
 - Minecraft 启动时间仍为 2026-11-06 23:00:21 CST，OpenCode 仍为 2026-11-06 23:00:25 CST，运行中版本 2.2.5。本次没有在服务器上重跑空手战斗、找食、梯子、木门或世界记忆工具。这些行为由 mcbot 168 项单元测试覆盖。
-- Windows 计划任务脚本未改，版本标记仍要管理员重装后才与 1.0.12 一致。本次 smoke 使用 `-SkipLocalTaskCheck`，不把该标记记为失败。
+- 部署 smoke 使用 `-SkipLocalTaskCheck`，当时版本标记仍是 1.0.9，不把该标记记为失败。随后于 `2026-11-07T11:43:26.7121209Z` 重装为 1.0.12。每日任务与世界拉取任务均为 Ready，脚本 SHA 与仓库一致，下次运行都是 2026-11-08 12:00。异地副本任务未安装。重装后未再跑 smoke。
 
 ### v1.0.10（2026-11-07）
 

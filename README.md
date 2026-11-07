@@ -2,8 +2,8 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台：统一登录与单一入口，整合云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、mcbot Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、opencode AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v1.0.12，schema **v20**、mcbot 契约 v2、OpenCode **v2.2.5**。2026-11-07 已部署。v1.0.11（`c7dd74b`）与 v1.0.12（`b349b80`）分开发布，生产进程版本是 1.0.12。验收见 [ACCEPTANCE](docs/app/ACCEPTANCE.md)。
-> 本地门禁（v1.0.12）：root `npm run check` 通过；app **625**（624 pass、1 skip）+ web **283** + mcbot **168**。上一版本基线（v1.0.10，2026-11-07）：app **625**（624 pass、1 skip）+ web **283** + mcbot **154**。v1.0.9：app **625**（624 pass、1 skip）+ web **283** + mcbot **147**。生产 Access smoke 以验收记录为准。演练仍为 `20261106T135130Z`（schema 20）。
+> 状态：v1.0.13，schema **v20**、mcbot 契约 v2、OpenCode **v2.2.5**。挖矿和天然林先读记忆坐标。验收见 [ACCEPTANCE](docs/app/ACCEPTANCE.md)。
+> 本地门禁（v1.0.13）：root `npm run check` 通过；app **625**（624 pass、1 skip）+ web **283** + mcbot **173**。上一版本基线（v1.0.12，2026-11-07）：app **625**（624 pass、1 skip）+ web **283** + mcbot **168**。演练仍为 `20261106T135130Z`（schema 20）。
 > 命名：2026-10-27 起项目更名为 **AntifieldComplexx**（原 AntifieldCloud）；GitHub 仓库为 [antifield26/AntifieldComplexx](https://github.com/antifield26/AntifieldComplexx)，旧仓库地址由 GitHub 自动重定向。生产运行时标识符（服务用户、systemd 单元、数据路径、Windows 计划任务）保持不变，详见 [AGENTS.md](AGENTS.md) §0.1。
 > 部署与运维见 [docs/app/DEPLOY.md](docs/app/DEPLOY.md)，备份/恢复见 [docs/app/BACKUP.md](docs/app/BACKUP.md)，契约见 [docs/app/API.md](docs/app/API.md)，路线与验收记录见 [docs/app/ROADMAP.md](docs/app/ROADMAP.md) 与 [docs/app/ACCEPTANCE.md](docs/app/ACCEPTANCE.md)。
 
@@ -19,7 +19,7 @@
 - Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI，结构化长期记忆落 DB（自 schema v18，当前 v20；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback，孤儿镜像由维护任务清理）；v0.7.3 文档模式把角色卡与记忆写为只读文档，角色卡只在会话创建时发送，后续轮由模型按需 `read`（默认关闭；生产读范围矩阵 7/7 通过后已显式启用）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`CHATBOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
 - mcbot：Minecraft 附属 Bot（独立服务，仅 loopback `127.0.0.1:3010`）的只读/控制对接：读 Token（`/status`/`/events/recent`/`/history`）与控制 Token（`/task/*`/`/move`/`/say`）分离，控制 Token 为空即只读（`/say` 也 503）；服务端每 5s 轮询 `/healthz`、`/status` 与 `/events/recent?limit=200`；Workbench 接受契约 v1/v2，发言仅 v2，事件环最多缓存 100 条且 ≤512 KiB；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符；上游 `alert` 映射为本应用告警事件 `status='event'`；浏览器不直连 mcbot、不经手 Token
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 + 运维脚本 **625**，624 pass / 1 skip）+ Vitest/jsdom（**283**），ESLint，`tsc --noEmit`，覆盖率门禁；mcbot 独立 **168** 项
+- 测试：`node --test`（服务端 + 运维脚本 **625**，624 pass / 1 skip）+ Vitest/jsdom（**283**），ESLint，`tsc --noEmit`，覆盖率门禁；mcbot 独立 **173** 项
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 仓库结构
@@ -62,9 +62,9 @@
 - 世界一致性备份由 root 脚本 `scripts/backup-world.mjs` 通过固定 `save-off` → `save-all flush` → `save-on`（finally）完成，应用 API 不可触达。
 - `/minecraft` 页为「服务器 / mcbot」两个可键盘操作标签页（`role=tab`、左右方向键/Home/End，`?tab=mcbot` 或 `#mcbot` 深链）；`/api/version.mcbotEnabled=false` 时不展示 mcbot 标签，页面行为与旧版一致。
 
-### mcbot Minecraft Bot（v0.8.0 引入；v1.0.5 常驻/生存/目标；v1.0.6 统一寻路；v1.0.7 兜底重决策；v1.0.8 契约 v2；v1.0.9 事件缺口；v1.0.10 活动范围；v1.0.11 本地反射；v1.0.12 世界记忆）
+### mcbot Minecraft Bot（v0.8.0 引入；v1.0.5 常驻/生存/目标；v1.0.6 统一寻路；v1.0.7 兜底重决策；v1.0.8 契约 v2；v1.0.9 事件缺口；v1.0.10 活动范围；v1.0.11 本地反射；v1.0.12 世界记忆；v1.0.13 记忆坐标）
 
-- 独立附属服务 `mcbot`（本版 **v1.0.12**；最低 v0.6.0，契约 v2，仅监听 `127.0.0.1:3010`）；应用通过服务端轮询 `GET /status` 与 `GET /events/recent?limit=200`（默认 5s）获取状态与最近事件，**浏览器不直连 mcbot**。上一生产进程为 v1.0.10（`/opt/mcbot/releases/20261107T094221Z`）。发言仅契约 v2，使用控制 Token；契约 v1 仍可读状态并执行既有控制。同一启动周期内的事件序号空洞出现在 `eventGap`，面板仍显示当前状态。
+- 独立附属服务 `mcbot`（本版 **v1.0.13**；最低 v0.6.0，契约 v2，仅监听 `127.0.0.1:3010`）；应用通过服务端轮询 `GET /status` 与 `GET /events/recent?limit=200`（默认 5s）获取状态与最近事件，**浏览器不直连 mcbot**。上一生产进程为 v1.0.12（`/opt/mcbot/releases/20261107T111407Z`）。发言仅契约 v2，使用控制 Token；契约 v1 仍可读状态并执行既有控制。同一启动周期内的事件序号空洞出现在 `eventGap`，面板仍显示当前状态。
 - v1.0.5：在线模式 `auto/always/off` 持久化、空闲自动进食/换装、自动补货默认开启、安全区清怪任务、多步目标（task/deposit/home）与失败分类；目标重启后保持 paused，不自动执行。
 - v1.0.6：确定性 A*（只读现有地形，支持 1 格抬高/2 格下落/台阶半砖）、受控路点执行、AI 路点建议（OpenCode 可用时默认启用）、安全传送兜底与 `navigation` 状态；不挖掘/不放置/不跑酷。
 - v1.0.7：寻路兜底（安全传送或停止）进入自主会话既有重决策，30 秒去重、每会话最多 6 次；提示只含固定中文事实，不带坐标。面板过期文案用 `lastSuccessAt`，没有成功轮询时显示“尚无成功轮询”。
@@ -73,9 +73,10 @@
 - v1.0.10：行走不再受 `SAFE_*` 矩形限制。扫描使用 `SCAN_RADIUS`。寻路失败停在原地。血量 ≤ `CRITICAL_HEALTH` 时只传送回基地。该版没有铁剑时仍撤退。
 - v1.0.11：白名单敌对生物用最好的武器或拳头近战，不因没有铁剑撤退。不近战苦力怕、末影人和玩家。饥饿时按背包、掉落、食物箱、种田或钓鱼找食。梯子和木门由执行器处理。
 - v1.0.12：每次自主决策前重建短环境快照。世界记忆使用固定分类，提示词只带索引。模型通过 `memory_read`、`memory_write`、`memory_forget` 读写，这些工具不启动任务。
+- v1.0.13：挖矿和天然林先读 `resource` 记忆坐标。方块仍有效时本轮不做半径扫描；未加载时走近一次再确认。不新增工具或模型调用。
 - 只读状态：运行状态、Minecraft 连接、服务器在线/TPS、mcbot 血量/饥饿、AI 队列、记忆、版本/契约、白名单数量、运行时长、断线记录；不可达/数据过期/部分轮询失败/旧版无事件流时显示缓存与可见降级说明。
 - 任务控制：11 种任务（钓鱼/种田/砍树/挖矿/砍天然林/睡觉/巡逻/守卫/护送/探索/清理安全区）、开始（已有任务时入队，最多 3 个）、停止（中断并清空队列）、恢复待恢复任务（过期自动中断）；开始/停止/恢复均需二次确认。
-- **AI 自主会话（v1.0.2 引入，v1.0.3 增强，v1.0.12 增加世界记忆；默认关闭、生产已启用且仅主人显式启动）**：模型通过 OpenCode 原生 MCP 工具循环调用 `start_task`/`stop_task`/`go_home`/`deposit`/`task_status`/`observe`/`inspect_chest`/`eat`/`equip`/`finish`/`memory_read`/`memory_write`/`memory_forget`；`observe` 提供有界环境快照与附近方块/容器，`inspect_chest` 只读容器（不取物）；记忆工具只读写固定分类，不启动任务，提示词只带索引；任务生命周期与安全阈值事件可触发最多 6 次重新决策；预算/急停/失败/断线均 fail-closed 并清理 session/MCP。
+- **AI 自主会话（v1.0.2 引入，v1.0.3 增强，v1.0.12 增加世界记忆，v1.0.13 让挖矿和天然林读取记忆坐标；默认关闭、生产已启用且仅主人显式启动）**：模型通过 OpenCode 原生 MCP 工具循环调用 `start_task`/`stop_task`/`go_home`/`deposit`/`task_status`/`observe`/`inspect_chest`/`eat`/`equip`/`finish`/`memory_read`/`memory_write`/`memory_forget`；`observe` 提供有界环境快照与附近方块/容器，`inspect_chest` 只读容器（不取物）；记忆工具只读写固定分类，不启动任务，提示词只带索引；任务生命周期与安全阈值事件可触发最多 6 次重新决策；预算/急停/失败/断线均 fail-closed 并清理 session/MCP。
 - 移动控制：回家/过来/跟随/停下；目标玩家来自 mcbot 在线列表；任务进行中不可手动移动。
 - 游戏内聊天：以 mcbot 身份发送纯文本（trim 后 1–720 字符，**任意位置禁止 ASCII `/`**、禁止 C0 控制字符；发送前二次确认；需要控制 Token）；不执行任何命令，聊天内容不落库。
 - 事件流：`/events/recent` 内存环最近 100 条且 ≤512 KiB（聊天/任务/状态/移动/告警），按类型筛选、纯文本渲染；mcbot 重启后清空，本应用不保存事件历史。
@@ -153,8 +154,8 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC，本版 v1.0.12）：OpenCode 已是 2.2.5，见 [DEPLOY §3.2](docs/app/DEPLOY.md)。应用部署 `.\scripts\deploy.ps1 -PiHost <直连 IP>`。冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.12 -ExpectedSchemaVersion 20 -ExpectedOpenCodeVersion 2.2.5 -ExpectedMcbotVersion 1.0.12 -ExpectedMcbotContractVersion 2`（最低兼容 v0.6.0；配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 mcbot 时用 `-SkipMcbot`）。
-Pi 上同步/校验 mcbot Token（root，本版 mcbot v1.0.12，最低 v0.6.0）：`sudo bash scripts/sync-mcbot-tokens.sh`、`sudo bash scripts/sync-mcbot-tokens.sh --check`（只比较不写盘，不回显 Token；失败会原子替换 env）。
+部署（PC，本版 v1.0.13）：OpenCode 已是 2.2.5，见 [DEPLOY §3.2](docs/app/DEPLOY.md)。应用部署 `.\scripts\deploy.ps1 -PiHost <直连 IP>`。冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.13 -ExpectedSchemaVersion 20 -ExpectedOpenCodeVersion 2.2.5 -ExpectedMcbotVersion 1.0.13 -ExpectedMcbotContractVersion 2`（最低兼容 v0.6.0；配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 mcbot 时用 `-SkipMcbot`）。
+Pi 上同步/校验 mcbot Token（root，本版 mcbot v1.0.13，最低 v0.6.0）：`sudo bash scripts/sync-mcbot-tokens.sh`、`sudo bash scripts/sync-mcbot-tokens.sh --check`（只比较不写盘，不回显 Token；失败会原子替换 env）。
 
 ## 目录
 
@@ -210,11 +211,11 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，需 QQ 后台开启接收所有消息并由群主授权获取全部消息。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量按清单覆盖，同毫秒写入会进入下一次增量；时钟回拨仍记 `clockSkew`，归档时间不早于最近一份本机归档。Web 导入归档按 90 天保留；告警持续 firing 每 24h 重通知；`.backup.lock` 有 30s 心跳续租。
-- **发布状态**：v1.0.12 于 2026-11-07 发布，v1.0.11 同日单独发布（代码边界 `c7dd74b`）。上一版本是 v1.0.10（annotated Tag `v1.0.10` 指向 `f136744`）。5 格垂直墙在禁止挖掘/放置时只做明确兜底。历史发布记录见 [CHANGELOG.md](CHANGELOG.md) 与 [AUDIT](docs/app/AUDIT.md)。
+- **发布状态**：代码版本是 v1.0.13，Tag 在验收通过后发布。已发布的上一版本是 v1.0.12（2026-11-07），v1.0.11 同日单独发布（代码边界 `c7dd74b`）。5 格垂直墙在禁止挖掘/放置时只做明确兜底。历史发布记录见 [CHANGELOG.md](CHANGELOG.md) 与 [AUDIT](docs/app/AUDIT.md)。
 - **mcbot 告警只有事件语义**：上游 `alert` 映射为 `status='event'` 历史事件，不参与 firing/resolved 状态机，也没有恢复通知/冷却；上游告警状态需在 mcbot 侧查看（本应用只记录与转发）。
 - **mcbot 聊天/事件不持久化**：事件流与聊天只存在进程内存（最多 100 条且序列化 ≤512 KiB），应用或 mcbot 重启即丢失；历史接口只返回 mcbot 自己的 samples/alerts，不保存聊天正文。
 - **mcbot 轮询延迟与单实例**：状态/事件最多滞后一个轮询周期（默认 5s），控制结果最终一致；单进程内存缓存，不支持多实例/多副本；mcbot 不可达/数据过期/部分轮询失败时展示缓存与可见警告并降级。
-- **mcbot 依赖独立服务**：需先部署 mcbot **v1.0.12**（最低 v0.6.0，仅 loopback、契约 v2）并同步 Token；应用不管理 mcbot 生命周期、不读取其 RCON/OpenCode 密钥；旧版无 `/events/recent` 时事件流显示升级提示。
+- **mcbot 依赖独立服务**：需先部署 mcbot **v1.0.13**（最低 v0.6.0，仅 loopback、契约 v2）并同步 Token；应用不管理 mcbot 生命周期、不读取其 RCON/OpenCode 密钥；旧版无 `/events/recent` 时事件流显示升级提示。
 - **mcbot 控制面可写**：启用控制 Token 后本应用可让 mcbot 开始/停止任务、移动与游戏内发言（`/say` 自 v0.8.1 起同样需要控制 Token；真实 Minecraft 操作，仍受 mcbot 自身预算、锚点和权限限制）；误操作需人工在游戏内纠正，控制 Token 应按需配置/轮换。
 
 详细设计与验收标准见 `docs/app/ARCHITECTURE.md`、`docs/app/SECURITY.md`、`docs/app/DEPLOY.md`、`docs/app/BACKUP.md`、`docs/app/CHATBOT.md`、`docs/app/API.md`、`docs/app/UI-SPEC.md`。

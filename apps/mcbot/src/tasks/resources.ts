@@ -121,8 +121,22 @@ export function miningBands (config: Config): Array<[number, number]> {
   return bands
 }
 
+/** 单个方块是否仍是可挖的裸露矿。不限制与 Bot 的距离，调用方自己收口范围。 */
+export function exposedOreAt (bot: Bot, config: Config, point: Vec3): OreTarget | null {
+  if (insideProtected(config, point.x, point.z, config.mining.protectRadius)) return null
+  const y = point.y
+  if (!miningBands(config).some(([min, max]) => y >= min && y <= max)) return null
+  const block = blockAt(bot, point)
+  if (!block || !config.mining.ores.includes(block.name)) return null
+  const kind = oreKind(block.name)
+  if (!kind) return null
+  if (!hasAirNeighbor(bot, point)) return null
+  if (hasLiquidNeighbor(bot, point)) return null
+  if (playerNear(bot, point, 8)) return null
+  return { position: point, name: block.name, kind }
+}
+
 export function scanExposedOres (bot: Bot, config: Config): OreTarget[] {
-  const allowed = new Set(config.mining.ores)
   const targets: OreTarget[] = []
   const position = bot.entity?.position ?? null
   if (!position) return []
@@ -131,21 +145,13 @@ export function scanExposedOres (bot: Bot, config: Config): OreTarget[] {
   const windowMax = Math.floor(position.y) + 8
   for (const column of columnsWithinRadius(position, config.scanRadius)) {
     const { x, z } = column
-    if (insideProtected(config, x, z, config.mining.protectRadius)) continue
     for (const [bandMin, bandMax] of bands) {
       const minY = Math.max(bandMin, windowMin)
       const maxY = Math.min(bandMax, windowMax)
       if (minY > maxY) continue
       for (let y = minY; y <= maxY; y++) {
-        const point = new Vec3(x, y, z)
-        const block = blockAt(bot, point)
-        if (!block || !allowed.has(block.name)) continue
-        const kind = oreKind(block.name)
-        if (!kind) continue
-        if (!hasAirNeighbor(bot, point)) continue
-        if (hasLiquidNeighbor(bot, point)) continue
-        if (playerNear(bot, point, 8)) continue
-        targets.push({ position: point, name: block.name, kind })
+        const ore = exposedOreAt(bot, config, new Vec3(x, y, z))
+        if (ore) targets.push(ore)
       }
     }
   }

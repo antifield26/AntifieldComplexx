@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.12）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.13）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -15,6 +15,14 @@
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v20**（生产）：新增外部告警 Webhook 和 QQ 入队状态。迁移前保存并核验 schema 19 快照。生产版本见下方记录。
 
+## v1.0.13 发布记录
+
+schema 保持 20，OpenCode 保持 2.2.5，契约保持 v2。不重启 Minecraft，不重启 OpenCode。
+
+1. 挖矿和天然林先读 `resource` 记忆坐标。不新增工具或环境变量。
+2. 生产路径在本次部署后补记。回滚到 v1.0.12：Workbench `/opt/antifieldcloud/releases/20261107T105450Z`，mcbot `/opt/mcbot/releases/20261107T111407Z`，并保留现行库。
+3. Windows 计划任务标记仍是 1.0.12，installedAt `2026-11-07T11:43:26.7121209Z`。部署 smoke 使用 `-SkipLocalTaskCheck`。
+
 ## v1.0.12 发布记录
 
 v1.0.11 与 v1.0.12 分开发布。生产部署一次，运行进程版本是 1.0.12。schema 保持 20，OpenCode 保持 2.2.5。
@@ -24,7 +32,7 @@ v1.0.11 与 v1.0.12 分开发布。生产部署一次，运行进程版本是 1.
 3. 部署内 smoke **26/0/0/2**，随后带 mcbot 契约的 smoke **28/0/0/2**。公网 Access smoke 未跑。
 4. 附注 Tag `v1.0.11` 指向 `c7dd74b`，Tag `v1.0.12` 指向 `fa648dc`。不移动已有 Tag。
 5. 回滚：mcbot 切回 `/opt/mcbot/releases/20261107T094221Z`。Workbench 切回 `/opt/antifieldcloud/releases/20261107T094000Z` 并保留现行库。
-6. 发布时 Windows 计划任务脚本未改，版本标记仍是 1.0.9。重装需要管理员同意 UAC。同意前不要把标记写成 1.0.12。
+6. 发布当时 Windows 计划任务标记仍是 1.0.9，部署 smoke 使用 `-SkipLocalTaskCheck`。随后于 `2026-11-07T11:43:26.7121209Z` 重装为 1.0.12。每日任务与世界拉取任务均为 Ready，脚本 SHA 与仓库一致，下次运行都是 2026-11-08 12:00。异地副本任务未安装。主机与 backupRoot 未改。重装后未再跑 smoke。
 
 ## v1.0.10 发布顺序
 
