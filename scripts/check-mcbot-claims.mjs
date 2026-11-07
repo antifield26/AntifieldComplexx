@@ -85,7 +85,9 @@ const envKeys = [
   'PATH_OUTSIDE_SAFE_RADIUS',
   'PATH_AI_ENABLED',
   'PATH_AI_TIMEOUT_MS',
-  'PATH_AI_COOLDOWN_MS'
+  'PATH_AI_COOLDOWN_MS',
+  'SCAN_RADIUS',
+  'CRITICAL_HEALTH'
 ]
 for (const key of envKeys) {
   requireText('apps/mcbot/deploy/env.example', key, `env:${key}`)

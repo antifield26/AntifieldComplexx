@@ -3,8 +3,8 @@ import { patrolCorners } from './patrol.ts'
 import { safeSpotNear } from './navigation.ts'
 
 /**
- * 安全区清怪：沿安全区巡逻点移动，使用任务被动防御白名单主动接战；
- * 不攻击玩家、不追击到安全区外、不破坏/放置方块；低血/低食物沿用 Defender 撤退策略。
+ * 绕家清怪：沿巡逻点移动，使用任务被动防御白名单主动接战；
+ * 不攻击玩家、不破坏/放置方块；低血/低食物沿用 Defender 撤退策略。
  */
 export async function runClearing (ctx: TaskContext): Promise<void> {
   const bot = requireBot(ctx)

@@ -24,10 +24,13 @@ test('v0.2 config defaults match the prepared base', () => {
   assert.equal(config.taskRecoveryMax, 3)
 })
 
-test('v0.2 config rejects a farm outside the safe zone', () => {
+test('v1.0.10 config accepts a farm outside the old rectangle', () => {
+  const config = loadConfig(baseEnv({ FARM_MIN_X: '300', FARM_MAX_X: '310' }), '0.2.0')
+  assert.equal(config.farm.minX, 300)
+  assert.equal(config.farm.maxX, 310)
   assert.throws(
-    () => loadConfig(baseEnv({ FARM_MIN_X: '300' }), '0.2.0'),
-    (error: unknown) => error instanceof ConfigError && /FARM_MIN|must be inside/.test(error.message)
+    () => loadConfig(baseEnv({ FARM_MIN_X: '200', FARM_MAX_X: '100' }), '0.2.0'),
+    (error: unknown) => error instanceof ConfigError && /FARM_MIN/.test(error.message)
   )
 })
 

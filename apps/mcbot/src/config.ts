@@ -125,7 +125,12 @@ export interface Config {
   defenseTargets: string[]
   chunkWaitMs: number
   home: { x: number, y: number, z: number }
+  /** 旧矩形。仍解析以兼容现有 env，不再限制行走、扫描或锚点。 */
   safeZone: { minX: number, maxX: number, minZ: number, maxZ: number }
+  /** 以 Bot 为圆心的扫描半径，硬顶 64。 */
+  scanRadius: number
+  /** 血量低于等于该值时传送回基地。0 表示关闭。 */
+  criticalHealth: number
   farm: {
     minX: number
     maxX: number
@@ -323,22 +328,8 @@ function readUrl (env: Env, key: string, fallback: string): string {
   return raw.replace(/\/+$/, '')
 }
 
-function assertInSafeZone (
-  name: string,
-  point: { x: number, z: number },
-  safe: { minX: number, maxX: number, minZ: number, maxZ: number }
-): void {
-  if (point.x < safe.minX || point.x > safe.maxX || point.z < safe.minZ || point.z > safe.maxZ) {
-    throw new ConfigError(`${name} must be inside SAFE_MIN_X..SAFE_MAX_X and SAFE_MIN_Z..SAFE_MAX_Z`)
-  }
-}
-
 /** 可选坐标点：三个 env 都缺失返回 null；只配置一部分视为错误。 */
-function readOptionalPoint (
-  env: Env,
-  prefix: string,
-  safe: { minX: number, maxX: number, minZ: number, maxZ: number }
-): ConfigPoint | null {
+function readOptionalPoint (env: Env, prefix: string): ConfigPoint | null {
   const rawX = env[`${prefix}_X`]
   const rawY = env[`${prefix}_Y`]
   const rawZ = env[`${prefix}_Z`]
@@ -350,17 +341,13 @@ function readOptionalPoint (
     y: readNumber(env, `${prefix}_Y`, 0, -256, 512),
     z: readNumber(env, `${prefix}_Z`, 0, -30000000, 30000000)
   }
-  assertInSafeZone(prefix, point, safe)
   return point
 }
 
 const MAX_EXPLORE_WAYPOINTS = 32
 
-/** EXPlORE_WAYPOINTS 形如 `home:175:64:410;farm:180:64:435`；名称唯一且都在安全区内。 */
-function readExploreWaypoints (
-  env: Env,
-  safe: { minX: number, maxX: number, minZ: number, maxZ: number }
-): Array<ConfigPoint & { name: string }> {
+/** EXPLORE_WAYPOINTS 形如 `home:175:64:410;farm:180:64:435`；名称唯一，坐标有限。 */
+function readExploreWaypoints (env: Env): Array<ConfigPoint & { name: string }> {
   const raw = readString(env, 'EXPLORE_WAYPOINTS', '').trim()
   if (raw === '') return []
   const names = new Set<string>()
@@ -383,7 +370,6 @@ function readExploreWaypoints (
     if (x < -30000000 || x > 30000000 || z < -30000000 || z > 30000000 || y < -256 || y > 512) {
       throw new ConfigError(`EXPLORE_WAYPOINTS coordinates out of range: ${entry}`)
     }
-    assertInSafeZone(`EXPLORE_WAYPOINTS ${name}`, { x, z }, safe)
     waypoints.push({ name, x, y, z })
     if (waypoints.length > MAX_EXPLORE_WAYPOINTS) {
       throw new ConfigError(`EXPLORE_WAYPOINTS supports at most ${MAX_EXPLORE_WAYPOINTS} points`)
@@ -470,10 +456,10 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     z: readNumber(env, 'CHEST_Z', 435, -30000000, 30000000)
   }
   const storageChests = {
-    ores: readOptionalPoint(env, 'CHEST_ORES', safeZone),
-    food: readOptionalPoint(env, 'CHEST_FOOD', safeZone),
-    saplings: readOptionalPoint(env, 'CHEST_SAPLINGS', safeZone),
-    misc: readOptionalPoint(env, 'CHEST_MISC', safeZone)
+    ores: readOptionalPoint(env, 'CHEST_ORES'),
+    food: readOptionalPoint(env, 'CHEST_FOOD'),
+    saplings: readOptionalPoint(env, 'CHEST_SAPLINGS'),
+    misc: readOptionalPoint(env, 'CHEST_MISC')
   }
   const fishStand = {
     x: readNumber(env, 'FISH_STAND_X', 204.5, -30000000, 30000000),
@@ -502,15 +488,6 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
   if (treeFarm.logMinY <= treeFarm.groundY || treeFarm.maxY < treeFarm.logMinY) {
     throw new ConfigError('TREE_FARM_LOG_MIN_Y must be > TREE_FARM_GROUND_Y and <= TREE_FARM_MAX_Y')
   }
-  assertInSafeZone('BOT_HOME', home, safeZone)
-  assertInSafeZone('FARM', { x: farm.minX, z: farm.minZ }, safeZone)
-  assertInSafeZone('FARM', { x: farm.maxX, z: farm.maxZ }, safeZone)
-  assertInSafeZone('CHEST', chest, safeZone)
-  assertInSafeZone('FISH_STAND', fishStand, safeZone)
-  assertInSafeZone('FISH_WATER', fishWater, safeZone)
-  assertInSafeZone('TREE_FARM', { x: treeFarm.minX, z: treeFarm.minZ }, safeZone)
-  assertInSafeZone('TREE_FARM', { x: treeFarm.maxX, z: treeFarm.maxZ }, safeZone)
-
   const mining = {
     minY: readNumber(env, 'MINE_MIN_Y', 60, -256, 512),
     maxY: readNumber(env, 'MINE_MAX_Y', 120, -256, 512),
@@ -672,6 +649,8 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     chunkWaitMs: readInt(env, 'CHUNK_WAIT_MS', 5000, 500, 60000),
     home,
     safeZone,
+    scanRadius: readInt(env, 'SCAN_RADIUS', 32, 4, 64),
+    criticalHealth: readInt(env, 'CRITICAL_HEALTH', 6, 0, 20),
     farm,
     chest,
     storageChests,
@@ -748,7 +727,7 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     autoEatBelow: readInt(env, 'AUTO_EAT_BELOW', 16, 1, 20),
     guardRadius: readNumber(env, 'GUARD_RADIUS', 16, 4, 32),
     escortDistance: readNumber(env, 'ESCORT_DISTANCE', 12, 4, 32),
-    exploreWaypoints: readExploreWaypoints(env, safeZone),
+    exploreWaypoints: readExploreWaypoints(env),
     logLevel: readLogLevel(env),
     logAiPrompt: readBool(env, 'LOG_AI_PROMPT', false)
   })

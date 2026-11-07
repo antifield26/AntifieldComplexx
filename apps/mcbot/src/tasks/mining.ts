@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer'
 import { Vec3 } from 'vec3'
 import type { Config } from '../config.ts'
+import { surveyRing } from './navigation.ts'
 import { depositProduce } from './deposit.ts'
 import { equipItem } from './inventory.ts'
 import { isExpired, requireBot, sleep, TaskError, TaskStopError, type TaskContext } from './types.ts'
@@ -114,18 +115,9 @@ export async function runMining (ctx: TaskContext): Promise<void> {
 }
 
 function surveyCells (config: Config, bot: Bot): Vec3[] {
-  const cells: Vec3[] = []
-  const step = 32
-  for (let x = config.safeZone.minX + 16; x <= config.safeZone.maxX; x += step) {
-    for (let z = config.safeZone.minZ + 16; z <= config.safeZone.maxZ; z += step) {
-      cells.push(new Vec3(x, 64, z))
-    }
-  }
   const position = bot.entity?.position
-  if (position) {
-    cells.sort((a, b) => position.distanceTo(a) - position.distanceTo(b))
-  }
-  return cells
+  if (!position) return []
+  return surveyRing(position, config.scanRadius)
 }
 
 

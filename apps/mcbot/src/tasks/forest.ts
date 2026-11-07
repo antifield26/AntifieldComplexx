@@ -4,6 +4,7 @@ import type { Config } from '../config.ts'
 import { depositProduce } from './deposit.ts'
 import { equipItem } from './inventory.ts'
 import { isExpired, requireBot, sleep, TaskError, TaskStopError, type TaskContext } from './types.ts'
+import { columnsWithinRadius, surveyRing } from './navigation.ts'
 import {
   FOREST_SPECIES,
   forestSpeciesForLog,
@@ -34,10 +35,13 @@ function hasLeavesNear (bot: Bot, log: Vec3, leavesName: string): boolean {
   return false
 }
 
-function inForestScan (position: Vec3, config: Config): boolean {
-  return position.x >= config.safeZone.minX && position.x <= config.safeZone.maxX &&
-    position.z >= config.safeZone.minZ && position.z <= config.safeZone.maxZ &&
-    position.y >= 60 && position.y <= 128
+function inForestScan (position: Vec3, origin: Vec3, radius: number): boolean {
+  const dx = position.x - origin.x
+  const dz = position.z - origin.z
+  if (dx * dx + dz * dz > radius * radius) return false
+  const minY = Math.floor(origin.y) - 16
+  const maxY = Math.floor(origin.y) + 32
+  return position.y >= minY && position.y <= maxY
 }
 
 /**
@@ -49,12 +53,15 @@ export function scanNaturalTrees (bot: Bot, config: Config): NaturalTree[] {
   const seen = new Set<string>()
   const trees: NaturalTree[] = []
   const position = bot.entity?.position ?? null
+  if (!position) return []
   const logNames = new Set(config.forest.species.map(species => FOREST_SPECIES[species]?.log).filter(Boolean) as string[])
+  const minY = Math.floor(position.y) - 16
+  const maxY = Math.floor(position.y) + 32
 
-  for (let x = config.safeZone.minX; x <= config.safeZone.maxX; x++) {
-    for (let z = config.safeZone.minZ; z <= config.safeZone.maxZ; z++) {
-      if (insideProtected(config, x, z, config.forest.protectRadius)) continue
-      for (let y = 60; y <= 128; y++) {
+  for (const column of columnsWithinRadius(position, config.scanRadius)) {
+    const { x, z } = column
+    if (insideProtected(config, x, z, config.forest.protectRadius)) continue
+    for (let y = minY; y <= maxY; y++) {
         const start = new Vec3(x, y, z)
         if (seen.has(seenKey(start))) continue
         const startBlock = bot.blockAt(start, false)
@@ -76,7 +83,7 @@ export function scanNaturalTrees (bot: Bot, config: Config): NaturalTree[] {
             new Vec3(0, 0, 1), new Vec3(0, 0, -1)
           ]) {
             const next = current.plus(offset)
-            if (!inForestScan(next, config) || seen.has(seenKey(next))) continue
+            if (!inForestScan(next, position, config.scanRadius) || seen.has(seenKey(next))) continue
             const block = bot.blockAt(next, false)
             if (!block || block.name !== spec.log) continue
             seen.add(seenKey(next))
@@ -91,7 +98,6 @@ export function scanNaturalTrees (bot: Bot, config: Config): NaturalTree[] {
         if (!logs.some(log => hasLeavesNear(bot, log, spec.leaves))) continue
         if (playerNear(bot, base, 8)) continue
         trees.push({ base, logs, species })
-      }
     }
   }
   if (position) trees.sort((a, b) => position.distanceTo(a.base) - position.distanceTo(b.base))
@@ -161,16 +167,9 @@ async function plantSapling (ctx: TaskContext, bot: Bot, tree: NaturalTree): Pro
 }
 
 function surveyCells (config: Config, bot: Bot): Vec3[] {
-  const cells: Vec3[] = []
-  const step = 32
-  for (let x = config.safeZone.minX + 16; x <= config.safeZone.maxX; x += step) {
-    for (let z = config.safeZone.minZ + 16; z <= config.safeZone.maxZ; z += step) {
-      cells.push(new Vec3(x, 64, z))
-    }
-  }
   const position = bot.entity?.position
-  if (position) cells.sort((a, b) => position.distanceTo(a) - position.distanceTo(b))
-  return cells
+  if (!position) return []
+  return surveyRing(position, config.scanRadius)
 }
 
 export async function runForest (ctx: TaskContext): Promise<void> {

@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.9）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.10）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -14,6 +14,16 @@
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v20**（生产）：新增外部告警 Webhook 和 QQ 入队状态。迁移前保存并核验 schema 19 快照。生产版本见下方记录。
+
+## v1.0.10 发布顺序
+
+1. 跑 `check-version`、`check:docs` 和当前事实核对，并清理临时文件。schema 保持 20，不升级 OpenCode。
+2. 部署 Workbench 1.0.10（版本轴对齐，无应用行为变更），再部署 mcbot 1.0.10。Minecraft 与 OpenCode 保持运行。
+3. 健康检查两侧都报 1.0.10 后跑 smoke。Windows 计划任务脚本未改；版本标记需管理员重装后才与仓库一致。
+4. 把 release 路径写入 [ACCEPTANCE](ACCEPTANCE.md)，再打附注 Tag `v1.0.10`。不移动已有 Tag。
+5. 回滚：mcbot 切回 `/opt/mcbot/releases/20261106T134625Z`。Workbench 切回 `/opt/antifieldcloud/releases/20261106T134109Z` 并保留现行 schema 20 库。部署前快照只用于恢复当前数据库本身。
+
+> **v1.0.10 部署**：路径与 smoke 见 [ACCEPTANCE](ACCEPTANCE.md)。预发布实机 release `/opt/mcbot/releases/20261107T084917Z` 的包版本仍报 1.0.9，不作为回滚目标。
 
 ## v1.0.9 发布顺序
 

@@ -112,6 +112,16 @@ async function main (): Promise<void> {
   })
 
   const movement = new MovementManager(logger.withScope('movement'), config)
+  movement.setCriticalListener(health => {
+    audit.append({
+      event: 'movement.critical_home',
+      source: 'movement',
+      actor: config.botUsername,
+      action: 'teleport_home',
+      result: 'accepted',
+      details: { health }
+    })
+  })
   movement.setNavigationListener(snapshot => state.setNavigation(snapshot))
   movement.setFallbackListener((fallback, reason) => {
     events.emit('movement', {

@@ -4,7 +4,6 @@ import type { AuditLogger } from '../audit.ts'
 import type { Config } from '../config.ts'
 import type { Logger } from '../logger.ts'
 import type { MovementManager } from '../minecraft/movement.ts'
-import { insideSafeZone } from '../tasks/navigation.ts'
 import { withdrawSupplies } from '../tasks/deposit.ts'
 import { eatIfNeeded, equipItem, findItem } from '../tasks/inventory.ts'
 import type { TaskContext } from '../tasks/types.ts'
@@ -100,8 +99,9 @@ export class Defender implements TaskDefender {
         health: bot.health,
         food: bot.food
       })
-      if (!insideSafeZone(this.deps.config, target.position.x, target.position.z)) {
-        await this.retreat(ctx, '怪在安全区外')
+      if (this.deps.config.criticalHealth > 0 && bot.health <= this.deps.config.criticalHealth) {
+        this.deps.movement.noteHealth()
+        await this.retreat(ctx, '血量濒危', false)
         return 'retreat'
       }
       try {
@@ -164,7 +164,6 @@ export class Defender implements TaskDefender {
       if (!name || FORBIDDEN_NAMES.has(name)) continue
       if (!this.deps.config.defenseTargets.includes(name)) continue
       if (bot.entity.position.distanceTo(entity.position) > this.deps.config.defenseRadius) continue
-      if (!insideSafeZone(this.deps.config, entity.position.x, entity.position.z)) continue
       result.push(entity as unknown as DefensibleEntity)
     }
     return result.sort((a, b) => bot.entity.position.distanceTo(a.position) - bot.entity.position.distanceTo(b.position))
@@ -215,7 +214,7 @@ export class Defender implements TaskDefender {
     return 8
   }
 
-  private async retreat (ctx: TaskContext, reason: string): Promise<void> {
+  private async retreat (ctx: TaskContext, reason: string, walkHome = true): Promise<void> {
     this.logger.warn('defense: retreat', { reason })
     this.deps.audit.append({
       event: 'combat.retreat',
@@ -230,6 +229,7 @@ export class Defender implements TaskDefender {
     } catch {
       // ignore; movement home is the priority
     }
+    if (!walkHome) return
     try {
       await this.deps.movement.home()
     } catch {

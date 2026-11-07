@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer'
 import type { Block } from 'prismarine-block'
 import { Vec3 } from 'vec3'
 import type { Config } from '../config.ts'
-import { insideSafeZone } from './navigation.ts'
+import { columnsWithinRadius, insideSafeZone, surveyRing } from './navigation.ts'
 
 export interface ProtectedPoint {
   x: number
@@ -92,14 +92,7 @@ export function forestSpeciesForLog (config: Config, name: string): string | nul
 }
 
 export function surveyCells (config: Config): Vec3[] {
-  const cells: Vec3[] = []
-  const step = 32
-  for (let x = config.safeZone.minX + 16; x <= config.safeZone.maxX; x += step) {
-    for (let z = config.safeZone.minZ + 16; z <= config.safeZone.maxZ; z += step) {
-      cells.push(new Vec3(x, 64, z))
-    }
-  }
-  return cells
+  return surveyRing(config.home, config.scanRadius)
 }
 
 export function surveyCellsFor (config: Config, x: number, z: number): Vec3[] {
@@ -132,27 +125,30 @@ export function scanExposedOres (bot: Bot, config: Config): OreTarget[] {
   const allowed = new Set(config.mining.ores)
   const targets: OreTarget[] = []
   const position = bot.entity?.position ?? null
+  if (!position) return []
   const bands = miningBands(config)
-  for (let x = config.safeZone.minX; x <= config.safeZone.maxX; x++) {
-    for (let z = config.safeZone.minZ; z <= config.safeZone.maxZ; z++) {
-      if (insideProtected(config, x, z, config.mining.protectRadius)) continue
-      for (const [minY, maxY] of bands) {
-        for (let y = minY; y <= maxY; y++) {
-          const point = new Vec3(x, y, z)
-          const block = blockAt(bot, point)
-          if (!block || !allowed.has(block.name)) continue
-          const kind = oreKind(block.name)
-          if (!kind) continue
-          if (!hasAirNeighbor(bot, point)) continue
-          if (hasLiquidNeighbor(bot, point)) continue
-          if (playerNear(bot, point, 8)) continue
-          targets.push({ position: point, name: block.name, kind })
-        }
+  const windowMin = Math.floor(position.y) - 24
+  const windowMax = Math.floor(position.y) + 8
+  for (const column of columnsWithinRadius(position, config.scanRadius)) {
+    const { x, z } = column
+    if (insideProtected(config, x, z, config.mining.protectRadius)) continue
+    for (const [bandMin, bandMax] of bands) {
+      const minY = Math.max(bandMin, windowMin)
+      const maxY = Math.min(bandMax, windowMax)
+      if (minY > maxY) continue
+      for (let y = minY; y <= maxY; y++) {
+        const point = new Vec3(x, y, z)
+        const block = blockAt(bot, point)
+        if (!block || !allowed.has(block.name)) continue
+        const kind = oreKind(block.name)
+        if (!kind) continue
+        if (!hasAirNeighbor(bot, point)) continue
+        if (hasLiquidNeighbor(bot, point)) continue
+        if (playerNear(bot, point, 8)) continue
+        targets.push({ position: point, name: block.name, kind })
       }
     }
   }
-  if (position) {
-    targets.sort((a, b) => position.distanceTo(a.position) - position.distanceTo(b.position))
-  }
-  return targets
+  targets.sort((a, b) => position.distanceTo(a.position) - position.distanceTo(b.position))
+  return targets.slice(0, 64)
 }

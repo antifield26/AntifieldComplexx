@@ -65,7 +65,7 @@ test('v1.0.6 传送：看不到实体时过来/跟随/按名传送都不发 /tp'
   assert.deepEqual(chats, [])
 })
 
-test('v1.0.6 传送：安全区外的在线玩家不能按名字传送', async () => {
+test('v1.0.10 传送：已加载的区外玩家可以按名字传送', async () => {
   const chats: string[] = []
   const config = makeConfig({
     botUsername: 'lofii',
@@ -83,9 +83,10 @@ test('v1.0.6 传送：安全区外的在线玩家不能按名字传送', async (
       }
     },
     game: { dimension: 'minecraft:overworld' },
-    chat (line: string) { chats.push(line) }
+    chat (line: string) { chats.push(line) },
+    waitForChunksToLoad: async () => undefined
   } as unknown as Bot
   attachBot(movement, bot)
-  await assert.rejects(() => movement.teleportToPlayer('Out'), /安全区外/)
-  assert.deepEqual(chats, [])
+  await movement.teleportToPlayer('Out')
+  assert.deepEqual(chats, ['/tp lofii Out'])
 })

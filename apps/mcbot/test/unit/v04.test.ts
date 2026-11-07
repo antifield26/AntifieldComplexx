@@ -47,11 +47,17 @@ test('v0.3 task state migrates to v0.4 queue schema with zeroed new progress', a
   }
 })
 
-test('config rejects a tree farm outside the safe zone', () => {
-  assert.throws(() => loadConfig(baseEnv({
+test('v1.0.10 config accepts a tree farm outside the old rectangle', () => {
+  const config = loadConfig(baseEnv({
     TREE_FARM_MIN_X: '500',
     TREE_FARM_MAX_X: '510'
-  }), '0.4.0'), /TREE_FARM/)
+  }), '0.4.0')
+  assert.equal(config.treeFarm.minX, 500)
+  assert.equal(config.treeFarm.maxX, 510)
+  assert.throws(() => loadConfig(baseEnv({
+    TREE_FARM_MIN_X: '510',
+    TREE_FARM_MAX_X: '500'
+  }), '0.4.0'), /TREE_FARM_MIN/)
 })
 
 test('woodcutting scan finds oak trunks only inside the farm', () => {

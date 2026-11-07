@@ -1,9 +1,8 @@
-import { insideSafeZone } from './navigation.ts'
 import { isExpired, requireBot, TaskError, TaskStopError, type TaskContext } from './types.ts'
 
 /**
- * 航点探索：按 EXPLORE_WAYPOINTS 顺序在安全区内移动并观察，不挖方块、不进入未配置区域。
- * 航点由配置校验（安全区、唯一名称、数量上限）；运行时仍逐点复核安全区。
+ * 航点探索：按 EXPLORE_WAYPOINTS 顺序移动并观察，不挖方块。
+ * 航点由配置校验名称、数量和坐标范围。
  */
 export async function runExplore (ctx: TaskContext): Promise<void> {
   const bot = requireBot(ctx)
@@ -15,10 +14,6 @@ export async function runExplore (ctx: TaskContext): Promise<void> {
   for (const waypoint of waypoints) {
     if (isExpired(ctx)) throw new TaskStopError('任务时间到了')
     if (ctx.signal.aborted) throw new TaskStopError()
-    if (!insideSafeZone(config, waypoint.x, waypoint.z)) {
-      ctx.logger.warn('explore: waypoint outside safe zone, skipped', { name: waypoint.name })
-      continue
-    }
     await ctx.defend()
     await movement.goNearPoint(waypoint.x, waypoint.y, waypoint.z, 3, 20000, true)
     ctx.updateProgress({ exploreWaypoints: ctx.progress.exploreWaypoints + 1 })

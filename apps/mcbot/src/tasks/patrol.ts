@@ -4,22 +4,20 @@ import type { Config } from '../config.ts'
 import { requireBot, TaskStopError, type TaskContext } from './types.ts'
 import { safeSpotNear } from './navigation.ts'
 
+/** 绕家的四个方向点。半径不超过 16，也不超过扫描半径。 */
 export function patrolCorners (config: Config): Vec3[] {
-  // Inset by 4 blocks so the resulting safe-spot feet/head coordinates are
-  // still strictly inside the configured rectangle (a spot at maxX+0.5 would
-  // otherwise be rejected by insideSafeZone).
-  const inset = 4
+  const radius = Math.min(16, config.scanRadius)
+  const { x, y, z } = config.home
   return [
-    new Vec3(config.safeZone.minX + inset, 64, config.safeZone.minZ + inset),
-    new Vec3(config.safeZone.maxX - inset, 64, config.safeZone.minZ + inset),
-    new Vec3(config.safeZone.maxX - inset, 64, config.safeZone.maxZ - inset),
-    new Vec3(config.safeZone.minX + inset, 64, config.safeZone.maxZ - inset)
+    new Vec3(x + radius, y, z),
+    new Vec3(x, y, z + radius),
+    new Vec3(x - radius, y, z),
+    new Vec3(x, y, z - radius)
   ]
 }
 
 /**
- * One pass around the safe-zone boundary. It does not chase mobs; the normal
- * passive defender handles anything that attacks during travel.
+ * 绕家走一圈。不追怪；路上的敌对生物仍由被动防御处理。
  */
 export async function runPatrol (ctx: TaskContext): Promise<void> {
   const bot: Bot = requireBot(ctx)

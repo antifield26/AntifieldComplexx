@@ -32,7 +32,7 @@ test('v1.0.0 新任务配置：守卫半径/护送距离/探索航点', () => {
   assert.equal(config.escortDistance, 12)
   assert.deepEqual(config.exploreWaypoints.map(point => point.name), ['home', 'farm'])
   assert.throws(() => loadConfig(env({ EXPLORE_WAYPOINTS: 'home:175:64:410;home:180:64:435' })), /duplicate/)
-  assert.throws(() => loadConfig(env({ EXPLORE_WAYPOINTS: 'x:1:64:1' })), /SAFE_MIN_X/)
+  assert.equal(loadConfig(env({ EXPLORE_WAYPOINTS: 'x:1:64:1' })).exploreWaypoints[0]?.name, 'x')
   assert.throws(() => loadConfig(env({ EXPLORE_WAYPOINTS: 'bad name:175:64:410' })), /name must be/)
 })
 

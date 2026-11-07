@@ -136,7 +136,7 @@ export function buildToolDefinitions (): McpToolDefinition[] {
     },
     {
       name: 'inspect_chest',
-      description: '只读打开附近一个安全区内、allowlist 容器并返回物品摘要；不取物。只在没有活动任务时可用。',
+      description: '只读打开附近扫描半径内的一个 allowlist 容器并返回物品摘要；不取物。只在没有活动任务时可用。',
       inputSchema: {
         type: 'object',
         properties: {

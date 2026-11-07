@@ -1,7 +1,7 @@
 # mcbot（游戏内人格名 Lofii）
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：**v1.0.9**。本机契约 v2 发言使用控制 Token；自主会话和移动按单次操作取消。Workbench 兼容 v1 的读取与既有控制。同一启动周期的事件序号空洞由 Workbench 记入 `eventGap`。
+> 当前版本：**v1.0.10**。行走不受 `SAFE_*` 矩形限制。血量 ≤ `CRITICAL_HEALTH` 时只传送回基地。本机契约 v2 发言使用控制 Token；自主会话和移动按单次操作取消。Workbench 兼容 v1 的读取与既有控制。同一启动周期的事件序号空洞由 Workbench 记入 `eventGap`。
 
 ## 能做什么
 
@@ -9,12 +9,12 @@
 - **在线模式**：SLP 每 15 秒探测；默认 `auto` 有玩家时上线、最后一名玩家离开 60 秒后下线，让服务器在空服时正常 pause；`always` 常驻、`off` 不主动上线。模式持久化到 `/var/lib/mcbot/presence.json`，任务/自主会话运行中不能切到 `off`。
 - **自动化任务**：`Lofii 去钓鱼` / `去种田` / `去砍树` / `去挖矿` / `砍天然林` / `睡觉` / `巡逻` / `守卫` / `护送` / `探索` / `清理安全区` / `收工` / `回家` / `存东西`。
   - 钓鱼/种田/固定 oak 树场保持 v0.4 行为。
-  - 挖矿只找安全区内 `y≥60` 的煤/铁/铜裸露矿，不挖石头隧道。
-  - 天然林只砍 oak/spruce/birch，保护盒 16 格，逐棵补种。
+  - 挖矿只找 Bot 周围 `SCAN_RADIUS` 内、配置 y 带上的煤/铁/铜裸露矿，不挖石头隧道。
+  - 天然林只砍半径内的 oak/spruce/birch，保护盒 16 格，逐棵补种。
   - 睡觉用 Vote2Sleep（1.3.0，min 1、40%）投票；无法跳夜正常结束。
-  - 巡逻沿安全区边界四角，最多 15 分钟，不主动追怪。
+  - 巡逻绕家四个方向，最多 15 分钟，不主动追怪。
 - **任务队列**：单 active + 最多 3 个排队；active 结束自动下一个；失败/收工清空队列；队列跨重启持久化；任务上限 60 分钟。
-- **任务中被动防御**：任务中 12 格内出现僵尸/骷髅/蜘蛛才接战；HP≤12、食物≤6 或 >2 只怪时撤退回家；不攻击 creeper/enderman/witch/玩家。
+- **任务中被动防御**：任务中 12 格内出现僵尸/骷髅/蜘蛛才接战；HP≤12、食物≤6 或 >2 只怪时撤退回家；没有铁剑时仍撤退；不再因怪物在旧矩形外撤退。不攻击 creeper/enderman/witch/玩家。血量 ≤ `CRITICAL_HEALTH` 时传送回基地。
 - **管理只读**：`GET /admin/status` 返回 RCON `tps`/`list`/`whitelist list`/`time`；只允许这四条命令，无写权限。
 - **历史与告警**：SQLite 每 60 秒采样（在线/任务/血量/TPS/内存/队列），保留 30 天；`GET /history` 查询；SSE `alert` 覆盖低血量/任务失败/断线/箱子满/防御撤退，5 分钟冷却。
 - **任务期间保持在线**：Antifield 下线后任务继续；任务结束且无玩家时恢复动态下线。
@@ -24,7 +24,7 @@
 - **只读近期事件轮询**：`GET /events/recent`（读 Token）返回 ring 最近 1–200 条事件（升序，无 `hello`）及 `bootId/lastEventId/contractVersion`，供 AntifieldCloud 低频轮询或 SSE 断线补拉；`GET /healthz` 同步返回 `contractVersion`。
 - **HTTP 控制**：独立 `HTTP_CONTROL_TOKEN` 控制 `/task/start|stop|resume` 与 `/move`；读 Token 只能看状态/SSE/`/say`。
 - **审计 JSONL**：任务/移动/HTTP/AI 触发元数据写 `/var/lib/mcbot/audit.jsonl`（0600、5 MB 轮转、30 天）；不含聊天正文/Token/密码。
-- **移动与家**：`回家`、`过来`、`跟随` 统一经过寻路层；安全区外只走路径、不传送；安全传送仅作为安全区内最后兜底并显式提示。
+- **移动与家**：`回家`、`过来`、`跟随` 统一经过寻路层。行走不受 `SAFE_*` 矩形限制，寻路走廊半径为 `PATH_OUTSIDE_SAFE_RADIUS`。寻路失败就停下。血量 ≤ `CRITICAL_HEALTH` 时只传送回基地。已配置锚点，以及距离超过 `TELEPORT_DISTANCE` 且玩家实体已加载时，仍可传送。
 - **主动行为**：Antifield 加入问候；夜晚/雷雨/死亡固定短文；可关闭。
 - **AI 意图兜底**：固定短语优先；Antifield 的任务类模糊语句才调用 AI 分类，AI 不能直接执行任意动作。
 - **按玩家记忆**：最近 20 轮、保留 30 天；每 20 个来回后台生成 ≤1000 字聊天摘要，落盘到 `/var/lib/mcbot/memory`，重启后仍能记住。
@@ -237,7 +237,9 @@ sudo systemctl restart mcbot
 | `SSE_MAX_CLIENTS` / `SSE_BUFFER_EVENTS` | `8` / `500` | SSE 客户端上限/回放 ring |
 | `TASK_PENDING_TTL_MS` | `600000` | 重启任务确认窗口（10 分钟） |
 | `QUEUE_MAX` | `3` | active 之外排队上限 |
-| `SAFE_MIN_X/MAX_X/MIN_Z/MAX_Z` | `111/239/410/474` | 主世界安全区 |
+| `SAFE_MIN_X/MAX_X/MIN_Z/MAX_Z` | `111/239/410/474` | 旧矩形，仍解析，不再限制行走或扫描 |
+| `SCAN_RADIUS` | `32` | 挖矿/天然林/资源扫描半径，最大 64 |
+| `CRITICAL_HEALTH` | `6` | 血量低于等于该值时传送回基地；0 关闭 |
 | `RCON_ENABLED` / `RCON_PASSWORD` | `false` / 空 | 只读管理；生产显式开启 |
 | `HISTORY_ENABLED` / `HISTORY_DB` | `true` / `.../history.db` | SQLite 历史 |
 | `ALERTS_ENABLED` / `ALERT_COOLDOWN_MS` | `true` / `300000` | SSE 告警/冷却 |

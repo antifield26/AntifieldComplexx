@@ -1,16 +1,31 @@
-# AntifieldComplexx v1.0.9 实施计划（当前状态）
+# AntifieldComplexx v1.0.10 实施计划（当前状态）
 
 本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`；审计见 `docs/app/AUDIT.md`。
 
 > 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
 
-## v1.0.9 当前状态（已部署）
+## v1.0.10 当前状态
 
-- **版本**：**v1.0.9**；schema **v20**；OpenCode **v2.2.5**；mcbot **v1.0.9**（契约 v2）。Workbench 继续兼容契约 v1 的读取与既有控制。
-- **范围**：增量按最近有效全量链的清单覆盖，包含回收站、笔记附件和已找回的缺失文件；pending 损坏或缺失时停止生成并保留证据。主机告警的 firing、resolved、unknown 与周期重通知进入既有投递箱。告警列表只读展示 `deliveries`。同一 bootId 的事件序号空洞写入 `eventGap`。`drill.ps1 -RestoreOutputDir` 在校验通过后发布隔离恢复目录。smoke 核对计划任务的 `-File` 与已安装脚本 SHA-256。
-- **边界**：不启用整包加密与异地副本，不收紧 Pi sudo，不重启 Minecraft，不重启 OpenCode，不修改 `opencode.json`。
-- **状态**：运行 commit `7cfbf2d`。app `/opt/antifieldcloud/releases/20261106T134109Z`、mcbot `/opt/mcbot/releases/20261106T134625Z`；迁移前快照 `db-predeploy-20261106T134205714Z.sqlite`；演练 `20261106T135130Z` 为 schema 20；Windows 任务已重装为 1.0.9；Access smoke **36/0/0/2**。
-- **回滚**：mcbot 可独立切回 `/opt/mcbot/releases/20261105T021915Z`。Workbench 回退保留现行 schema 20 数据库和待投递任务，切回 `/opt/antifieldcloud/releases/20261105T021739Z`，核对队列收口后再生成并验证新的全量。部署前快照只用于恢复当前数据库本身。从 v1.0.8 再退到 v1.0.7 仍须先恢复 schema 19 快照 `db-predeploy-20261105T021746014Z.sqlite`。
+- **版本**：**v1.0.10**；schema **v20**；OpenCode **v2.2.5**；mcbot **v1.0.10**（契约 v2）。Workbench 继续兼容契约 v1 的读取与既有控制。
+- **范围**：去掉矩形围栏对行走和扫描的限制。扫描半径有硬顶。寻路失败停止。濒危只传送回基地。锚点和已加载玩家名仍可传送。没有铁剑时仍撤退。
+- **边界**：不启用整包加密与异地副本，不收紧 Pi sudo，不重启 Minecraft，不重启 OpenCode。不新增 MCP 工具。空手战斗、主动找食物、梯子和门属于 v1.0.11。
+- **状态**：正式 release 路径见 [ACCEPTANCE](ACCEPTANCE.md)。回退 mcbot 到 `/opt/mcbot/releases/20261106T134625Z`，回退 Workbench 到 `/opt/antifieldcloud/releases/20261106T134109Z` 并保留现行库。演练仍为 `20261106T135130Z`。
+- **测试基线**：app **625**（624 pass、1 skip）+ web **283** + mcbot **154**。
+
+## 计划中：v1.0.11 及以后（尚未发布）
+
+聚焦 mcbot。契约保持 v2，schema 保持 20，OpenCode 保持 2.2.5。
+
+- **v1.0.11**：本地反射负责空手战斗、找食物、梯子和门。不把这些动作交给模型。
+- **v1.0.12**：决策前重建短环境快照。结构化记忆用固定分类，读写是工具，提示词只带索引。
+- **v1.0.13**：用记忆坐标减少扫描。
+- **发布门禁**：每个版本在打 Tag 前做一次文档对齐和临时文件清理。
+
+## v1.0.9 已部署状态（历史）
+
+- **版本**：**v1.0.9**；schema **v20**；OpenCode **v2.2.5**；mcbot **v1.0.9**（契约 v2）。
+- **范围**：增量按最近有效全量链的清单覆盖；主机告警进入既有投递箱；告警列表只读展示 `deliveries`；同一 bootId 的事件序号空洞写入 `eventGap`。
+- **状态**：运行 commit `7cfbf2d`。app `/opt/antifieldcloud/releases/20261106T134109Z`、mcbot `/opt/mcbot/releases/20261106T134625Z`；演练 `20261106T135130Z` 为 schema 20；Access smoke **36/0/0/2**。Tag `v1.0.9` 指向 `4381a7d`。
 - **测试基线**：app **625**（624 pass、1 skip）+ web **283** + mcbot **147**。
 
 ## v1.0.8 已部署状态（历史）

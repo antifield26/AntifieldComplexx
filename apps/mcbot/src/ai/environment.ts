@@ -3,7 +3,7 @@
  *
  * 安全边界：
  * - 只读取 bot 已加载的状态/区块；不加载新区块、不改世界、不打开容器。
- * - 方块扫描受 allowlist/半径/数量限制，且只保留安全区内目标。
+ * - 方块扫描受 allowlist、半径和数量限制，只读已加载区块。
  * - 输出用于提示词/只读工具，不记录到审计正文。
  */
 import type { Bot } from 'mineflayer'
@@ -11,7 +11,6 @@ import { Vec3 } from 'vec3'
 import type { Config } from '../config.ts'
 import type { TaskSnapshot } from '../state.ts'
 import { countFood, emptySlots, itemStorageCategory } from '../tasks/inventory.ts'
-import { insideSafeZone } from '../tasks/navigation.ts'
 import { nearbyHostiles } from '../tasks/safety.ts'
 import { dimensionLabel, minecraftClock } from '../minecraft/status.ts'
 
@@ -142,8 +141,8 @@ function expandPatterns (bot: Bot, patterns: string[]): string[] {
   return [...names].sort((a, b) => a.localeCompare(b))
 }
 
-/** 扫描安全区内、allowlist 命中的方块；结果按类型聚合，不加载新区块。 */
-export function scanEnvironment (bot: Bot, config: Config, options: ScanOptions): ScanResult {
+/** 扫描半径内、allowlist 命中的方块；结果按类型聚合，不加载新区块。 */
+export function scanEnvironment (bot: Bot, _config: Config, options: ScanOptions): ScanResult {
   const empty: ScanResult = { blocks: [], chests: [], truncated: false }
   if (!bot.entity || !bot.inventory) return empty
   const names = expandPatterns(bot, options.patterns)
@@ -156,10 +155,10 @@ export function scanEnvironment (bot: Bot, config: Config, options: ScanOptions)
   const groups = new Map<string, { count: number, distance: number, nearest: EnvironmentPosition }>()
   const chests: EnvironmentChest[] = []
   for (const position of positions) {
-    if (!insideSafeZone(config, position.x, position.z)) continue
+    const distance = round(distanceTo(bot.entity.position, position), 1)
+    if (distance > options.radius) continue
     const block = bot.blockAt(position, false)
     if (!block || !names.includes(block.name)) continue
-    const distance = round(distanceTo(bot.entity.position, position), 1)
     const current = groups.get(block.name)
     if (!current) {
       groups.set(block.name, { count: 1, distance, nearest: toPosition(position) })

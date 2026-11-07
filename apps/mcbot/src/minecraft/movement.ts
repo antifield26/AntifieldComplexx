@@ -1,10 +1,10 @@
-/** 统一寻路和单次动作取消；传送仅允许经过安全区检查的落点。 */
+/** 统一寻路和单次动作取消。坐标传送只允许基地与已配置锚点；濒危传送只回基地。 */
 import type { Bot } from 'mineflayer'
 import pathfinderPackage from 'mineflayer-pathfinder'
 import { Vec3 } from 'vec3'
 import type { Config } from '../config.ts'
 import type { Logger } from '../logger.ts'
-import { insideSafeZone, safeSpotNear } from '../tasks/navigation.ts'
+import { isTeleportAnchor, safeSpotNear } from '../tasks/navigation.ts'
 import { planRoute } from './routing/planner.ts'
 import { RouteExecutor, type ExecutorBot } from './routing/executor.ts'
 import { canStand } from './routing/sampler.ts'
@@ -57,6 +57,8 @@ export class MovementManager {
   private navigationListener: ((snapshot: NavigationSnapshot) => void) | null = null
   private fallbackListener: ((fallback: 'teleport' | 'stopped', reason: string) => void) | null = null
   private readonly executor = new RouteExecutor()
+  private criticalBusy = false
+  private criticalListener: ((health: number) => void) | null = null
   private readonly trace = new NavigationTrace()
   private lastAiAt = 0
   private restoreMonitor: (() => void) | null = null
@@ -116,6 +118,10 @@ export class MovementManager {
 
   setFallbackListener (listener: ((fallback: 'teleport' | 'stopped', reason: string) => void) | null): void {
     this.fallbackListener = listener
+  }
+
+  setCriticalListener (listener: ((health: number) => void) | null): void {
+    this.criticalListener = listener
   }
 
   navigationSnapshot (): NavigationSnapshot {
@@ -230,8 +236,8 @@ export class MovementManager {
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
       throw new MovementError('传送坐标无效')
     }
-    if (!insideSafeZone(config, x, z)) {
-      throw new MovementError('目标在安全区外，不能传送')
+    if (!isTeleportAnchor(config, x, y, z)) {
+      throw new MovementError('只能传送到基地或已配置锚点')
     }
     const command = `/tp ${config.botUsername} ${x.toFixed(2)} ${y.toFixed(2)} ${z.toFixed(2)}`
     this.logger.info('movement teleport', { x, y, z })
@@ -241,8 +247,7 @@ export class MovementManager {
   }
 
   /**
-   * 按玩家名传送。实体未加载时无法确认坐标和维度，直接拒绝。
-   * 落点必须在安全区内；安全区外的过来/跟随只走路，不发 /tp。
+   * 按玩家名传送。实体未加载或跨维度时拒绝。跟随不走这条路径。
    */
   async teleportToPlayer (username: string): Promise<void> {
     const bot = this.requireBot()
@@ -253,10 +258,6 @@ export class MovementManager {
     const entity = player.entity
     if (!entity) throw new MovementError(`看不到 ${username}，请靠近一点再试`)
     this.assertSameDimension(username)
-    const position = entity.position
-    if (!insideSafeZone(config, position.x, position.z)) {
-      throw new MovementError('目标在安全区外，不能传送')
-    }
     this.logger.info('movement teleport to player', { username })
     bot.chat(`/tp ${config.botUsername} ${username}`)
     await new Promise(resolve => setTimeout(resolve, 1000))
@@ -266,6 +267,9 @@ export class MovementManager {
   async teleportNearPoint (x: number, y: number, z: number, radius = 4, signal?: AbortSignal): Promise<Vec3> {
     const bot = this.requireBot()
     const config = this.requireConfig()
+    if (!isTeleportAnchor(config, x, y, z)) {
+      throw new MovementError('只能传送到基地或已配置锚点')
+    }
     await this.waitForChunks()
     signal?.throwIfAborted()
     const spot = safeSpotNear(bot, config, { x, y, z }, radius)
@@ -338,21 +342,8 @@ export class MovementManager {
     }
   }
 
-  private navArea (bot: Bot, target: NavVector, allowOutsideSafeZone: boolean): NavArea {
+  private navArea (bot: Bot, target: NavVector): NavArea {
     const config = this.requireConfig()
-    const minY = -64
-    const maxY = 320
-    const targetInside = insideSafeZone(config, target.x, target.z)
-    if (!allowOutsideSafeZone || targetInside) {
-      return {
-        minX: config.safeZone.minX,
-        maxX: config.safeZone.maxX,
-        minZ: config.safeZone.minZ,
-        maxZ: config.safeZone.maxZ,
-        minY,
-        maxY
-      }
-    }
     const radius = config.pathOutsideSafeRadius
     const position = bot.entity?.position ?? target
     return {
@@ -360,8 +351,8 @@ export class MovementManager {
       maxX: Math.ceil(Math.max(position.x, target.x) + radius),
       minZ: Math.floor(Math.min(position.z, target.z) - radius),
       maxZ: Math.ceil(Math.max(position.z, target.z) + radius),
-      minY,
-      maxY
+      minY: -64,
+      maxY: 320
     }
   }
 
@@ -457,7 +448,7 @@ export class MovementManager {
     }
     this.refreshGround(bot)
     const world = this.navWorld(bot)
-    const area = this.navArea(bot, target, allowOutsideSafeZone)
+    const area = this.navArea(bot, target)
     const position = bot.entity?.position
     if (!position) return { ok: false, failure: 'unreachable', reason: 'entity_unavailable' }
     const plan = planRoute(
@@ -536,7 +527,7 @@ export class MovementManager {
     const position = bot.entity?.position
     if (!position) return false
     const world = this.navWorld(bot)
-    const area = this.navArea(bot, target, allowOutsideSafeZone)
+    const area = this.navArea(bot, target)
     this.updateNavigation({ state: 'planning', source: 'ai', aiUsed: true })
     try {
       const advice = await advisor.suggest({
@@ -544,7 +535,7 @@ export class MovementManager {
         target,
         failure,
         bounds: area,
-        allowOutsideSafeZone,
+        allowOutsideSafeZone: true,
         terrain: buildTerrainSummary(world, area, { x: position.x, y: position.y, z: position.z })
       })
       signal.throwIfAborted()
@@ -612,8 +603,8 @@ export class MovementManager {
   }
 
   /**
-   * 统一导航：pathfinder 快速路径 → 确定性 A* → 受控执行 → AI 路点 → 安全兜底。
-   * 所有入口都经过此方法；安全区外仅允许路径移动，不允许传送。
+   * 统一导航：pathfinder 快速路径 → 确定性 A* → 受控执行 → AI 路点 → 停止。
+   * 寻路失败不传送到目标点。锚点传送和濒危回基地走各自的入口。
    */
   private async navigateTo (
     target: NavVector,
@@ -678,29 +669,8 @@ export class MovementManager {
     signal.throwIfAborted()
     if (await this.tryAiRoute(bot, target, tolerance, allowOutsideSafeZone, failure, signal)) return
     signal.throwIfAborted()
-
-    if (allowTeleport && config.pathTeleportFallback) {
-      try {
-        await this.teleportNearPoint(target.x, target.y, target.z, Math.max(3, tolerance + 2), signal)
-        signal.throwIfAborted()
-        const fallbackReason = reason.slice(0, 160)
-        this.updateNavigation({
-          state: 'fallback',
-          source: 'teleport',
-          lastFallback: 'teleport',
-          lastFallbackReason: fallbackReason
-        })
-        this.notify?.('我找不到规范路径，先安全传送过去。')
-        this.fallbackListener?.('teleport', fallbackReason)
-        return
-      } catch (error) {
-        signal.throwIfAborted()
-        this.logger.warn('movement teleport fallback rejected', {
-          error: error instanceof Error ? error.message : String(error)
-        })
-        reason = error instanceof Error ? error.message : String(error)
-      }
-    }
+    void allowTeleport
+    void config.pathTeleportFallback
     const fallbackReason = reason.slice(0, 160)
     this.updateNavigation({
       state: 'fallback',
@@ -722,20 +692,46 @@ export class MovementManager {
     timeoutMs = 15000,
     allowTeleport = true
   ): Promise<void> {
-    const config = this.requireConfig()
-    if (!insideSafeZone(config, x, z)) throw new MovementError('目标在安全区外')
     const operation = this.begin('task')
     try {
-      await this.navigateTo({ x, y, z }, radius, false, allowTeleport, timeoutMs, operation.signal)
+      await this.navigateTo({ x, y, z }, radius, true, false, timeoutMs, operation.signal)
     } finally {
       this.end(operation)
     }
+    void allowTeleport
+  }
+
+  /**
+   * 血量到达濒危线时调用。已在家附近、未连接或开关关闭时不传送。
+   */
+  noteHealth (): void {
+    const bot = this.bot
+    const config = this.config
+    if (!bot?.entity || !config || config.criticalHealth <= 0 || this.criticalBusy) return
+    if (!Number.isFinite(bot.health) || bot.health <= 0 || bot.health > config.criticalHealth) return
+    const position = bot.entity.position
+    const home = config.home
+    if (Math.hypot(position.x - home.x, position.y - home.y, position.z - home.z) <= 4) return
+    this.criticalBusy = true
+    const health = bot.health
+    void this.criticalTeleportHome(health).finally(() => {
+      this.criticalBusy = false
+    })
+  }
+
+  private async criticalTeleportHome (health: number): Promise<void> {
+    const config = this.requireConfig()
+    this.stop('critical')
+    this.logger.warn('movement critical teleport home', { health })
+    this.criticalListener?.(health)
+    this.notify?.('血量太低，我先回基地。')
+    await this.teleportTo(config.home.x, config.home.y, config.home.z)
   }
 
   async home (): Promise<void> {
     const config = this.requireConfig()
     const home = config.home
-    await this.goNearPoint(home.x, home.y, home.z, 1, 30000, true)
+    await this.goNearPoint(home.x, home.y, home.z, 1, 30000, false)
   }
 
   async comeTo (username: string, timeoutMs = 30000): Promise<'arrived' | 'cancelled'> {
@@ -746,6 +742,11 @@ export class MovementManager {
       throw new MovementError(`看不到 ${username}，请靠近一点再试`)
     }
     const entity = target.entity
+    const distance = bot.entity ? bot.entity.position.distanceTo(entity.position) : Number.POSITIVE_INFINITY
+    if (distance > this.requireConfig().teleportDistance) {
+      await this.teleportToPlayer(username)
+      return 'arrived'
+    }
     const operation = this.begin('come')
     this.logger.info('movement come start', { target: username, timeoutMs })
     try {

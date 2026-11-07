@@ -227,7 +227,10 @@ export class MinecraftClient implements BotController {
         }
       })
 
-      bot.on('health', () => this.updatePlayerState(false))
+      bot.on('health', () => {
+        this.updatePlayerState(false)
+        this.deps.movement.noteHealth()
+      })
       bot.on('move', () => this.updatePlayerState(true))
     } catch (error) {
       this.failStart(error instanceof Error ? error : new Error(String(error)))

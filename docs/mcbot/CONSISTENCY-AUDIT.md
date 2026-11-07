@@ -2,7 +2,7 @@
 
 本审计以**代码/实际安全行为为真相**，覆盖根 README、AGENTS、docs/mcbot、docs/app/API 与 mcbot 环境模板。自动检查脚本：`scripts/check-mcbot-claims.mjs`（根 `npm run check:docs`，纳入 `npm run check`）。历史发布记录、`docs/legacy` 与已冻结的验收文本标为 `historical`，不回写历史，但会标注当前事实。
 
-> 当前生产是 v1.0.9 / schema v20 / mcbot 契约 v2 / OpenCode v2.2.5。下面的矩阵是 v1.0.6 审计快照。`check-mcbot-claims.mjs` 从当前包版本读取文档版本期望。
+> 当前生产是 v1.0.10 / schema v20 / mcbot 契约 v2 / OpenCode v2.2.5。下面的矩阵是 v1.0.6 审计快照。`check-mcbot-claims.mjs` 从当前包版本读取文档版本期望。
 
 ## 1. 声明矩阵
 
@@ -17,7 +17,7 @@
 | 自主会话代码默认关闭、生产 v1.0.2/v1.0.3 已启用 | README、AGENTS、mcbot README、API | `config.ts` 默认 `AUTONOMY_ENABLED=false`；生产部署记录 | fixed | 明确区分代码默认与生产配置 |
 | 普通聊天 AI 不执行动作；`AI_TOOLS_ENABLED` 是只读上下文段而非 OpenCode 工具 | 根 README、docs/mcbot/README、AGENTS | `ai/tools.ts` 的 `buildAiToolContext` 只拼提示词；`READ_ONLY_AI_TOOL_NAMES` 仅 allowlist | fixed | 删除“AI 没有任何工具”的绝对声明，限定普通聊天 |
 | v1.0.2 生产版本为 1.0.2，而不是 1.0.1 | docs/app/API | 生产 `/healthz`、release 记录 | fixed | 改为 v1.0.3 生产 |
-| 环境快照有界：基础状态 + 安全区 allowlist 方块/容器；只读已加载区块 | docs/mcbot/README/API、AGENTS | `environment.ts` 扫描/上限/安全区过滤；环境单测 | consistent | 自动检查关键 env/doc 声明 |
+| 环境快照有界：基础状态 + 半径内 allowlist 方块/容器；只读已加载区块 | docs/mcbot/README/API、AGENTS | `environment.ts` 扫描/上限/半径过滤；环境单测 | consistent | 自动检查关键 env/doc 声明 |
 | 容器读取只读、不取物、不传送、不破块；仅空闲 | docs/mcbot/README/API/AGENTS | `inspectChest()` 校验、`movement.goNearPoint(..., false)`、`chest.close()`、测试 | consistent | 保留失败关闭测试 |
 | eat/equip 仅空闲、背包内食物/护甲/工具、固定冷却 | docs/mcbot/README/API/AGENTS | `eat()`/`equip()`、`withAction`、单元测试 | consistent | 不接受任意物品/槽位 |
 | 事件驱动重决策：任务生命周期 + 安全告警、30s 去重、最多 6 次、无周期空转 | docs/mcbot/README/API、AGENTS | `EVENT_TRIGGERS`、`queueDecision`、`decisionLoop`、事件测试 | consistent | 自动检查 env key |

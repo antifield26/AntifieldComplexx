@@ -1,4 +1,4 @@
-# AntifieldComplexx 对接契约（mcbot v1.0.9 / v2）
+# AntifieldComplexx 对接契约（mcbot v1.0.10 / v2）
 
 > 契约 v2 的本机发言使用控制 Token。Workbench 可读取 v1 并沿用既有控制，v1 发言在 Workbench 停用。
 
@@ -482,7 +482,7 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 
 ## 12. v1.0.2/v1.0.3 AI 自主会话（OpenCode 原生 MCP 工具）
 
-自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.0.9，`AUTONOMY_ENABLED=true`，仍仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
+自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.0.10，`AUTONOMY_ENABLED=true`，仍仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
 
 v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱动重决策；应用对缺失字段/工具保持兼容。
 
@@ -522,8 +522,8 @@ v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱
 | `go_home` | `run_id, reason` | 无 active/pending 任务 |
 | `deposit` | `run_id, reason` | 无 active/pending 任务 |
 | `task_status` | `run_id` | 只读 |
-| `observe` | `run_id` | v1.0.3；只读环境快照 + 安全区 allowlist 方块/容器；计入工具预算 |
-| `inspect_chest` | `run_id, target, reason` | v1.0.3；target 为 `x,y,z`；仅安全区、allowlist 容器、无 active/queue/pending；短距寻路不传送、不破块；只读不取物并立即关闭 |
+| `observe` | `run_id` | v1.0.3；只读环境快照 + 半径内 allowlist 方块/容器；计入工具预算 |
+| `inspect_chest` | `run_id, target, reason` | v1.0.3；target 为 `x,y,z`；仅扫描半径内、allowlist 容器、无 active/queue/pending；短距寻路不传送、不破块；只读不取物并立即关闭 |
 | `eat` | `run_id, item, reason` | v1.0.3；item 必须是背包内食物；仅 `food < AUTONOMY_EAT_BELOW` 且空闲 |
 | `equip` | `run_id, item, reason` | v1.0.3；item 必须是背包内护甲/工具/武器；仅空闲；目标槽位由类型决定 |
 | `finish` | `run_id, summary` | 结束会话；会话结束会清理活动任务 |
@@ -549,11 +549,13 @@ v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱
 `/status` 新增可选 `navigation`：`state ∈ idle|planning|executing|fallback`、`source ∈ pathfinder|planner|ai|teleport|stopped|null`、`attempts`、`lastFailureKind`、`lastFallback ∈ teleport|stopped|null`、`aiUsed`、`updatedAt`。旧版缺失时应用隐藏该字段。
 
 - 导航顺序：pathfinder 快速路径 → 确定性 A*（只读现有方块，支持台阶/楼梯/半砖与 1 格抬高、2 格下落）→ 受控执行 → AI 路点建议（默认 OpenCode 配置可用时启用）→ 安全锚点/传送/停止。
-- 不挖掘、不放置、不跑酷、不跨维度；任务/目标/自主只在安全区；`过来/跟随`允许安全区外路径，但不传送出安全区。玩家实体未加载时无法确认坐标，拒绝按名字 `/tp`。
+- 不挖掘、不放置、不跑酷、不跨维度。v1.0.6 当时把任务、目标和自主限制在安全区矩形内。v1.0.10 起行走不再受该矩形限制，见下一节。玩家实体未加载或跨维度时仍拒绝按名字传送。
 - 安全传送必须是最后手段，同时写 `movement` 事件与 `navigation.lastFallback='teleport'`，并通过聊天提示。
 - AI 只在确定性失败后单次请求，超时/非法/越界建议一律丢弃；AI 不直接控制移动。
 
 **v1.0.6 环境变量**：`PATH_PLANNER_ENABLED`、`PATH_PLANNER_MAX_NODES`、`PATH_PLANNER_TIMEOUT_MS`、`PATH_MAX_REPLANS`、`PATH_TELEPORT_FALLBACK`、`PATH_OUTSIDE_SAFE_RADIUS`、`PATH_AI_ENABLED`、`PATH_AI_TIMEOUT_MS`、`PATH_AI_COOLDOWN_MS`。
+
+**v1.0.10 活动范围**：行走不再受 `SAFE_*` 限制。`SCAN_RADIUS` 默认 32、最大 64。`CRITICAL_HEALTH` 默认 6，设为 0 关闭濒危回基地。寻路失败不再把目标点当作传送落点；`PATH_TELEPORT_FALLBACK` 仍被读取，但不触发任意点传送。
 
 ### 12.5 v1.0.3 事件驱动重决策
 

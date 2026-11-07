@@ -1,5 +1,6 @@
 # AntifieldComplexx UI 规范
 
+> v1.0.10：不新增页面，也不改 mcbot 面板字段。活动范围变化只体现在游戏内行为。
 > v1.0.9：告警卡片按 `deliveries` 显示投递状态；mcbot 面板在 `eventGap` 非空时显示事件缺口，状态卡仍可见。不新增页面。
 > v1.0.7：mcbot 过期提示用 `lastSuccessAt`，没有成功轮询时显示“尚无成功轮询”；寻路 Fact 在有兜底原因时追加“兜底原因：…”；Dashboard 服务状态卡在 mcbot 启用时显示 `mcbot`。不新增页面。
 > mcbot v1.0.6：mcbot 状态卡增加「寻路」Fact（`idle/planning/executing/fallback`、来源、最近兜底），旧 mcbot 无 `navigation` 时隐藏；不新增页面。

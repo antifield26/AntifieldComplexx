@@ -140,7 +140,7 @@ test('配置 v1.0.0 新字段默认值与校验', () => {
 
   assert.throws(() => loadConfig(baseEnv({ AI_TOOL_ALLOWLIST: 'rm_rf' })), /unknown tool/)
   assert.throws(() => loadConfig(baseEnv({ CHEST_ORES_X: '184' })), /set together/)
-  assert.throws(() => loadConfig(baseEnv({ EXPLORE_WAYPOINTS: 'bad:1:64:1' })), /SAFE_MIN_X/)
+  assert.equal(loadConfig(baseEnv({ EXPLORE_WAYPOINTS: 'bad:1:64:1' })).exploreWaypoints[0]?.x, 1)
   assert.throws(() => loadConfig(baseEnv({ MINE_DEEP_ENABLED: 'true', MINE_DEEP_MAX_Y: '70' })), /MINE_DEEP_MAX_Y/)
 })
 

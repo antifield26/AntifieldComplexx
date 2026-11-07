@@ -75,7 +75,7 @@ test('disconnected environment stays readable and fail-closed', () => {
   assert.match(formatEnvironment(snapshot), /未连接/)
 })
 
-test('block scan expands leading wildcards and filters safe zone', () => {
+test('block scan expands leading wildcards and drops blocks outside the radius', () => {
   const cfg = config()
   const bot = fakeBot()
   const result = scanEnvironment(bot, cfg, {

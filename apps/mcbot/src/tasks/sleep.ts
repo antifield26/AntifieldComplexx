@@ -2,7 +2,6 @@ import type { Bot } from 'mineflayer'
 import type { Block } from 'prismarine-block'
 import { Vec3 } from 'vec3'
 import type { Config } from '../config.ts'
-import { insideSafeZone } from './navigation.ts'
 import { requireBot, sleep, TaskStopError, type TaskContext } from './types.ts'
 
 function isNightOrStorm (bot: Bot, serverTicks: number | null): boolean {
@@ -30,7 +29,6 @@ export function findBedNear (bot: Bot, config: Config): Block | null {
   const beds: Block[] = []
   for (let dx = -radius; dx <= radius; dx++) {
     for (let dz = -radius; dz <= radius; dz++) {
-      if (!insideSafeZone(config, centerX + dx, centerZ + dz)) continue
       for (let dy = -3; dy <= 3; dy++) {
         const block = bot.blockAt(new Vec3(centerX + dx, centerY + dy, centerZ + dz), false)
         if (block && isBed(block.name)) beds.push(block)

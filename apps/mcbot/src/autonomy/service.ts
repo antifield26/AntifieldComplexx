@@ -21,7 +21,6 @@ import type { ChatSender } from '../minecraft/chat.ts'
 import type { MovementManager } from '../minecraft/movement.ts'
 import type { AutonomySnapshot, AutonomyState, TaskName } from '../state.ts'
 import type { RuntimeState } from '../state.ts'
-import { insideSafeZone } from '../tasks/navigation.ts'
 import { findItem, isFood } from '../tasks/inventory.ts'
 import type { TaskController } from '../tasks/types.ts'
 import { safeEqual } from '../http/auth.ts'
@@ -870,7 +869,6 @@ export class AutonomyService {
     const z = Number(match[3])
     const bot = this.deps.getBot()
     if (!bot?.entity || !bot.inventory) throw new AutonomyToolError('not_connected', 'bot is not connected')
-    if (!insideSafeZone(this.deps.config, x, z)) throw new AutonomyToolError('chest_out_of_range', 'target is outside the safe zone')
     const position = new Vec3(x, y, z)
     const distance = bot.entity.position.distanceTo(position)
     if (distance > this.deps.config.autonomyScanRadius) {
