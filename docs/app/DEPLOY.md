@@ -15,6 +15,17 @@
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v20**（生产）：新增外部告警 Webhook 和 QQ 入队状态。迁移前保存并核验 schema 19 快照。生产版本见下方记录。
 
+## v1.0.12 发布记录
+
+v1.0.11 与 v1.0.12 分开发布。生产部署一次，运行进程版本是 1.0.12。schema 保持 20，OpenCode 保持 2.2.5。
+
+1. 代码边界：v1.0.11 为 `c7dd74b`，v1.0.12 功能提交为 `b349b80`，版本轴提交为 `e248830`。
+2. 已部署 Workbench `/opt/antifieldcloud/releases/20261107T105450Z` 与 mcbot `/opt/mcbot/releases/20261107T111407Z`。迁移前快照 `db-predeploy-20261107T105556057Z.sqlite`。Minecraft 与 OpenCode 未重启。
+3. 部署内 smoke **26/0/0/2**，随后带 mcbot 契约的 smoke **28/0/0/2**。公网 Access smoke 未跑。
+4. 附注 Tag `v1.0.11` 指向 `c7dd74b`，Tag `v1.0.12` 指向 `fa648dc`。不移动已有 Tag。
+5. 回滚：mcbot 切回 `/opt/mcbot/releases/20261107T094221Z`。Workbench 切回 `/opt/antifieldcloud/releases/20261107T094000Z` 并保留现行库。
+6. 发布时 Windows 计划任务脚本未改，版本标记仍是 1.0.9。重装需要管理员同意 UAC。同意前不要把标记写成 1.0.12。
+
 ## v1.0.10 发布顺序
 
 1. 跑 `check-version`、`check:docs` 和当前事实核对，并清理临时文件。schema 保持 20，不升级 OpenCode。

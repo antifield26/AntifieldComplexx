@@ -15,9 +15,9 @@
 | [BACKUP](app/BACKUP.md) | 应用归档、世界备份、恢复演练 |
 | [SECURITY](app/SECURITY.md) | 安全模型、边界与加固 |
 | [CHATBOT](app/CHATBOT.md) | QQ chatbot 子系统（原 bot，schema v18 更名） |
-| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.0.10 与历史版本结果） |
+| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.0.12 与历史版本结果） |
 | [ROADMAP](app/ROADMAP.md) | 版本边界与后续路线 |
-| [AUDIT](app/AUDIT.md) | 审计与修复总记录（含 v1.0.9 至 v1.0.5、磁盘审计附录） |
+| [AUDIT](app/AUDIT.md) | 审计与修复总记录（含 v1.0.12 至 v1.0.5、磁盘审计附录） |
 
 ## Minecraft bot（apps/mcbot）
 

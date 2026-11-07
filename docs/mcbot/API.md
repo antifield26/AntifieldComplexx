@@ -1,4 +1,4 @@
-# AntifieldComplexx 对接契约（mcbot v1.0.10 / v2）
+# AntifieldComplexx 对接契约（mcbot v1.0.12 / v2）
 
 > 契约 v2 的本机发言使用控制 Token。Workbench 可读取 v1 并沿用既有控制，v1 发言在 Workbench 停用。
 
@@ -482,7 +482,7 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 
 ## 12. v1.0.2/v1.0.3 AI 自主会话（OpenCode 原生 MCP 工具）
 
-自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.0.10，`AUTONOMY_ENABLED=true`，仍仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
+自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.0.12，`AUTONOMY_ENABLED=true`，仍仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
 
 v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱动重决策；应用对缺失字段/工具保持兼容。
 
