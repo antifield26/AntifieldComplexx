@@ -527,8 +527,11 @@ v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱
 | `eat` | `run_id, item, reason` | v1.0.3；item 必须是背包内食物；仅 `food < AUTONOMY_EAT_BELOW` 且空闲 |
 | `equip` | `run_id, item, reason` | v1.0.3；item 必须是背包内护甲/工具/武器；仅空闲；目标槽位由类型决定 |
 | `finish` | `run_id, summary` | 结束会话；会话结束会清理活动任务 |
+| `memory_read` | `run_id`，可选 `category`、`key` | 读取世界记忆正文。分类仅限 `place`、`resource`、`food`、`danger`、`route`、`note`。给出 `key` 时必须同时给出 `category`。不启动任务，计入工具预算 |
+| `memory_write` | `run_id, category, key, text, reason` | 按分类和键写入或覆盖。键 1–64，正文 1–240，均不含控制字符。最多 200 条；已有键可更新，满额后拒绝新键。不启动任务 |
+| `memory_forget` | `run_id, category, key, reason` | 删除一条记忆。不存在则返回错误。不启动任务 |
 
-每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码、容器类型/摘要计数，不记录 prompt/Token/完整容器内容。
+每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码、容器类型/摘要计数，不记录 prompt/Token/完整容器内容。记忆工具只记分类和键，不记正文。世界记忆文件为 `/var/lib/mcbot/world-memory.json`（0600），与聊天记忆分开；提示词只带分类计数和最近 8 个键。`observe` 仍返回半径内方块和容器，决策提示词本身不带完整方块清单。
 
 ### 12.8 v1.0.5 在线模式、长期目标与自动生存
 

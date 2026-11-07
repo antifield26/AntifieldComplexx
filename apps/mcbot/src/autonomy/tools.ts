@@ -5,6 +5,7 @@
  * OpenCode 会以 `<MCP server 名>_<tool>` 暴露工具，权限白名单使用完整前缀。
  */
 import type { TaskName } from '../state.ts'
+import { WORLD_MEMORY_CATEGORIES } from './world-memory.ts'
 
 export const AUTONOMY_MCP_SERVER = 'mcbot_autonomy'
 export const AUTONOMY_PERMISSION_PREFIX = `${AUTONOMY_MCP_SERVER}_*`
@@ -34,7 +35,10 @@ export const AUTONOMY_RAW_TOOLS = [
   'inspect_chest',
   'eat',
   'equip',
-  'finish'
+  'finish',
+  'memory_read',
+  'memory_write',
+  'memory_forget'
 ] as const
 
 export type AutonomyToolName = typeof AUTONOMY_RAW_TOOLS[number]
@@ -192,6 +196,62 @@ export function buildToolDefinitions (): McpToolDefinition[] {
           }
         },
         required: ['run_id', 'summary'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'memory_read',
+      description: '读取世界记忆正文。分类只能是 place、resource、food、danger、route、note。省略 category 返回全部；给出 key 时必须同时给出 category。不改变世界，不启动任务，计入工具预算。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          run_id: runIdSchema,
+          category: {
+            type: 'string',
+            enum: [...WORLD_MEMORY_CATEGORIES],
+            description: '可选。省略则返回全部记忆。'
+          },
+          key: {
+            type: 'string',
+            description: '可选。给出时必须同时给出 category。1–64 字符。'
+          }
+        },
+        required: ['run_id'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'memory_write',
+      description: '按分类和键写入或更新一条世界记忆。分类只能是 place、resource、food、danger、route、note。最多 200 条；已有键可更新，满额后拒绝新键。不启动任务，计入工具预算。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...commonProperties(),
+          category: {
+            type: 'string',
+            enum: [...WORLD_MEMORY_CATEGORIES]
+          },
+          key: { type: 'string', description: '1–64 字符，不含控制字符。同一分类下相同键会覆盖。' },
+          text: { type: 'string', description: '1–240 字符，不含控制字符。' }
+        },
+        required: ['run_id', 'category', 'key', 'text', 'reason'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'memory_forget',
+      description: '删除一条世界记忆。必须同时给出 category 和 key。不存在则返回错误。不启动任务，计入工具预算。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...commonProperties(),
+          category: {
+            type: 'string',
+            enum: [...WORLD_MEMORY_CATEGORIES]
+          },
+          key: { type: 'string', description: '要删除的键。' }
+        },
+        required: ['run_id', 'category', 'key', 'reason'],
         additionalProperties: false
       }
     }

@@ -3,9 +3,10 @@
  *
  * 边界：
  * - 只有主人/面板显式启动；默认关闭。
- * - 模型只能调用 {start_task, stop_task, go_home, deposit, task_status, observe, inspect_chest, eat, equip, finish}。
+ * - 模型只能调用 {start_task, stop_task, go_home, deposit, task_status, observe, inspect_chest, eat, equip, finish, memory_read, memory_write, memory_forget}。
  * - 所有工具参数、任务白名单、并发/预算/连接状态由本模块校验；模型不能执行任意命令。
- * - 不持久化；服务重启或会话结束即清理，不会自动恢复。
+ * - 会话不持久化；服务重启或会话结束即清理，不会自动恢复。
+ * - 世界记忆单独落在 dataDir/world-memory.json。分类固定，提示词只带索引。记忆工具不启动任务。
  */
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { Bot, Chest } from 'mineflayer'
@@ -33,6 +34,7 @@ import {
   type AutonomyToolName,
   toolDisplayName
 } from './tools.ts'
+import { formatWorldMemoryIndex, WorldMemoryError, WorldMemoryStore, worldMemoryPath } from './world-memory.ts'
 
 const FINISH_GRACE_MS = 5000
 const MAX_REASON_CHARS = 120
@@ -107,6 +109,7 @@ export interface AutonomyServiceDeps {
   tasks: TaskController
   opencode: AutonomySessionClient
   getBot: () => Bot | null
+  worldMemory?: WorldMemoryStore
 }
 
 interface McpHttpResult {
@@ -156,12 +159,14 @@ function jsonRpcError (id: string | number | null | undefined, code: number, mes
 export class AutonomyService {
   private readonly deps: AutonomyServiceDeps
   private readonly logger: Logger
+  private readonly worldMemory: WorldMemoryStore
   private run: ActiveRun | null = null
   private mcpCleanupRequired = true
 
   constructor (deps: AutonomyServiceDeps) {
     this.deps = deps
     this.logger = deps.logger
+    this.worldMemory = deps.worldMemory ?? new WorldMemoryStore(worldMemoryPath(deps.config.dataDir), deps.logger)
   }
 
   get enabled (): boolean {
@@ -395,7 +400,9 @@ export class AutonomyService {
       '5. 需要更多环境信息时调用 observe；需要看附近容器时先 observe，再按坐标调用 inspect_chest（只读，不取物）。',
       '6. 目标完成、无法继续或需要结束会话时调用 finish。',
       '7. 不要尝试聊天、执行命令、生成坐标/玩家名，或使用未列出的工具。',
+      '8. 世界记忆只用 memory_read、memory_write、memory_forget。分类仅限 place、resource、food、danger、route、note。这些调用计入工具预算，不会启动任务。',
       formatEnvironment(environment),
+      formatWorldMemoryIndex(this.worldMemory.index()),
       `可用工具（以工具列表名称为准）：${tools}`
     ].filter(Boolean).join('\n')
   }
@@ -704,7 +711,7 @@ export class AutonomyService {
       return fail('run_id_mismatch', 'run_id does not match this session')
     }
     const reason = typeof args.reason === 'string' ? sanitizeText(args.reason, MAX_REASON_CHARS) : ''
-    if (name !== 'task_status' && name !== 'observe' && name !== 'finish' && reason.length === 0) {
+    if (name !== 'task_status' && name !== 'observe' && name !== 'finish' && name !== 'memory_read' && reason.length === 0) {
       return fail('reason_required', 'reason is required')
     }
     run.toolCalls += 1
@@ -816,13 +823,54 @@ export class AutonomyService {
             isError: false
           }
         }
+        case 'memory_read': {
+          const items = this.readMemory(args.category, args.key)
+          const category = typeof args.category === 'string' ? args.category.trim() : ''
+          const key = typeof args.key === 'string' ? args.key.trim() : ''
+          const target = key ? `${category}:${key}` : (category || 'index')
+          this.auditTool(name, target, reason || 'memory_read')
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ ok: true, items }) }],
+            isError: false
+          }
+        }
+        case 'memory_write': {
+          const saved = await this.worldMemory.write(
+            typeof args.category === 'string' ? args.category : '',
+            typeof args.key === 'string' ? args.key : '',
+            typeof args.text === 'string' ? args.text : ''
+          )
+          this.auditTool(name, `${saved.category}:${saved.key}`, reason)
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ ok: true, category: saved.category, key: saved.key, updated: saved.updated }) }],
+            isError: false
+          }
+        }
+        case 'memory_forget': {
+          const removed = await this.worldMemory.forget(
+            typeof args.category === 'string' ? args.category : '',
+            typeof args.key === 'string' ? args.key : ''
+          )
+          this.auditTool(name, `${removed.category}:${removed.key}`, reason)
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ ok: true, category: removed.category, key: removed.key }) }],
+            isError: false
+          }
+        }
       }
     } catch (error) {
       if (error instanceof AutonomyToolError) return fail(error.code, error.message)
+      if (error instanceof WorldMemoryError) return fail(error.code, error.message)
       const message = error instanceof Error ? error.message : String(error)
       return fail('tool_execution_failed', sanitizeText(message, 160))
     }
     return fail('tool_not_allowed', 'tool is not allowed')
+  }
+
+  private readMemory (category: unknown, key: unknown): ReturnType<WorldMemoryStore['read']> {
+    const parsedCategory = typeof category === 'string' && category.trim().length > 0 ? category : undefined
+    const parsedKey = typeof key === 'string' && key.trim().length > 0 ? key : undefined
+    return this.worldMemory.read(parsedCategory, parsedKey)
   }
 
   private assertIdle (): void {

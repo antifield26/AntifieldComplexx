@@ -2,14 +2,15 @@
 
 本审计以**代码/实际安全行为为真相**，覆盖根 README、AGENTS、docs/mcbot、docs/app/API 与 mcbot 环境模板。自动检查脚本：`scripts/check-mcbot-claims.mjs`（根 `npm run check:docs`，纳入 `npm run check`）。历史发布记录、`docs/legacy` 与已冻结的验收文本标为 `historical`，不回写历史，但会标注当前事实。
 
-> 当前生产是 v1.0.10 / schema v20 / mcbot 契约 v2 / OpenCode v2.2.5。下面的矩阵是 v1.0.6 审计快照。`check-mcbot-claims.mjs` 从当前包版本读取文档版本期望。
+> 当前生产是 v1.0.10 / schema v20 / mcbot 契约 v2 / OpenCode v2.2.5。下面的矩阵是 v1.0.6 审计快照。`check-mcbot-claims.mjs` 从当前包版本读取文档版本期望。v1.0.12 代码已落地、尚未发布：自主工具为 13 个，生产仍是 v1.0.10。
 
 ## 1. 声明矩阵
 
 | 文档声明 | 位置 | 代码/测试证据 | 状态 | 动作 |
 |---|---|---|---|---|
 | 自主会话工具为 6 个（start_task/stop_task/go_home/deposit/task_status/finish） | v1.0.2 README/API/AGENTS 历史描述 | `apps/mcbot/src/autonomy/tools.ts` v1.0.2 版本 | historical | v1.0.3 文档改为 10 个工具并标注版本差异 |
-| v1.0.3 工具为 10 个：上述 6 个 + observe/inspect_chest/eat/equip | v1.0.3 docs/mcbot/README、API | `AUTONOMY_RAW_TOOLS`、`buildToolDefinitions()`、`test/unit/autonomy-v103.test.ts` | fixed | 自动检查工具名齐全 |
+| v1.0.3 工具为 10 个：上述 6 个 + observe/inspect_chest/eat/equip | v1.0.3 docs/mcbot/README、API | `AUTONOMY_RAW_TOOLS`、`buildToolDefinitions()`、`test/unit/autonomy-v103.test.ts` | historical | 当时为 10 个；当前代码另有 3 个记忆工具 |
+| v1.0.12 工具为 13 个：上述 10 个 + memory_read/memory_write/memory_forget | docs/mcbot/README、API、AGENTS | `AUTONOMY_RAW_TOOLS`、`world-memory.ts`、`test/unit/v112-memory.test.ts` | fixed | 自动检查工具数量为 13；代码已落地，尚未发布 |
 | 任务白名单 11 种（v1.0.5 增加 `clearing`） | README、AGENTS、mcbot README | `AUTONOMY_TASK_NAMES`、`AUTONOMY_TASKS` 校验、config/任务测试 | fixed | 自动检查任务名齐全 |
 | v1.0.5 在线模式 `auto/always/off`、`presence.json` | mcbot README/API、app API | `presence/manager.ts`、`presence/store.ts`、HTTP 集成测试 | fixed | 模式/off 冲突/持久化测试 |
 | v1.0.5 多步目标 `goals.db`、重启 paused | mcbot README/API、app API | `goals/store.ts`、`goals/runner.ts`、app 代理与面板 | fixed | store 重启测试；不自动执行 |
@@ -39,7 +40,7 @@
 
 `scripts/check-mcbot-claims.mjs` 检查：
 
-- 10 个 MCP 工具名、11 个任务名、`mcbot_autonomy_*` 权限前缀；
+- 13 个 MCP 工具名、11 个任务名、`mcbot_autonomy_*` 权限前缀；
 - `AUTONOMY_*`、v1.0.5 的 `PRESENCE_MODE`/`PRESENCE_FILE`/`AUTO_SURVIVAL`/`AUTO_EAT_BELOW`/`AUTO_RESTOCK`/`GOALS_*` 与 v1.0.6 的 9 个 `PATH_*` 键同时出现在 `apps/mcbot/deploy/env.example`、`bootstrap-env.sh`、docs/mcbot/API（共 35 键）；
 - 根/开发线/生产版本声明（1.0.6 生产/已发布）；
 - 已知陈旧声明（旧生产版本、旧 mcbot 版本、AI 无工具/只聊天绝对声明）；

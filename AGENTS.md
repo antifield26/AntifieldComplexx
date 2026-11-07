@@ -116,7 +116,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
                      cloudflared ingress、env 模板、host/ 主机配置模板、tool-versions.json
 ```
 
-`apps/mcbot/src/autonomy/`：v1.0.2 引入、v1.0.3 增强的 AI 自主会话（OpenCode 原生 MCP 工具循环、环境快照/只读容器/进食/装备、事件驱动重决策、策略/预算/急停/审计、Agentic harness）。
+`apps/mcbot/src/autonomy/`：v1.0.2 引入、v1.0.3 增强的 AI 自主会话（OpenCode 原生 MCP 工具循环、环境快照/只读容器/进食/装备、事件驱动重决策、策略/预算/急停/审计、Agentic harness）。世界记忆与聊天记忆分开，分类固定，提示词只带索引。
 
 写作用域约定：服务端改动在 `server/`，前端在 `web/`，脚本/部署在 `scripts/`、`deploy/`，文档在 `docs/` 与根 README/AGENTS/CHANGELOG；跨域改动先在本文件或任务中说明。
 
@@ -142,7 +142,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 14. Bot AI 工具隔离 fail-closed：OpenCode 拒绝 `permissions` 时不得以默认权限继续对话；启用发送工具或文档/read 模式且隔离不可用时新 Chat 返回 `503 chatbot_ai_tool_isolation_unavailable` 并回固定提示、写审计/状态；10 分钟重试窗口到点放行重试，上游恢复后自动恢复。
     文档模式只允许 `read` 当前作用域 `role.md`/`memory.md`（deny-all + 精确 read 规则）；不得放行 shell/edit/glob/grep；上下文目录不得包含密钥，文件 0640、目录 0750，不进入备份。
 15. 审计写入不得静默失败也不得回滚已完成的业务状态：非安全审计事务外 best-effort，失败计数 + 最近错误暴露到 `/api/version.audit`；安全关键审计逐条记录；公开下载计数保持在事务内。
-16. **AI 自主会话（v1.0.2 引入，v1.0.3 增强；代码默认关闭）**：仅主人显式启动；模型只能通过 OpenCode 原生 MCP 工具调用 `start_task`/`stop_task`/`go_home`/`deposit`/`task_status`/`observe`/`inspect_chest`/`eat`/`equip`/`finish`，任务名受 `AUTONOMY_TASKS` 白名单约束；`observe` 只读环境（基础状态+半径内 allowlist 方块/容器），`inspect_chest` 仅扫描半径内、无 active/queue/pending 时短距寻路只读容器且不取物、不传送、不破块，`eat`/`equip` 仅空闲时对背包内食物/护甲/工具生效；任务生命周期与安全阈值事件驱动重决策（30s 去重、最多 6 次），无周期空转；会话使用随机 run_id + 短期 Bearer，OpenCode session 必须 deny-all + `mcbot_autonomy_*` allow；预算/时间/连续失败/断线/手动指令/急停均需 fail-closed，结束必须停止任务并清理 session/MCP；不得把 `/autonomy/mcp` 暴露给应用/浏览器/公网，不得在日志/审计记录 prompt/Token/完整容器内容。
+16. **AI 自主会话（v1.0.2 引入，v1.0.3 增强；代码默认关闭）**：仅主人显式启动；模型只能通过 OpenCode 原生 MCP 工具调用 `start_task`/`stop_task`/`go_home`/`deposit`/`task_status`/`observe`/`inspect_chest`/`eat`/`equip`/`finish`/`memory_read`/`memory_write`/`memory_forget`，任务名受 `AUTONOMY_TASKS` 白名单约束；`observe` 只读环境（基础状态+半径内 allowlist 方块/容器），`inspect_chest` 仅扫描半径内、无 active/queue/pending 时短距寻路只读容器且不取物、不传送、不破块，`eat`/`equip` 仅空闲时对背包内食物/护甲/工具生效；任务生命周期与安全阈值事件驱动重决策（30s 去重、最多 6 次），无周期空转；会话使用随机 run_id + 短期 Bearer，OpenCode session 必须 deny-all + `mcbot_autonomy_*` allow；预算/时间/连续失败/断线/手动指令/急停均需 fail-closed，结束必须停止任务并清理 session/MCP；不得把 `/autonomy/mcp` 暴露给应用/浏览器/公网，不得在日志/审计记录 prompt/Token/完整容器内容/世界记忆正文。世界记忆分类只有 place、resource、food、danger、route、note，文件为 dataDir 下的 world-memory.json（0600），与聊天记忆分开；提示词只带分类计数和最近 8 个键；记忆工具计入既有工具预算，不启动任务。
 17. mcbot 对接（v0.8.0 引入，v0.8.1 安全加固）读/控制 Token 必须分离且只走 loopback：`MCBOT_URL` 非 loopback/非 http(s)/含 userinfo/路径/查询/片段拒绝启动，客户端禁止跟随重定向；Token 不得进入浏览器/bundle/API 响应/日志/审计正文；控制/任务/移动/聊天必须登录 + CSRF + 控制 Token + IP 限流并二次确认（`/say` 自 v0.8.1 起也需控制 Token，只读模式 503）；`/say` 只聊天（**任意 ASCII `/` 与 C0 控制字符一律拒绝**，防切行后的命令注入）且审计只记字符数；`taskId` 拒绝空白/控制字符；事件缓存 ≤100 条且 ≤512 KiB、响应体流式 ≤2 MiB；聊天/事件只存内存不落库；上游告警只能以 `status='event'` 记录，不得写入 `alert_state` 或伪装 firing/resolved。
 
 ## 6. 数据库与数据

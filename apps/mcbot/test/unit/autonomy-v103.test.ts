@@ -219,7 +219,7 @@ test('v1.0.3 exposes observe and guarded action tools', async () => {
   const list = await f.service.handleMcpHttp(token, { jsonrpc: '2.0', id: 1, method: 'tools/list' })
   const body = list.body as { result: { tools: Array<{ name: string }> } }
   const names = body.result.tools.map(tool => tool.name)
-  assert.deepEqual(names, ['start_task', 'stop_task', 'go_home', 'deposit', 'task_status', 'observe', 'inspect_chest', 'eat', 'equip', 'finish'])
+  assert.deepEqual(names, ['start_task', 'stop_task', 'go_home', 'deposit', 'task_status', 'observe', 'inspect_chest', 'eat', 'equip', 'finish', 'memory_read', 'memory_write', 'memory_forget'])
 
   const observed = await call(f, token, 'observe', { run_id: runId })
   assert.equal((observed as { ok: boolean }).ok, true)
