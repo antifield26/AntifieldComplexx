@@ -18,6 +18,7 @@ export function sandboxArgs(root, args) {
   return [
     '--unshare-all', '--die-with-parent', '--new-session', '--cap-drop', 'ALL',
     '--ro-bind', '/usr', '/usr', '--symlink', 'usr/bin', '/bin', '--symlink', 'usr/lib', '/lib',
+    '--ro-bind-try', '/lib64', '/lib64',
     // 保留 systemd 的内核保护，隔离子进程只看到空的 proc 目录。
     '--dir', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--bind', root, '/workspace',
     '--chdir', '/workspace', '--clearenv', '--setenv', 'PATH', '/usr/bin:/bin',
