@@ -9,6 +9,7 @@ import { get } from 'node:https'
 import { QqMemory, qqScope } from './qq-memory.mjs'
 
 const turns = new WeakMap()
+const clearing = new Set()
 const MEDIA_HOSTS = ['qpic.cn', 'qq.com', 'qq.com.cn', 'gtimg.com', 'gtimg.cn']
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const PRIVATE_COMMANDS = new Set(['new', 'reset', 'clear', 'stop', 'bot-help', 'bot-ping', 'bot-status', 'bot-version', 'forget'])
@@ -49,17 +50,53 @@ export function sessionPeer(scope) {
   return scope.kind === 'group' ? `${scope.peer}.${scope.member}` : scope.peer
 }
 
-export function clearQqMemory(scope) {
-  return memoryStore().forget(scope)
+export function qqSessionKey(app, kind, peer) {
+  const [groupOrUser, member] = peer.split('.')
+  const identity = kind === 'group' ? qqScope(app, kind, groupOrUser, member) : qqScope(app, kind, peer, peer)
+  const base = `qqbot:${app}:${kind}:${peer}`
+  if (!identity) return base
+  const generation = memoryStore().generation(app, identity.member)
+  return generation ? `${base}:${generation}` : base
+}
+
+export function isQqMemberClearing(scope) {
+  return clearing.has(`${scope.app}:${scope.member}`)
+}
+
+export async function clearQqMemory(scope, manager) {
+  const identity = `${scope.app}:${scope.member}`
+  if (clearing.has(identity)) return
+  clearing.add(identity)
+  try {
+    // 先封住新回合和候选写入，再收口正在创建或运行的同身份会话。
+    const owned = (key) => {
+      const [, app, kind, peer] = key.split(':')
+      const member = kind === 'group' ? peer?.split('.')[1] : peer
+      return app === scope.app && member === scope.member && (kind === 'c2c' || kind === 'group')
+    }
+    await Promise.allSettled([...manager.inflight].filter(([key]) => owned(key)).map(([, pending]) => pending))
+    await Promise.all([...manager.sessions.keys()].filter(owned).map((key) => {
+      const [, , kind, peer] = key.split(':')
+      return manager.remove(kind, peer)
+    }))
+    // 代次与结构化删除同事务，重启后也不会恢复同成员的旧会话。
+    return memoryStore().forget(scope)
+  } finally {
+    clearing.delete(identity)
+  }
 }
 
 export function canUseQqImage(agent) {
-  return Boolean(turns.get(agent)?.images.size)
+  const turn = turns.get(agent)
+  return Boolean(turn && !isQqMemberClearing(turn.scope) && turn.images.size)
 }
 
 export function registerQqPolicy(tools) {
   memoryStore()
-  const eligible = (agent) => agent && turns.has(agent)
+  const eligible = (agent) => {
+    const turn = turns.get(agent)
+    return turn && !isQqMemberClearing(turn.scope)
+  }
   tools.guard((execution) => eligible(execution.agent) &&
     (execution.name === 'qqbot_describe_image' || execution.name === 'qq_memory_propose')
     ? undefined
@@ -81,7 +118,7 @@ export function registerQqPolicy(tools) {
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
     async execute(args, exec) {
       const turn = turns.get(exec.agent)
-      if (!turn || exec.signal.aborted) throw new Error('当前没有授权的 QQ 回合')
+      if (!turn || isQqMemberClearing(turn.scope) || exec.signal.aborted) throw new Error('当前没有授权的 QQ 回合')
       memoryStore().propose(turn.scope, args)
       return '已提交记忆候选，等待管理员审核。'
     },
@@ -89,7 +126,7 @@ export function registerQqPolicy(tools) {
 }
 
 export async function openQqImage(agent, path, maxBytes) {
-  if (!turns.get(agent)?.images.has(path)) throw new Error('图片不属于当前 QQ 回合')
+  if (!canUseQqImage(agent) || !turns.get(agent).images.has(path)) throw new Error('图片不属于当前 QQ 回合')
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
     const info = await file.stat()

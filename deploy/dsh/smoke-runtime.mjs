@@ -26,7 +26,7 @@ const server = createServer((request, response) => {
     let body = ''
     request.setEncoding('utf8').on('data', (chunk) => { body += chunk })
     request.on('end', () => {
-      if (body.includes('本私聊记忆已清除')) cleared.resolve()
+      if (body.includes('可确认属于你的记忆已清除')) cleared.resolve()
       response.end(JSON.stringify({ id: 'fixture-reply' }))
     })
   }
@@ -185,8 +185,12 @@ try {
   const overlay = join(temp, 'qq.yml')
   const dbPath = join(temp, 'memory.sqlite')
   const scope = qqScope('testappid', 'c2c', 'user', 'user')
+  const groupScope = qqScope('testappid', 'group', 'group', 'user')
+  const otherScope = qqScope('testappid', 'group', 'group', 'other')
   const memory = new QqMemory(dbPath)
   const candidate = memory.propose(scope, { op: 'upsert', category: 'fact', key: 'fixture', value: '模拟数据' })
+  const groupCandidate = memory.propose(groupScope, { op: 'upsert', category: 'fact', key: 'fixture', value: '群聊模拟数据' })
+  const otherCandidate = memory.propose(otherScope, { op: 'upsert', category: 'fact', key: 'fixture', value: '其他成员模拟数据' })
   memory.db.close()
   await writeFile(overlay, JSON.stringify([{ insert: [{
     id: 'im-qqbot', name: join(root, 'node_modules/@tencent-connect/dsh-qqbot/lib/index.js'), config: {
@@ -233,6 +237,10 @@ try {
   const verified = new QqMemory(dbPath)
   try {
     assert.equal(verified.review(candidate, true), false)
+    assert.equal(verified.review(groupCandidate, true), false)
+    assert.equal(verified.review(otherCandidate, true), true)
+    assert.ok(verified.generation('testappid', 'user'))
+    assert.equal(verified.generation('testappid', 'other'), null)
   } finally {
     verified.db.close()
   }

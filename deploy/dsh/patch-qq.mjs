@@ -62,22 +62,24 @@ const files = [
   }],
   ['transport/inbound.js', '5e7da8b6a8441d4d166bcb1129d61a7afd85d52f187b33f89edf27d354f080fe', (source) => {
     let patched = one(source, "    const scope = msg.kind === 'group' ? 'group' : 'c2c';\n    const peerId = scope === 'group' ? (msg.groupOpenid ?? msg.senderId) : msg.senderId;", `    const identity = inputScope(config.appId, msg);
-    if (!identity) return;
+    if (!identity || isQqMemberClearing(identity)) return;
     const { kind: scope, peer: peerId } = identity;`)
     patched = one(patched, "    const agentBody = assembleAgentBody(msg, mwState, scope, logger);", `    if (scope === 'c2c' && /^\\/forget(?:\\s|$)/u.test(msg.content?.trim() ?? '')) {
         if (msg.content.trim() !== '/forget confirm') {
-            await bot.sendMarkdown(replyTarget, '发送 /forget confirm 清除本私聊的结构化记忆并开启新会话。');
+            await bot.sendMarkdown(replyTarget, '发送 /forget confirm 清除本 Bot 可确认属于你的结构化记忆，并开启新会话。');
             return;
         }
-        await manager.remove(scope, peerId);
-        clearQqMemory(identity);
-        await bot.sendMarkdown(replyTarget, '本私聊记忆已清除，下一条消息将开启新会话。');
+        await clearQqMemory(identity, manager);
+        await bot.sendMarkdown(replyTarget, '可确认属于你的记忆已清除，相关会话将重新开始。');
         return;
     }
     const agentBody = assembleAgentBody(msg, mwState, scope, logger);`)
     patched = one(patched, '    logger.info(`Processing: scope=${scope} peerId=${peerId} body="${agentBody.slice(0, 200)}"`);', '')
     patched = one(patched, '        record = await manager.getOrCreate(scope, peerId, msg.senderId, replyTarget);',
-      '        record = await manager.getOrCreate(scope, sessionPeer(identity), identity.member, replyTarget);')
+      `        const peer = sessionPeer(identity);
+        const key = manager.sessionKey(scope, peer);
+        record = await manager.getOrCreate(scope, peer, identity.member, replyTarget);
+        if (isQqMemberClearing(identity) || key !== manager.sessionKey(scope, peer)) return;`)
     patched = splice(patched,
       "    const content = [{ type: 'text', text: agentBody }];",
       '\n}\n// ═',
@@ -91,8 +93,12 @@ const files = [
         cleanup();
     }`)
     patched = one(patched, "                : `Image: ${url ?? filename ?? 'image'}`;", "                : 'Image: 图片不可用';")
-    return `import { inputScope, scopedQqContext, bindQqTurn, clearQqMemory, sessionPeer } from "${policy}";\n${patched}`
+    return `import { inputScope, scopedQqContext, bindQqTurn, clearQqMemory, isQqMemberClearing, sessionPeer } from "${policy}";\n${patched}`
   }],
+  ['session/session-manager.js', '9022b7a7f056a69ac38cf0d57f6e1ea957a60f8f117ac34034a7755cecd5f577', (source) =>
+    `import { qqSessionKey } from "${policy}";\n${one(source,
+      '        return \`qqbot:\${this.config.appId}:\${scope}:\${peerId}\`;',
+      '        return qqSessionKey(this.config.appId, scope, peerId);')}`],
 ]
 
 function one(source, old, replacement) {

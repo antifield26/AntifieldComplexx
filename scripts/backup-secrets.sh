@@ -271,9 +271,9 @@ if [[ "$agent_runtime" == "dsh" ]]; then
     process.umask(0o077)
     const source = new DatabaseSync(process.env.SOURCE_DSH_DB, { readOnly: true })
     try {
-      const count = source.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = ? AND name IN (?, ?, ?, ?, ?)")
-        .get("table", "roles", "memory", "memory_settings", "proposals", "imports").n
-      if (count !== 5) throw new Error()
+      const count = source.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = ? AND name IN (?, ?, ?, ?, ?, ?)")
+        .get("table", "roles", "memory", "memory_settings", "proposals", "imports", "memory_generations").n
+      if (count !== 6) throw new Error()
       await backup(source, process.env.TARGET_DSH_DB)
     } finally {
       source.close()

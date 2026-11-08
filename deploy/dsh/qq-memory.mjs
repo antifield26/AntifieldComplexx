@@ -66,6 +66,9 @@ export class QqMemory {
         created_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS imports (app TEXT PRIMARY KEY, completed_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS memory_generations (
+        app TEXT, member TEXT, generation TEXT NOT NULL, PRIMARY KEY(app, member)
+      );
     `)
   }
 
@@ -128,11 +131,23 @@ export class QqMemory {
     })
   }
 
+  generation(app, member) {
+    return this.db.prepare('SELECT generation FROM memory_generations WHERE app = ? AND member = ?')
+      .get(app, member)?.generation ?? null
+  }
+
   forget(scope) {
+    if (!qqScope(scope.app, 'c2c', scope.peer, scope.member) || scope.kind !== 'c2c') {
+      throw new Error('仅允许本人在私聊清除记忆')
+    }
     return transaction(this.db, () => {
-      const args = own(scope)
-      const items = this.db.prepare('DELETE FROM memory WHERE app = ? AND kind = ? AND peer = ? AND member = ?').run(...args)
-      const candidates = this.db.prepare('DELETE FROM proposals WHERE app = ? AND kind = ? AND peer = ? AND member = ?').run(...args)
+      const args = [scope.app, scope.member]
+      const items = this.db.prepare('DELETE FROM memory WHERE app = ? AND member = ?').run(...args)
+      const candidates = this.db.prepare('DELETE FROM proposals WHERE app = ? AND member = ?').run(...args)
+      this.db.prepare(`
+        INSERT INTO memory_generations VALUES (?, ?, ?)
+        ON CONFLICT(app, member) DO UPDATE SET generation = excluded.generation
+      `).run(...args, randomUUID())
       return Number(items.changes) + Number(candidates.changes)
     })
   }
