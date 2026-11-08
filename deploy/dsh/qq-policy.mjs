@@ -29,7 +29,7 @@ export function allowQqCommand(kind, text) {
 export function bindQqTurn(agent, scope, downloads) {
   if (!scope || turns.has(agent)) throw new Error('QQ 会话作用域无效')
   const images = new Set(downloads.filter((item) => item.contentType === 'image').map((item) => item.localPath))
-  turns.set(agent, { scope, images })
+  turns.set(agent, { scope, images, generation: memoryStore().generation(scope.app, scope.member) })
   return () => turns.delete(agent)
 }
 
@@ -86,17 +86,20 @@ export async function clearQqMemory(scope, manager) {
   }
 }
 
-export function canUseQqImage(agent) {
+function currentTurn(agent) {
   const turn = turns.get(agent)
-  return Boolean(turn && !isQqMemberClearing(turn.scope) && turn.images.size)
+  if (!turn || isQqMemberClearing(turn.scope)) return null
+  const { app, member } = turn.scope
+  return memoryStore().generation(app, member) === turn.generation ? turn : null
+}
+
+export function canUseQqImage(agent) {
+  return Boolean(currentTurn(agent)?.images.size)
 }
 
 export function registerQqPolicy(tools) {
   memoryStore()
-  const eligible = (agent) => {
-    const turn = turns.get(agent)
-    return turn && !isQqMemberClearing(turn.scope)
-  }
+  const eligible = (agent) => agent && currentTurn(agent)
   tools.guard((execution) => eligible(execution.agent) &&
     (execution.name === 'qqbot_describe_image' || execution.name === 'qq_memory_propose')
     ? undefined
@@ -117,8 +120,8 @@ export function registerQqPolicy(tools) {
     },
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
     async execute(args, exec) {
-      const turn = turns.get(exec.agent)
-      if (!turn || isQqMemberClearing(turn.scope) || exec.signal.aborted) throw new Error('当前没有授权的 QQ 回合')
+      const turn = currentTurn(exec.agent)
+      if (!turn || exec.signal.aborted) throw new Error('当前没有授权的 QQ 回合')
       memoryStore().propose(turn.scope, args)
       return '已提交记忆候选，等待管理员审核。'
     },
@@ -126,7 +129,7 @@ export function registerQqPolicy(tools) {
 }
 
 export async function openQqImage(agent, path, maxBytes) {
-  if (!canUseQqImage(agent) || !turns.get(agent).images.has(path)) throw new Error('图片不属于当前 QQ 回合')
+  if (!currentTurn(agent)?.images.has(path)) throw new Error('图片不属于当前 QQ 回合')
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
     const info = await file.stat()
