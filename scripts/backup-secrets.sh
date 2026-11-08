@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # 以 root 生成加密密钥备份（age）：
-# - 打包 /etc/antifieldcloud/env、cloudflared 配置/凭证、Minecraft server.properties、opencode env；
-# - 追加 opencode 配置（opencode.json/service.json）与 opencode 数据库的一致性快照；
+# - 打包应用、Cloudflare 与 Minecraft 配置，以及当前 Agent 的凭据与一致性数据库快照；
 # - 明文只在 0700 临时目录内存在，trap 清理；失败不留下未加密产物；
 # - 用 age 公钥加密为 secrets-<UTC>.tar.age，并写 .sha256 旁文件；保留最近 N 份并清理孤儿 sidecar；
 # - 公钥：/etc/antifieldcloud/secrets-age.pub（一行 age1...，root 所有、组/其他不可写；私钥离机保存）；
@@ -111,8 +110,8 @@ cleanup() {
 trap cleanup EXIT
 
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
-name="secrets-${stamp}.tar.age"
-archive="$BACKUP_DIR/$name"
+archive_name="secrets-${stamp}.tar.age"
+archive="$BACKUP_DIR/$archive_name"
 sha_file="$archive.sha256"
 
 # opencode 用户执行固定 node:sqlite 快照命令（不用 shell 拼接用户输入）。
@@ -164,8 +163,8 @@ else
     ""|api-key) dsh_files+=(web-deepseek-key) ;;
     *) json_error "DSH Web 登录模式无效" ;;
   esac
-  for name in "${dsh_files[@]}"; do
-    candidate="$DSH_CONFIG/$name"
+  for credential_name in "${dsh_files[@]}"; do
+    candidate="$DSH_CONFIG/$credential_name"
     if [[ ! -f "$candidate" || -L "$candidate" || ! -s "$candidate" ]]; then
       json_error "DSH 配置或凭据缺失"
     fi
@@ -296,7 +295,7 @@ if getent group "$GROUP" >/dev/null 2>&1; then
   chgrp "$GROUP" "$archive" 2>/dev/null || true
 fi
 sha256=$(sha256sum "$archive" | cut -d' ' -f1)
-printf '%s  %s\n' "$sha256" "$name" > "$sha_file"
+printf '%s  %s\n' "$sha256" "$archive_name" > "$sha_file"
 chmod 0640 "$sha_file"
 if getent group "$GROUP" >/dev/null 2>&1; then
   chgrp "$GROUP" "$sha_file" 2>/dev/null || true
@@ -325,4 +324,4 @@ if [[ -n "$opencode_warning" ]]; then
   warnings_json="[\"$opencode_warning\"]"
 fi
 printf '{"ok":true,"archive":"%s","archiveName":"%s","sha256":"%s","sizeBytes":%s,"fileCount":%s,"agentRuntime":"%s","includesOpencode":%s,"includesDsh":%s,"includesHostConfig":%s,"hostConfigFileCount":%s,"createdAt":"%s","keep":%s,"warnings":%s}\n' \
-  "$archive" "$name" "$sha256" "$size" "$file_count" "$agent_runtime" "$opencode_included" "$dsh_included" "$([[ "$INCLUDE_HOST_CONFIG" == "1" ]] && printf true || printf false)" "$host_files_count" "$created_at" "$KEEP" "$warnings_json"
+  "$archive" "$archive_name" "$sha256" "$size" "$file_count" "$agent_runtime" "$opencode_included" "$dsh_included" "$([[ "$INCLUDE_HOST_CONFIG" == "1" ]] && printf true || printf false)" "$host_files_count" "$created_at" "$KEEP" "$warnings_json"

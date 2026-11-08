@@ -621,13 +621,17 @@ if (-not $SkipScriptHash) {
     }
     "$($files.Count) 个脚本 SHA-256 一致"
   }
-  # 安装在 release 之外的自研 MCP/健康探针：不一致说明“仓库更新但未重跑安装脚本”。
-  SoftCheck "Pi 已安装 MCP/探针脚本一致" {
+  # 根据当前 Agent 运行时校验安装在 release 之外的辅助脚本。
+  SoftCheck "Pi 已安装运行时辅助脚本一致" {
     $pairs = @(
-      @{ Local = "scripts/chatbot-tool-mcp.mjs"; Remote = "/opt/botmsg-mcp/chatbot-tool-mcp.mjs" },
-      @{ Local = "scripts/searxng-mcp.mjs"; Remote = "/opt/searxng-mcp/searxng-mcp.mjs" },
       @{ Local = "deploy/health-probe.sh"; Remote = "/usr/local/libexec/antifieldcloud-health.sh" }
     )
+    if (-not $ExpectedDshVersion) {
+      $pairs += @(
+        @{ Local = "scripts/chatbot-tool-mcp.mjs"; Remote = "/opt/botmsg-mcp/chatbot-tool-mcp.mjs" },
+        @{ Local = "scripts/searxng-mcp.mjs"; Remote = "/opt/searxng-mcp/searxng-mcp.mjs" }
+      )
+    }
     $missing = @()
     $mismatch = @()
     foreach ($pair in $pairs) {
