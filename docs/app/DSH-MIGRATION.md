@@ -1,6 +1,6 @@
-# v1.1.0 Agent Harness 候选切换手册
+# v1.1.0 Agent Harness 切换手册
 
-当前生产基线为 v1.0.13、schema 20、mcbot 契约 v2。切换按 Web、QQ、mcbot 顺序执行。OpenCode 2.2.5 是该窗口的回滚运行时。
+迁移前生产基线为 v1.0.13、schema 20、mcbot 契约 v2。切换按 Web、QQ、mcbot 顺序执行。OpenCode 2.2.5 是该窗口的回滚运行时。
 
 Web 的 `workspace_read` 与 `workspace_command` 通过 Bubblewrap 执行。子进程只挂载专用工作区和系统运行库，清空宿主环境并隔离网络。命令逐次走 DSH 审批。文件浏览、终端和动态宿主运行入口关闭。Workbench 代理保留浏览器初始化需要的设置和凭据描述接口，拒绝原生文件上传、配置写入和插件管理请求。切换前实测越界读取和审批拒绝。
 

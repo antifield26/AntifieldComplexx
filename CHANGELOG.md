@@ -1,10 +1,11 @@
 # Changelog
 
-## [v1.1.0] - 待生产验收
+## [v1.1.0] - 2026-11-08
 
 - 增加隔离的 DeepSeek Harness Web、QQ 和 Minecraft Agent。提供 Workbench 单点登录换票、腾讯插件接入和 13 个原生自主工具。
 - 增加 QQ 记忆迁移与审核、DSH 加密备份、状态监控和固定版本门禁。Workbench schema 20 与 mcbot 契约 v2。
-- 生产切换、完整权限矩阵、回滚和退役的门禁见候选切换手册。
+- QQ 私聊确认清除会撤销同一 AppID 下可确认归属的私聊和群记忆，并轮换会话。生产告警由 Workbench 投递至企业微信。
+- Pi 上 OpenCode 与旧 MCP 已退役。生产验收、加密冷备和回滚记录见 `docs/app/ACCEPTANCE.md`。
 
 ## [v1.0.13] - 2026-11-07
 

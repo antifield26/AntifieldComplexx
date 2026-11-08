@@ -1,13 +1,19 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.1.0 待生产验收（schema 20、mcbot 契约 v2）。迁移前的生产回滚基线为 v1.0.13 和 OpenCode v2.2.5。
+> 当前版本 v1.1.0 已部署（schema 20、mcbot 契约 v2、DSH 0.2.2-rc.1）。迁移前的生产回滚基线为 v1.0.13 和 OpenCode v2.2.5。
 
 ### v1.1.0 生产切换（2026-11-08）
 
 - Workbench 已切到 `/opt/antifieldcloud/releases/20261108T080545Z`，`/healthz` 返回 v1.1.0 和 schema 20。迁移前快照 `db-predeploy-20261108T080730455Z.sqlite` 的 SHA-256 为 `361d078c42a370d50fc92556a0a2ca1c142dd517d64c1acb2e947107a833d7ac`，SQLite 完整性与外键检查通过。
-- 经生产 Workbench 验证一次性 SSO、票据重放拒绝、加固 Cookie、两轮真实模型对话、在途回合取消、HTTP 和 WebSocket 非法 Origin 拒绝，以及登出后旧连接断开。命令行公网探针收到 Cloudflare 人机挑战，浏览器端 Access 验收待完成。
+- 经生产 Workbench 验证一次性 SSO、票据重放拒绝、加固 Cookie、两轮真实模型对话、在途回合取消、HTTP 和 WebSocket 非法 Origin 拒绝，以及登出后旧连接断开。OpenCode 卸载后重跑通过。管理员在浏览器确认公网 AI 工作区可登录并收到模型回复。PC 命令行触发 Cloudflare 人机挑战，使用 Pi 外网出口通过了 10 项公网检查，覆盖 Access 服务令牌、鉴权、PWA、安全头和公开分享。
 - 企业微信生产投递箱核对到 35 条新告警成功。隔离投递箱使用生产发送代码注入一次 `errcode=45009`，在约 1.1 秒后使用同一投递键重试，实际企业微信接收端返回 `errcode=0`。
-- QQ 旧回调继续接收。官方网关查询成功，尚未建立新订阅。隔离导入得到 6 张角色卡、4 条记忆和 4 条设置，跳过 9 条无法确认或不符合导入条件的记录。mcbot v1.1.0 已暂存，Minecraft 运行标识与切换前一致。
+- 管理员关闭旧 QQ HTTP 回调。Workbench 旧回调返回 404，管理状态接口返回 410，切换时旧发布和通知队列未发现待处理项。迁入 6 张角色卡、4 条记忆和 4 条设置，9 条未满足导入条件的记录保留在旧库。管理员确认白名单私聊、群 @ 和图片各收到一次正常回复。
+- 私聊清除通过固定插件的模拟网关和生产数据库的隔离副本验证。同一 AppID 下精确匹配的私聊和群会话均轮换，旧回合工具权限被撤销，其他成员的记忆保留。验收未在真实账号上删除记忆。
+- mcbot 切到 `/opt/mcbot/releases/20261108T080545Z`，HTTP 契约 v2，旧 MCP 入口返回 404。专用 DSH Agent 完成无动作文本回合。实机通过自主急停、再次启动、`observe` 与 `finish`，在线模式恢复为 `auto`。Minecraft 的运行标识与切换前一致。迁移前无世界记忆文件，坐标复用使用夹具验证。
+- 最终 DSH release 为 `/opt/antifield-dsh/releases/20261108T143448Z`，三条 systemd 服务已启用。固定 QQ 插件版本为 0.5.5。OpenCode 停用后，Workbench 正式测试接口成功投递企业微信告警。
+- PC 核对 `opencode-20261108T142239551463257Z.tar.age`、`legacy-mcp-20261108T143803Z.tar.age` 与 `dsh-20261108T143800229835134Z.tar.age` 的 SHA-256 和离线解密。OpenCode、QQ 记忆 SQLite 完整性检查通过，DSH 隔离恢复取得 3 份 Web 会话文件及 2 份 QQ 会话文件。
+- Windows 日备份与周度世界拉取任务已更新至 1.1.0。实际拉取并离线检查 DSH 密钥包，确认包含 QQ 会话代次表。恢复演练 `20261108T143038Z` 通过 schema 20、全量与 7 个增量、最新世界归档及隔离解包 `world/level.dat`。
+- OpenCode 于 22:40:40（UTC+8）退役。已移除旧单元、二进制、活动数据、专用 MCP 目录和活动环境中的 OpenCode 配置，旧监听端口已关闭。退役后 Windows 实际拉取成功，Pi 与 Windows smoke 为 30 通过、0 失败、0 警告、2 跳过。可选应用整包加密与异地副本当前关闭，密钥包和 Agent 冷备使用 age 加密。
 
 ### v1.1.0 候选（隔离验收）
 

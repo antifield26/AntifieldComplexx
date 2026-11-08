@@ -1,6 +1,6 @@
 # 部署手册（Raspberry Pi 5 / Debian 13，v1.1.0）
 
-> **v1.1.0 候选运行时**。按 [Agent Harness 候选切换手册](./DSH-MIGRATION.md) 安装与验收。当前生产版本见本手册开头。
+> **v1.1.0 已部署（2026-11-08）**。Workbench 与 mcbot release 为 `20261108T080545Z`，DSH release 为 `20261108T143448Z`。Workbench schema 20，mcbot 契约 v2。OpenCode 2.2.5 已从 Pi 退役。安装、验收与回滚见 [Agent Harness 切换手册](./DSH-MIGRATION.md)。
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -10,8 +10,8 @@
 ## 0. 拓扑与前置
 
 - Pi：`antifield@192.0.2.10`（直连网线；TEST-NET-1 占位，实际网段见 `.local/DEPLOYMENT.md`），WiFi 示例 `198.51.100.10`（TEST-NET-2 占位；实际校园网段见 `.local`）。
-- 域名：`app.<domain>`（应用）、`ai.<domain>`（opencode 反代）、`mc.<domain>`（Minecraft，现状保留），Cloudflare Tunnel 名称为 `pi`（UUID 见 `.local`）。
-- 现有服务不改：Minecraft、SakuraFRP、opencode、RDP/桌面；nginx/certbot 不作为监控项。
+- 域名：`app.<domain>`（应用）、`ai.<domain>`（Workbench 认证后的 DSH Web 反代）、`mc.<domain>`（Minecraft，现状保留），Cloudflare Tunnel 名称为 `pi`（UUID 见 `.local`）。
+- Minecraft、SakuraFRP 与 RDP/桌面继续由各自的系统服务管理。应用监控范围见 §0 的服务清单。
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
