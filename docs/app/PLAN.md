@@ -1,10 +1,18 @@
-# AntifieldComplexx v1.0.13 实施计划（当前状态）
+# AntifieldComplexx v1.1.0 实施计划（当前状态）
 
 本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`；审计见 `docs/app/AUDIT.md`。
 
-> 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
+> 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区、主机监控与备份灾备）。
 
-## v1.0.13 当前状态
+## v1.1.0 当前状态
+
+- **版本**：**v1.1.0**；schema **v20**；mcbot **v1.1.0**（契约 v2）；DeepSeek Harness **0.2.2-rc.1**；QQ 插件 **0.5.5**。OpenCode **v2.2.5** 已从 Pi 退役，只作回滚运行时。
+- **范围**：Web、QQ 与 mcbot Agent 使用隔离的 DeepSeek Harness。Workbench 做单点登录换票。QQ 记忆按平台确认的身份导入并审核。mcbot 的 13 个自主工具由 DSH 插件经私有 Unix socket 调用。配置该 socket 后，旧 `/autonomy/mcp` 返回 404。
+- **边界**：schema 与契约不变。整包加密与异地副本保持关闭。密钥包和 Agent 冷备使用 age。回滚使用 PC 上验证过的加密档和 v1.0.13 release，Workbench 保留现行 schema 20 库。
+- **状态**：Workbench 与 mcbot release `20261108T080545Z`，DSH release `/opt/antifield-dsh/releases/20261108T143448Z`。迁移前快照 `db-predeploy-20261108T080730455Z.sqlite`，SHA-256 `361d078c42a370d50fc92556a0a2ca1c142dd517d64c1acb2e947107a833d7ac`。演练 `20261108T143038Z` 通过。OpenCode 于 22:40:40（UTC+8）退役。退役后 smoke **30/0/0/2**。Windows 日备份与周度世界拉取已更新至 1.1.0。验收证据见 `docs/app/ACCEPTANCE.md`。
+- **测试基线**：服务端 **633**（632 pass、1 skip）+ web **283** + mcbot **174**。
+
+## v1.0.13 已部署状态（历史）
 
 - **版本**：**v1.0.13**；schema **v20**；OpenCode **v2.2.5**；mcbot **v1.0.13**（契约 v2）。Workbench 继续兼容契约 v1 的读取与既有控制。
 - **范围**：挖矿和天然林先读 `resource` 记忆坐标。坐标在两倍扫描半径内、方块仍有效时，本轮跳过半径扫描；区块未加载时走近一次再确认。不新增工具、环境变量或模型调用。

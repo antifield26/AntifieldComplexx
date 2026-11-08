@@ -1,6 +1,6 @@
 # 安全说明
 
-> **DSH 候选安全边界**。Web、QQ、mcbot Agent 使用独立账号、凭据和状态目录。DSH Web 只监听 loopback，Workbench 通过私有 socket 交换启动令牌并向浏览器发出 host-only Cookie。应用会话失效后关闭旧 WebSocket。QQ 工具只在经过平台确认的会话与成员范围内工作。Minecraft 动作通过专用 socket 和单次运行 Bearer 复用 mcbot 的权限与预算校验。迁移和回滚步骤见 [候选切换手册](./DSH-MIGRATION.md)。
+> **DSH 安全边界**。Web、QQ、mcbot Agent 使用独立账号、凭据和状态目录。DSH Web 只监听 loopback，Workbench 通过私有 socket 交换启动令牌并向浏览器发出 host-only Cookie。应用会话失效后关闭旧 WebSocket。QQ 工具只在经过平台确认的会话与成员范围内工作。Minecraft 动作通过专用 socket 和单次运行 Bearer 复用 mcbot 的权限与预算校验。迁移和回滚步骤见 [切换手册](./DSH-MIGRATION.md)。
 
 ## 1. 资产与信任边界
 
@@ -153,7 +153,7 @@
 - **告警联动**：`AlertService.recordExternal` 只写 `alert_events(status='event')`，不写 `alert_state`、不参与 firing/resolved；details 只保留清洗后的基础类型（深度≤2、键≤20、数组≤20、字符串≤300，跳过 `__proto__`/`constructor`/`prototype` 键），并附加 `source`/`mcbotEventId`/`mcbotType`；异步复用 webhook（可选 HMAC）与 Bot 通知，失败只记脱敏日志；游标 `meta.mcbot.event_cursor` 防重放（v1.0.0 迁移自 `lofii.event_cursor`）；**告警写入失败时游标停在上一条已处理事件，下一轮重试**（v0.8.1）。
 - **内存/降级**：每轮上游取最近 200 条；事件缓存 ≤100 条且序列化总字节 ≤512 KiB；`/status` 可达但 `/events/recent`/游标失败时前端展示可见警告（不静默停更）；前端对缺失嵌套段安全读取，不把整页交给 ErrorBoundary。v1.0.7 起快照下发 `lastSuccessAt`，面板过期文案用成功时间；从未成功时显示“尚无成功轮询”。失败轮询只推进 `lastPollAt`。
 - **浏览器边界**：前端不接触 mcbot Token/上游地址，不直连 SSE/mcbot；`/api/mcbot/status` 只返回聚合快照与内存事件；事件与聊天纯文本渲染，历史表格只显示白名单字段；控制未启用时全部写操作（含聊天）禁用。
-- **默认关闭/回滚**：`MCBOT_ENABLED=false` 默认；回滚设 false（可选清空 Token）并重启即可，无 schema/DB 变更；生产当前 **v1.0.13** 已启用（`MCBOT_ENABLED=true`，读/控制 Token 均配置且 `--check` match，仅 loopback；2026-11-07 部署）。v0.8.0、v0.8.1 与 v1.0.6 至 v1.0.12 随各版本发布 Tag+Release。v1.0.11 与 v1.0.12 分开发布。
+- **默认关闭/回滚**：`MCBOT_ENABLED=false` 默认；回滚设 false（可选清空 Token）并重启即可，无 schema/DB 变更；生产 v1.1.0 已启用（`MCBOT_ENABLED=true`，读/控制 Token 均配置且 `--check` match，仅 loopback；2026-11-08 部署）。v0.8.0、v0.8.1 与 v1.0.6 至 v1.0.12 随各版本发布 Tag+Release。v1.0.11 与 v1.0.12 分开发布。
 
 ### HTTP
 
@@ -224,7 +224,7 @@
    密钥包 use age 加密，私钥丢失将无法恢复密钥包。
 8. **世界备份依赖 RCON 与 Minecraft 运行**：服务器未运行时备份失败（状态 JSON 可见）；`save-off` 期间若进程崩溃，
    `save-on` 会重试/需人工恢复保存。`minecraft-backups` legacy 归档已清理，旧 cron 保持停用。
-9. **opencode 自身认证/UI 行为随版本变化**：当前生产 **v2.2.5**（2026-11-04 已升级并在运行中进程上完成 §3.2 矩阵；回滚备份 timestamp `20261104T062115Z`。2026-10-28 的 v2.1.4 备份只作更早回滚点），通过注入 Basic 实现 SSO；
+9. **opencode 自身认证/UI 行为随版本变化**：当前生产 **v2.2.5** 已于 2026-11-08 从 Pi 退役，只作回滚运行时（2026-11-04 曾升级并在当时运行中的进程上完成 §3.2 矩阵；回滚备份 timestamp `20261104T062115Z`。2026-10-28 的 v2.1.4 备份只作更早回滚点）。回滚后通过注入 Basic 实现 SSO；
    升级后按 `docs/app/DEPLOY.md` §3.2 复验 Basic/session/垫片注入/公开入口/MCP 进程/compaction。原生新建按钮在部分版本仍有缺陷，
    失败时保留最小隐藏点击接管（无可见 UI）；UI/WS 实时事件需浏览器复测。
 10. **无 WAF/DDoS 防护**：Cloudflare 默认防护有限；大文件上传/登录仍可能消耗资源（有配额/限流）。

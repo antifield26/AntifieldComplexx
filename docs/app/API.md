@@ -1,6 +1,6 @@
 # AntifieldComplexx HTTP API 契约
 
-> **DSH 候选契约**。启用 DSH Web 时，`GET /api/dashboard` 增加 `dsh.webUrl` 和 `dsh.readiness`。就绪键为 `dsh_web`、`dsh_qq`、`dsh_mcbot`，只出现已配置服务。既有 `opencode` 字段保留用于兼容，DSH Web 启用后停止旧探测。AI 主机沿用 Workbench SSO 和会话校验。  启用 `DSH_QQ_MANAGED` 后，已登录的 `GET /api/chatbots/status` 返回 `410 chatbot_managed_by_dsh`。旧发布、通知管理、工具和公开 QQ Webhook 路由返回 404。告警历史仍包含已存在的 QQ 投递详情，新事件由 Webhook 投递。mcbot HTTP 契约保持 v2。
+> **DSH 契约**。生产已启用 DSH Web。`GET /api/dashboard` 增加 `dsh.webUrl` 和 `dsh.readiness`。就绪键为 `dsh_web`、`dsh_qq`、`dsh_mcbot`，只出现已配置服务。既有 `opencode` 字段保留用于兼容，DSH Web 启用后停止旧探测。AI 主机沿用 Workbench SSO 和会话校验。  启用 `DSH_QQ_MANAGED` 后，已登录的 `GET /api/chatbots/status` 返回 `410 chatbot_managed_by_dsh`。旧发布、通知管理、工具和公开 QQ Webhook 路由返回 404。告警历史仍包含已存在的 QQ 投递详情，新事件由 Webhook 投递。mcbot HTTP 契约保持 v2。
 
 服务端与前端共同遵守本文件。所有路径除特别说明外均以 `https://app.example.com` 为源（占位域名；实际见 `.local/DEPLOYMENT.md`）。
 

@@ -1,4 +1,4 @@
-# AntifieldComplexx 对接契约（mcbot v1.0.13 / v2）
+# AntifieldComplexx 对接契约（mcbot v1.1.0 / v2）
 
 > 契约 v2 的本机发言使用控制 Token。Workbench 可读取 v1 并沿用既有控制，v1 发言在 Workbench 停用。
 
@@ -13,7 +13,7 @@
 | Token 位置 | Pi：`/etc/mcbot/env`（root:mcbot 0640） |
 | 数据格式 | JSON / SSE，UTF-8 |
 | 请求体上限 | 8 KiB |
-| 自主 MCP | `/autonomy/mcp` 仅接受当前会话随机 Bearer；由 OpenCode 运行时调用，不暴露给应用/浏览器 |
+| 自主工具 | 生产由 DSH 插件经私有 Unix socket 调用。配置 `DSH_AGENT_SOCKET` 后 `/autonomy/mcp` 返回 404。未配置时该路径只接受当前会话随机 Bearer，不暴露给应用/浏览器 |
 | MCP 工具发现 | `AUTONOMY_MCP_WARMUP_MS=3000`：运行时注册后等待 OpenCode 刷新工具列表再创建 session |
 | `/say` 限流 | 10 次/分钟（进程内） |
 | 控制接口限流 | 30 次/分钟（`CONTROL_RATE_LIMIT`） |
@@ -482,7 +482,7 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 
 ## 12. v1.0.2/v1.0.3 AI 自主会话（OpenCode 原生 MCP 工具）
 
-自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.0.13（`/opt/mcbot/releases/20261107T121646Z`），`AUTONOMY_ENABLED=true`，仍仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
+自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.1.0（`/opt/mcbot/releases/20261108T080545Z`），`AUTONOMY_ENABLED=true`，仍仅主人通过游戏聊天或应用面板显式启动。生产由 DSH 插件经私有 Unix socket 调用受控工具，mcbot 策略层校验并执行。配置该 socket 后 `/autonomy/mcp` 返回 404。OpenCode 原生 MCP 只属于已退役的回滚路径。**不要为普通面板/第三方开放 `/autonomy/mcp` 或该 socket**。
 
 v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱动重决策；应用对缺失字段/工具保持兼容。
 

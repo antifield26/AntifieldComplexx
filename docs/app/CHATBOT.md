@@ -4,12 +4,12 @@
 
 兼容性基于 OpenCode v2.2.5。
 
-AntifieldComplexx 的 Bot 模块把运维告警、只读状态查询、AI 问答（普通消息 Chat）、QQ 入站图片理解和手动/定时文本发布接到 **QQ 官方 Bot**。
+AntifieldComplexx 的生产 QQ 由 DeepSeek Harness QQ Agent 处理白名单私聊、群 @ 与图片。Workbench 在 `DSH_QQ_MANAGED=true` 时对旧回调返回 404，管理状态接口返回 410。
 平台仅 QQ：Telegram / Discord / Slack、Discord Gateway、只读按钮、媒体/多附件发布、群聊触发方式（`chatTrigger`）均不属于当前能力。
-QQ 入站图片理解默认开启（`CHATBOT_AI_VISION_ENABLED=true`），图片经 OpenCode 交给模型 provider 处理。
+生产图片由 DSH QQ Agent 交给模型。OpenCode prompt files 只属于已退役的回滚路径。
 企业微信/钉钉/飞书与多管理员审批未实现。
 
-> 当前代码：v1.0.13/schema v20/OpenCode v2.2.5。OpenCode 运行中进程已是 v2.2.5。生产应用 release `/opt/antifieldcloud/releases/20261107T121119Z`、mcbot `/opt/mcbot/releases/20261107T121646Z`。回滚到 v1.0.12 的应用 `/opt/antifieldcloud/releases/20261107T105450Z` 与 mcbot `/opt/mcbot/releases/20261107T111407Z`。v0.7.3 文档模式仍显式启用；真实 QQ 私聊/群聊验收证据保留。Bot 默认关闭，Webhook 关闭时返回 404；mcbot 对接已启用。
+> 当前代码：v1.1.0/schema v20。生产 QQ 由 DSH 0.2.2-rc.1 与 QQ 插件 0.5.5 承担。OpenCode v2.2.5 已退役。生产应用与 mcbot release 均为 `/opt/antifieldcloud/releases/20261108T080545Z` 与 `/opt/mcbot/releases/20261108T080545Z`，DSH release 为 `/opt/antifield-dsh/releases/20261108T143448Z`。回滚到 v1.0.13 的应用 `/opt/antifieldcloud/releases/20261107T121119Z` 与 mcbot `/opt/mcbot/releases/20261107T121646Z`，并使用 PC 上验证过的 OpenCode 加密档。下文 OpenCode 管线描述该回滚路径。Bot 默认关闭，Webhook 关闭时返回 404；mcbot 对接已启用。
 > 安全边界：QQ AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台 Ed25519 签名/时间戳鉴权；
 > 除自助命令（`/help`、`/memory`、`/role` 仅私聊；`/reset`、`/forget confirm` 全用户）外，斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；
 > 发布必须 TOTP + `PUBLISH` 二次确认，且仅文本；通知/命令/Chat 输出不包含内部路径或 URL；私聊角色/记忆正文不通过 API/UI 暴露，群聊角色正文仅管理员在 Web 编辑；

@@ -1,5 +1,10 @@
 # 路线图
 
+## v1.1.0（2026-11-08 已部署）
+
+- Web、QQ 与 mcbot Agent 迁至 DeepSeek Harness 0.2.2-rc.1，QQ 插件 0.5.5。schema 20、契约 v2 不变。OpenCode 2.2.5 已从 Pi 退役。
+- 生产路径、加密冷备与回滚见 [ACCEPTANCE](ACCEPTANCE.md) 与 [DSH-MIGRATION](DSH-MIGRATION.md)。
+
 ## v1.0.13（补丁，2026-11-07）
 
 - 挖矿和天然林先读 `resource` 记忆坐标，失效后再做半径扫描。不新增工具、环境变量或模型调用。schema 20、契约 v2 不变。生产路径见 [ACCEPTANCE](ACCEPTANCE.md)。已发布 annotated Tag `v1.0.13`。

@@ -1,6 +1,6 @@
 # 备份与恢复
 
-> **DSH 候选密钥包与冷备**。Workbench 配置 `DSH_QQ_MANAGED=true` 后，密钥包必须包含 DSH 配置、凭据、Web Cookie 签名凭据和 QQ 结构化记忆一致性快照。PC 校验 `agentRuntime=dsh` 和 `includesDsh=true`。旧格式仍要求 `includesOpencode=true`。部署和退役窗口用 `scripts/dsh-cold-backup.sh` 保存包括会话历史的独立加密归档，转移到 PC 并做隔离解密与恢复。密钥包和冷备保持 age 加密。
+> **DSH 密钥包与冷备**。Workbench 配置 `DSH_QQ_MANAGED=true` 后，密钥包必须包含 DSH 配置、凭据、Web Cookie 签名凭据和 QQ 结构化记忆一致性快照。PC 校验 `agentRuntime=dsh` 和 `includesDsh=true`。旧格式仍要求 `includesOpencode=true`。部署和退役窗口用 `scripts/dsh-cold-backup.sh` 保存包括会话历史的独立加密归档，转移到 PC 并做隔离解密与恢复。密钥包和冷备保持 age 加密。
 
 > 目标：SD 卡损坏、误删、升级失败或世界存档损坏时，能恢复 `/var/lib/antifieldcloud` 与 Minecraft 世界。
 > 备份分四条链路：**应用数据归档**（DB 快照 + 文件内容；可选整包 age 加密，默认关闭）、**密钥包**（age 加密的

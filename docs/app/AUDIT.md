@@ -1,6 +1,11 @@
-# AntifieldComplexx 审计与修复记录（v0.2.0 → v1.0.13）
+# AntifieldComplexx 审计与修复记录（v0.2.0 → v1.1.0）
 
-> 本文合并原按版本拆分的 `DEBUG-AUDIT-v1.0.5.md`、`DEBUG-AUDIT-v1.0.6.md` 与 `RESOURCE-AUDIT-2026-10-31.md`。v1.0.7 至 v1.0.13 的处置见下节。v1.0.6 正文、历史 v1.0.5 Debug、2026-10-31 磁盘审计与文档漂移检查分别见附录 A/B/C/D。v0.8.1 残余表保持当时原文，不把后来修掉的行改写成当时已修。
+> 本文合并原按版本拆分的 `DEBUG-AUDIT-v1.0.5.md`、`DEBUG-AUDIT-v1.0.6.md` 与 `RESOURCE-AUDIT-2026-10-31.md`。v1.0.7 至 v1.1.0 的处置见下节。v1.0.6 正文、历史 v1.0.5 Debug、2026-10-31 磁盘审计与文档漂移检查分别见附录 A/B/C/D。v0.8.1 残余表保持当时原文，不把后来修掉的行改写成当时已修。
+
+## v1.1.0 切换（2026-11-08）
+
+- Web、QQ 与 mcbot Agent 改由 DeepSeek Harness 承担。旧 MCP 在配置 DSH socket 后返回 404。OpenCode 与旧 MCP 已从 Pi 退役。
+- 生产路径、smoke 与加密冷备见 [ACCEPTANCE](ACCEPTANCE.md)。切换手册见 [DSH-MIGRATION](DSH-MIGRATION.md)。schema 20，契约 v2。整包加密与异地副本保持关闭。
 
 ## v1.0.13 补丁（2026-11-07）
 
