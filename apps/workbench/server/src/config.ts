@@ -5,6 +5,7 @@
 import { accessSync, constants, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { isIP } from 'node:net'
 import { isAbsolute, resolve, sep } from 'node:path'
+import { validateWecomWebhookUrl } from './alerts/wecom.ts'
 
 export interface Config {
   nodeEnv: 'development' | 'production' | 'test'
@@ -41,6 +42,9 @@ export interface Config {
   opencodeUrl: string
   opencodeUsername: string
   opencodePassword: string
+  dshWebUrl: string
+  dshWebSsoSocket: string
+  dshQqManaged: boolean
   /** opencode HTML 处理模式：shim=兼容垫片，attributes=只改写 cfasync，passthrough=完全透传。 */
   opencodeHtmlMode: 'shim' | 'attributes' | 'passthrough'
   backupPullFile: string
@@ -302,6 +306,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const chatbotContextDir = resolve(rawBotContextDir || resolve(dataDir, 'chatbot-context'))
   const appOrigin = str(merged, 'APP_ORIGIN', 'https://app.example.com')
   const aiOrigin = str(merged, 'AI_ORIGIN', 'https://ai.example.com')
+  const dshQqManaged = bool(merged, 'DSH_QQ_MANAGED', false)
   const config: Config = {
     nodeEnv,
     logLevel: str(merged, 'LOG_LEVEL', nodeEnv === 'test' ? 'silent' : 'info'),
@@ -332,6 +337,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     opencodeUrl: str(merged, 'OPENCODE_URL', 'http://127.0.0.1:4096').replace(/\/+$/, ''),
     opencodeUsername: str(merged, 'OPENCODE_USERNAME', 'opencode'),
     opencodePassword: str(merged, 'OPENCODE_PASSWORD', ''),
+    dshWebUrl: str(merged, 'DSH_WEB_URL', ''),
+    dshWebSsoSocket: str(merged, 'DSH_WEB_SSO_SOCKET', ''),
+    dshQqManaged,
     opencodeHtmlMode: parseOpenCodeHtmlMode(merged),
     backupPullFile: str(merged, 'BACKUP_PULL_FILE', resolve(dataDir, 'backup-pull.json')),
     backupRestoreEnabled: bool(merged, 'BACKUP_RESTORE_ENABLED', false),
@@ -384,7 +392,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     alertCheckIntervalSeconds: int(merged, 'ALERT_CHECK_INTERVAL_SECONDS', 300, 60, 3600),
     piHealthFile: str(merged, 'PI_HEALTH_FILE', '/run/antifieldcloud/pi-health.json'),
     appVersion: str(merged, 'APP_VERSION', '0.0.0-dev'),
-    chatbotEnabled: bool(merged, 'CHATBOT_ENABLED', false),
+    chatbotEnabled: !dshQqManaged && bool(merged, 'CHATBOT_ENABLED', false),
     chatbotSecretKey: str(merged, 'CHATBOT_SECRET_KEY', ''),
     chatbotWebhookMaxBodyBytes: int(merged, 'CHATBOT_WEBHOOK_MAX_BODY_BYTES', 256 * 1024, 16 * 1024, 1024 * 1024),
     chatbotDeliveryIntervalSeconds: int(merged, 'CHATBOT_DELIVERY_INTERVAL_SECONDS', 30, 5, 300),
@@ -396,7 +404,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     chatbotCommandRatePerMinute: int(merged, 'CHATBOT_COMMAND_RATE_PER_MINUTE', 120, 1, 600),
     chatbotPublishMaxScheduledDays: int(merged, 'CHATBOT_PUBLISH_MAX_SCHEDULED_DAYS', 30, 1, 365),
     chatbotMaxBots: int(merged, 'CHATBOT_MAX_BOTS', 10, 1, 50),
-    chatbotAiEnabled: bool(merged, 'CHATBOT_AI_ENABLED', false),
+    chatbotAiEnabled: !dshQqManaged && bool(merged, 'CHATBOT_AI_ENABLED', false),
     chatbotAiProvider: str(merged, 'CHATBOT_AI_PROVIDER', ''),
     chatbotAiModel: str(merged, 'CHATBOT_AI_MODEL', ''),
     chatbotAiTimeoutSeconds: int(merged, 'CHATBOT_AI_TIMEOUT_SECONDS', 60, 10, 180),
@@ -424,7 +432,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     chatbotAiSendToolEnabled: bool(merged, 'CHATBOT_AI_SEND_TOOL_ENABLED', false),
     chatbotAiContextReadEnabled: bool(merged, 'CHATBOT_AI_CONTEXT_READ_ENABLED', false),
     chatbotContextDir,
-    chatbotSearchEnabled: bool(merged, 'CHATBOT_SEARCH_ENABLED', false),
+    chatbotSearchEnabled: !dshQqManaged && bool(merged, 'CHATBOT_SEARCH_ENABLED', false),
     chatbotSearchUrl: str(merged, 'CHATBOT_SEARCH_URL', ''),
     chatbotSearchAuto: bool(merged, 'CHATBOT_SEARCH_AUTO', true),
     chatbotSearchMode: parseBotSearchMode(merged),
@@ -452,8 +460,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (config.shareDefaultExpiryHours > config.shareMaxExpiryHours) {
     throw new Error('SHARE_DEFAULT_EXPIRY_HOURS 不能大于 SHARE_MAX_EXPIRY_HOURS')
   }
-  if (config.alertWebhookType !== 'generic') {
-    throw new Error('ALERT_WEBHOOK_TYPE 目前只支持 generic')
+  if (config.alertWebhookType !== 'generic' && config.alertWebhookType !== 'wecom') {
+    throw new Error('ALERT_WEBHOOK_TYPE 只支持 generic 或 wecom')
   }
   if (config.chatbotSearchEnabled) {
     if (!config.chatbotSearchUrl) throw new Error('CHATBOT_SEARCH_ENABLED=true 时必须配置 CHATBOT_SEARCH_URL')
@@ -493,6 +501,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   // 代理只允许固定 loopback 上游；非 loopback 会把应用会话/密码暴露给外部主机（配置错误即拒绝启动）。
   validateLoopbackUrl(config.opencodeUrl, 'OPENCODE_URL')
+  if (Boolean(config.dshWebUrl) !== Boolean(config.dshWebSsoSocket)) {
+    throw new Error('DSH_WEB_URL 与 DSH_WEB_SSO_SOCKET 必须同时配置')
+  }
+  if (config.dshWebUrl) {
+    const upstream = new URL(config.dshWebUrl)
+    if (upstream.protocol !== 'http:' || upstream.hostname !== '127.0.0.1'
+      || upstream.href !== `${upstream.origin}/` || !upstream.port) {
+      throw new Error('DSH_WEB_URL 必须是 127.0.0.1 上指定端口的 HTTP 根地址')
+    }
+    if (!/^\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.sock$/.test(config.dshWebSsoSocket)) {
+      throw new Error('DSH_WEB_SSO_SOCKET 必须是固定的 Unix socket 绝对路径')
+    }
+  }
   // mcbot 上游同样只允许 loopback：读/控制 Token 不得发往外部主机；仅在启用时校验，
   // 关闭状态下允许保留空 Token/默认地址，便于随时开关。
   if (config.mcbotEnabled) {
@@ -509,7 +530,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       throw new Error('MCBOT_ENABLED=true 时必须配置 MCBOT_READ_TOKEN')
     }
   }
-  if (config.alertWebhookUrl) validateHttpUrl(config.alertWebhookUrl, 'ALERT_WEBHOOK_URL')
+  if (config.alertWebhookUrl) {
+    if (config.alertWebhookType === 'wecom') validateWecomWebhookUrl(config.alertWebhookUrl)
+    else validateHttpUrl(config.alertWebhookUrl, 'ALERT_WEBHOOK_URL')
+  }
+  if (config.dshQqManaged && (!config.alertsEnabled || !config.alertWebhookUrl)) {
+    throw new Error('启用 DSH QQ 接管前必须配置并启用告警 Webhook')
+  }
   if (config.chatbotSecretKey) {
     let key: Buffer
     try {

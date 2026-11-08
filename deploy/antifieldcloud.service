@@ -29,7 +29,7 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/antifieldcloud
 # v0.7.3：Chatbot 上下文文档目录（独立目录，需 OpenCode 组可读；启用 CHATBOT_AI_CONTEXT_READ_ENABLED 前创建）。
-ReadWritePaths=/var/lib/antifieldcloud-chatbot-context
+ReadWritePaths=-/var/lib/antifieldcloud-chatbot-context
 ProtectKernelTunables=true
 ProtectKernelLogs=true
 ProtectControlGroups=true

@@ -1,5 +1,7 @@
 # Bot 集成
 
+> **DSH 候选 QQ 管理**。启用候选后，管理员从独立 QQ profile 管理 AppID、私聊与群聊白名单，群聊要求 @Bot。角色和结构化记忆按平台确认的身份导入。群历史按成员分离。通过 `qq-memory-cli.mjs` 的 `pending`、`approve`、`reject` 管理候选。私聊发送 `/forget confirm` 清除可确认属于该私聊的记忆及待审候选并轮换会话。迁移前备份含历史记录，仍受离线密钥保护。
+
 兼容性基于 OpenCode v2.2.5。
 
 AntifieldComplexx 的 Bot 模块把运维告警、只读状态查询、AI 问答（普通消息 Chat）、QQ 入站图片理解和手动/定时文本发布接到 **QQ 官方 Bot**。

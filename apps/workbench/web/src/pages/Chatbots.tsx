@@ -33,7 +33,7 @@ const TABS: readonly { id: BotsTab; label: string }[] = [
   { id: 'diagnostics', label: '诊断' },
 ]
 
-const DISABLED_CODES = new Set(['chatbot_disabled', 'chatbot_key_missing', 'chatbot_key_invalid'])
+const DISABLED_CODES = new Set(['chatbot_disabled', 'chatbot_key_missing', 'chatbot_key_invalid', 'chatbot_managed_by_dsh'])
 
 interface DisabledInfo {
   code: string
@@ -57,6 +57,13 @@ function disabledFromStatus(status: ChatbotStatus): DisabledInfo {
 }
 
 function disabledFromCode(code: string): DisabledInfo {
+  if (code === 'chatbot_managed_by_dsh') {
+    return {
+      code,
+      title: 'QQ 机器人由 DeepSeek Harness 管理',
+      description: '请在专用 DSH QQ 配置中管理机器人、白名单及记忆。Workbench 告警使用 Webhook。',
+    }
+  }
   if (code === 'chatbot_key_missing') {
     return {
       code,
@@ -395,6 +402,9 @@ function ChatbotDisabledGuide({
   refreshing: boolean
   onRetry: () => void
 }) {
+  if (info.code === 'chatbot_managed_by_dsh') {
+    return <Card title={info.title} description={info.description} />
+  }
   return (
     <Card
       title={info.title}

@@ -31,6 +31,8 @@ RECIPIENT_FILE=${SECRETS_AGE_RECIPIENT_FILE:-/etc/antifieldcloud/secrets-age.pub
 KEEP=${SECRETS_KEEP:-2}
 GROUP=${SECRETS_GROUP:-antifield}
 NODE_BIN=${NODE_BIN:-/usr/local/bin/node}
+DSH_CONFIG=/etc/antifieldcloud/dsh
+DSH_QQ_DB=/var/lib/antifield-dsh-qq/qq-memory.sqlite
 OPENCODE_HOME=${OPENCODE_HOME:-/var/lib/opencode}
 OPENCODE_DB=${OPENCODE_DB:-$OPENCODE_HOME/.local/share/opencode/opencode.db}
 OPENCODE_CONFIG_DIR=${OPENCODE_CONFIG_DIR:-$OPENCODE_HOME/.config/opencode}
@@ -122,16 +124,25 @@ run_as_opencode() {
   fi
 }
 
+# 密钥包按当前 QQ 接收者选择 Agent 运行时。切换前仍保存 OpenCode 备份。
+agent_runtime=opencode
+if [[ ! -f /etc/antifieldcloud/env ]]; then
+  json_error "缺少 /etc/antifieldcloud/env，无法做密钥备份"
+fi
+qq_managed=$(sed -nE 's/^[[:space:]]*DSH_QQ_MANAGED[[:space:]]*=//p' /etc/antifieldcloud/env | tail -n 1 | tr -d "'\"[:space:]")
+case "${qq_managed,,}" in
+  1|true|yes|on) agent_runtime=dsh ;;
+  ""|0|false|no|off) ;;
+  *) json_error "DSH_QQ_MANAGED 配置无效" ;;
+esac
+
 # 汇总要加密的根文件；env 必须存在，其它缺失时跳过并计数。
 root_files=()
 for candidate in \
   /etc/antifieldcloud/env \
   /etc/cloudflared/config.yml \
   /etc/cloudflared/cert.pem \
-  /etc/opencode/opencode.env \
-  /home/antifield/minecraft-server/server.properties \
-  "$OPENCODE_CONFIG_DIR/opencode.json" \
-  "$OPENCODE_CONFIG_DIR/service.json"; do
+  /home/antifield/minecraft-server/server.properties; do
   if [[ -f "$candidate" ]]; then
     root_files+=("${candidate#/}")
   fi
@@ -141,8 +152,37 @@ for candidate in /etc/cloudflared/*.json; do
     root_files+=("${candidate#/}")
   fi
 done
-if [[ ! -f /etc/antifieldcloud/env ]]; then
-  json_error "缺少 /etc/antifieldcloud/env，无法做密钥备份"
+if [[ "$agent_runtime" == "opencode" ]]; then
+  for candidate in /etc/opencode/opencode.env "$OPENCODE_CONFIG_DIR/opencode.json" "$OPENCODE_CONFIG_DIR/service.json"; do
+    if [[ -f "$candidate" ]]; then root_files+=("${candidate#/}"); fi
+  done
+else
+  dsh_files=(web.env qq-deepseek-key mcbot-agent-deepseek-key qq-app-id qq-app-secret qq-access.json)
+  web_auth=$(sed -nE 's/^[[:space:]]*DSH_WEB_AUTH[[:space:]]*=//p' "$DSH_CONFIG/web.env" | tail -n 1 | tr -d "'\"[:space:]")
+  case "$web_auth" in
+    account) ;;
+    ""|api-key) dsh_files+=(web-deepseek-key) ;;
+    *) json_error "DSH Web 登录模式无效" ;;
+  esac
+  for name in "${dsh_files[@]}"; do
+    candidate="$DSH_CONFIG/$name"
+    if [[ ! -f "$candidate" || -L "$candidate" || ! -s "$candidate" ]]; then
+      json_error "DSH 配置或凭据缺失"
+    fi
+    mode=$(stat -c '%a' -- "$candidate")
+    if [[ "$(stat -c '%u' -- "$candidate")" != "0" ]] || (( (8#$mode & 8#077) != 0 )); then
+      json_error "DSH 配置或凭据的权限无效"
+    fi
+    root_files+=("${candidate#/}")
+  done
+  browser_credentials=/var/lib/antifield-dsh-web/profile/.credentials.yaml
+  if [[ ! -f "$browser_credentials" || -L "$browser_credentials" || ! -s "$browser_credentials" ]]; then
+    json_error "DSH Web 签名凭据缺失"
+  fi
+  if [[ "$web_auth" == "account" ]] && ! grep -Fq 'deepseek-account-platform/default:' "$browser_credentials"; then
+    json_error "DSH Web 账号授权缺失"
+  fi
+  root_files+=("${browser_credentials#/}")
 fi
 # 可选主机级配置（默认关闭）：Pi 重建所需、但不在应用归档/常规密钥包内的配置。
 host_files_count=0
@@ -163,7 +203,11 @@ if [[ "$INCLUDE_HOST_CONFIG" == "1" ]]; then
     /etc/systemd/system/antifieldcloud-world.timer \
     /etc/systemd/system/antifieldcloud-health.service \
     /etc/systemd/system/antifieldcloud-health.timer \
-    /etc/systemd/system/searxng.service; do
+    /etc/systemd/system/searxng.service \
+    /etc/systemd/system/antifield-dsh-*.service \
+    /etc/systemd/system/antifieldcloud.service.d/*dsh*.conf \
+    /etc/systemd/system/mcbot.service.d/*dsh*.conf \
+    /etc/tmpfiles.d/antifield-dsh-tmpfiles.conf; do
     if [[ -f "$candidate" ]]; then
       root_files+=("${candidate#/}")
       host_files_count=$((host_files_count + 1))
@@ -177,8 +221,9 @@ fi
 # opencode 一致性快照：已安装 opencode（存在 opencode 用户或数据目录）时，数据库必须存在且快照成功。
 # 失败直接退出：避免 PC 侧 secretsOk=true 但 includesOpencode=false 的静默漏备（OPS-03）。
 opencode_included=false
+dsh_included=false
 opencode_present=false
-if getent passwd opencode >/dev/null 2>&1 || [[ -d "$OPENCODE_HOME" ]]; then
+if [[ "$agent_runtime" == "opencode" ]] && { getent passwd opencode >/dev/null 2>&1 || [[ -d "$OPENCODE_HOME" ]]; }; then
   opencode_present=true
 fi
 if [[ "$opencode_present" == "true" ]]; then
@@ -213,7 +258,33 @@ if [[ "$opencode_present" == "true" ]]; then
   opencode_included=true
 fi
 
-if [[ "$opencode_included" == "true" ]]; then
+if [[ "$agent_runtime" == "dsh" ]]; then
+  if [[ ! -f "$DSH_QQ_DB" || -L "$DSH_QQ_DB" || ! -x "$NODE_BIN" ]]; then
+    json_error "DSH QQ 记忆库不可用"
+  fi
+  snapshot_root=$(mktemp -d "$snapshot_parent/dsh.XXXXXX")
+  snapshot_dir="$snapshot_root/dsh"
+  install -d -o antifield-dsh-qq -g antifield-dsh-qq -m 0700 "$snapshot_dir"
+  chown antifield-dsh-qq:antifield-dsh-qq "$snapshot_root"
+  if ! runuser -u antifield-dsh-qq -- env SOURCE_DSH_DB="$DSH_QQ_DB" TARGET_DSH_DB="$snapshot_dir/qq-memory.sqlite" \
+    "$NODE_BIN" --input-type=module -e '
+    import { DatabaseSync, backup } from "node:sqlite"
+    process.umask(0o077)
+    const source = new DatabaseSync(process.env.SOURCE_DSH_DB, { readOnly: true })
+    try {
+      const count = source.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = ? AND name IN (?, ?, ?, ?, ?)")
+        .get("table", "roles", "memory", "memory_settings", "proposals", "imports").n
+      if (count !== 5) throw new Error()
+      await backup(source, process.env.TARGET_DSH_DB)
+    } finally {
+      source.close()
+    }
+  ' >/dev/null 2>&1; then
+    json_error "DSH QQ 记忆库一致性快照失败"
+  fi
+  tar -czf "$tmp_tar" -C / "${root_files[@]}" -C "$snapshot_root" dsh
+  dsh_included=true
+elif [[ "$opencode_included" == "true" ]]; then
   tar -czf "$tmp_tar" -C / "${root_files[@]}" -C "$snapshot_root" opencode
 else
   tar -czf "$tmp_tar" -C / "${root_files[@]}"
@@ -245,7 +316,7 @@ done < <(find "$BACKUP_DIR" -maxdepth 1 -name 'secrets-*.tar.age.sha256' -print)
 size=$(stat -c '%s' "$archive")
 created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 extra_files=0
-if [[ "$opencode_included" == "true" ]]; then
+if [[ "$opencode_included" == "true" || "$dsh_included" == "true" ]]; then
   extra_files=1
 fi
 file_count=$(( ${#root_files[@]} + extra_files ))
@@ -253,5 +324,5 @@ warnings_json="[]"
 if [[ -n "$opencode_warning" ]]; then
   warnings_json="[\"$opencode_warning\"]"
 fi
-printf '{"ok":true,"archive":"%s","archiveName":"%s","sha256":"%s","sizeBytes":%s,"fileCount":%s,"includesOpencode":%s,"includesHostConfig":%s,"hostConfigFileCount":%s,"createdAt":"%s","keep":%s,"warnings":%s}\n' \
-  "$archive" "$name" "$sha256" "$size" "$file_count" "$opencode_included" "$([[ "$INCLUDE_HOST_CONFIG" == "1" ]] && printf true || printf false)" "$host_files_count" "$created_at" "$KEEP" "$warnings_json"
+printf '{"ok":true,"archive":"%s","archiveName":"%s","sha256":"%s","sizeBytes":%s,"fileCount":%s,"agentRuntime":"%s","includesOpencode":%s,"includesDsh":%s,"includesHostConfig":%s,"hostConfigFileCount":%s,"createdAt":"%s","keep":%s,"warnings":%s}\n' \
+  "$archive" "$name" "$sha256" "$size" "$file_count" "$agent_runtime" "$opencode_included" "$dsh_included" "$([[ "$INCLUDE_HOST_CONFIG" == "1" ]] && printf true || printf false)" "$host_files_count" "$created_at" "$KEEP" "$warnings_json"

@@ -18,9 +18,11 @@ import { CommandExecutor } from './minecraft/commands.ts'
 import { OpenCodeClient } from './ai/opencode.ts'
 import { PathAdvisor } from './ai/path-advisor.ts'
 import { OpenCodeSessionClient } from './ai/session.ts'
+import { DshAgentClient } from './ai/dsh.ts'
 import { IntentClassifier } from './ai/intent.ts'
 import { AiChatService } from './ai/queue.ts'
 import { AutonomyService } from './autonomy/service.ts'
+import { startDshToolSocket } from './autonomy/dsh-socket.ts'
 import { ChatRouter } from './chat/router.ts'
 import { HttpApi } from './http/server.ts'
 import { PresenceManager } from './presence/manager.ts'
@@ -246,14 +248,15 @@ async function main (): Promise<void> {
     getBot: () => client.getBot()
   })
 
-  const aiClient = new OpenCodeClient(config, logger.withScope('opencode'))
+  const dshClient = config.dshAgentSocket ? new DshAgentClient(config.dshAgentSocket, config.aiTimeoutMs) : null
+  const aiClient = dshClient ?? new OpenCodeClient(config, logger.withScope('opencode'))
   const pathAdvisor = new PathAdvisor(config, logger.withScope('path-advisor'), aiClient)
   movement.setRouteAdvisor(pathAdvisor)
   logger.info('path advisor configured', {
     enabled: config.pathAiEnabled,
     available: pathAdvisor.available
   })
-  const sessionClient = new OpenCodeSessionClient(config, logger.withScope('opencode.session'))
+  const sessionClient = dshClient ?? new OpenCodeSessionClient(config, logger.withScope('opencode.session'))
   const intent = new IntentClassifier(config, logger.withScope('intent'), aiClient)
   const ai = new AiChatService({
     config,
@@ -317,6 +320,7 @@ async function main (): Promise<void> {
     getPresenceMode: () => presence.presenceInfo(),
     setPresenceMode: (mode, actor) => presence.setMode(mode, actor)
   })
+  const stopDshTools = dshClient ? await startDshToolSocket(config.dshToolSocket, autonomy) : null
   await http.start()
   // systemd Type=notify：启动完成后必须发送 READY=1；未由 systemd 启动时自动 no-op。
   sdnotify.ready()
@@ -378,6 +382,7 @@ async function main (): Promise<void> {
       memoryGuard.stop()
       ai.stop()
       await autonomy.shutdown()
+      await stopDshTools?.()
       statePublisher.stop()
       alerts.stop()
       admin.stop()

@@ -1,0 +1,5 @@
+# 仅 Web 采用账号授权。QQ 和 Minecraft Agent 继续使用各自的 API 凭据。
+- id: agent-default-model
+  config:
+    provider: deepseek-account
+    model: deepseek-flash

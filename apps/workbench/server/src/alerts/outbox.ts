@@ -22,6 +22,7 @@ export interface InsertPlan {
 }
 
 interface Options {
+  qqDisabled?: boolean
   now: () => Date
   webhook: (id: number, key: string, signal: AbortSignal) => Promise<boolean>
   notify: (id: number) => void
@@ -87,7 +88,7 @@ export class ExternalAlertOutbox {
 
   async process(): Promise<void> {
     if (!this.claiming || this.controller.signal.aborted) return
-    this.drainQq()
+    if (!this.options.qqDisabled) this.drainQq()
     await this.drainWebhooks()
   }
 

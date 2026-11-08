@@ -1,0 +1,36 @@
+# 文件与命令从隔离插件执行。关闭受限控制器时同时关闭依赖它们的界面插件。
+- id: terminal-controller
+  disabled: true
+- id: ui-sidebar-terminal
+  disabled: true
+- id: workspace-files
+  disabled: true
+- id: ui-sidebar-files
+  disabled: true
+- id: directory-picker
+  disabled: true
+- id: open-in-app
+  disabled: true
+- id: ui-open-in-app
+  disabled: true
+- id: file-reference-local
+  disabled: true
+- id: deliverable-file-references
+  disabled: true
+- id: workspace-changes
+  disabled: true
+- id: ui-deliverables
+  disabled: true
+- id: cordis-host-runner
+  disabled: true
+- id: cordis-inspect-providers
+  disabled: true
+- id: cordis-client-runner
+  disabled: true
+- id: ui-cordis
+  disabled: true
+- id: ui-plugin-manager
+  disabled: true
+- id: workspace-controller
+  config:
+    documentsDirectory: !!js process.cwd()

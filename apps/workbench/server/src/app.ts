@@ -28,6 +28,7 @@ import { createMetricsSampler } from './metrics/sampler.ts'
 import { purgeAudit, audit } from './auth/audit.ts'
 import { readSessionToken } from './auth/cookies.ts'
 import { registerErrorHandler } from './http/errors.ts'
+import { requireAuth } from './http/guards.ts'
 import { registerAuthRoutes } from './http/routes/auth.ts'
 import { registerFileRoutes } from './http/routes/files.ts'
 import { registerMcRoutes } from './http/routes/mc.ts'
@@ -225,7 +226,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       const status = await mc.status()
       return { online: status.online, error: status.error }
     },
-    notifyEvent: (event, durable) => chatbots.notifyAlert(event, durable),
+    ...(!config.dshQqManaged ? { notifyEvent: (event, durable) => chatbots.notifyAlert(event, durable) } : {}),
     mcbotHealth: () => mcbotHealth.read?.() ?? null,
   })
   // mcbot 轮询依赖 AlertService.recordExternal；禁用时无定时器、无网络请求。
@@ -335,7 +336,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     const host = normalizeHost(request.headers.host)
     if (proxy.isAiHost(host)) {
       if (await proxy.serveShim(request, reply)) return reply
-      proxy.handle(request, reply)
+      await proxy.handle(request, reply)
       return reply
     }
     if (!proxy.isAppHost(host)) {
@@ -373,9 +374,15 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   registerBackupRoutes(app, config, backups, db)
   registerUploadRoutes(app, config, uploads)
   registerMetricsRoutes(app, metrics)
-  registerBotRoutes(app, config, chatbots, auth)
-  registerBotWebhookRoutes(app, config, chatbots)
-  registerBotAiToolRoutes(app, chatbots)
+  if (!config.dshQqManaged) {
+    registerBotRoutes(app, config, chatbots, auth)
+    registerBotWebhookRoutes(app, config, chatbots)
+    registerBotAiToolRoutes(app, chatbots)
+  } else {
+    app.get('/api/chatbots/status', { preHandler: [requireAuth] }, async (_request, reply) => {
+      return reply.code(410).send({ error: { code: 'chatbot_managed_by_dsh', message: 'QQ 机器人由 DeepSeek Harness 管理' } })
+    })
+  }
   registerLofiiRoutes(app, config, mcbot, db)
 
   registerErrorHandler(app)

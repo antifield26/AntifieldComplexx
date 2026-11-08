@@ -78,9 +78,9 @@ export function buildTerrainSummary (world: NavWorld, area: NavArea, start: NavV
 export class PathAdvisor implements RouteAdvisor {
   private readonly config: Config
   private readonly logger: Logger
-  private readonly client: OpenCodeClient
+  private readonly client: Pick<OpenCodeClient, 'generate'>
 
-  constructor (config: Config, logger: Logger, client: OpenCodeClient) {
+  constructor (config: Config, logger: Logger, client: Pick<OpenCodeClient, 'generate'>) {
     this.config = config
     this.logger = logger
     this.client = client
@@ -89,7 +89,7 @@ export class PathAdvisor implements RouteAdvisor {
   get available (): boolean {
     return this.config.pathAiEnabled &&
       this.config.aiEnabled &&
-      this.config.opencodePassword.length > 0 &&
+      (this.config.dshAgentSocket !== '' || this.config.opencodePassword.length > 0) &&
       this.config.aiModelId.length > 0
   }
 

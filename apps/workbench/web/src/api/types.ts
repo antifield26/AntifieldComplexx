@@ -246,7 +246,10 @@ export interface BackupStatus {
 export interface ServicesStatus {
   minecraft: ServiceState
   cloudflared: ServiceState
-  opencode: ServiceState
+  opencode?: ServiceState
+  dsh_web?: ServiceState
+  dsh_qq?: ServiceState
+  dsh_mcbot?: ServiceState
   /** 启用 mcbot 时由服务端加入；未启用时省略。 */
   mcbot?: ServiceState
 }
@@ -266,6 +269,7 @@ export interface DashboardData {
   storage: StorageInfo
   minecraft: MinecraftStatus
   opencode: OpencodeStatus
+  dsh?: { webUrl: string; readiness: Partial<Record<'dsh_web' | 'dsh_qq' | 'dsh_mcbot', boolean>> }
   services: ServicesStatus
   backup: BackupStatus | null
   activity: AuditItem[]

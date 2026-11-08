@@ -6,6 +6,7 @@
  */
 import type { Config } from '../config.ts'
 import type { Logger } from '../logger.ts'
+import type { McpToolDefinition } from '../autonomy/tools.ts'
 
 export type SessionErrorKind = 'http' | 'network' | 'timeout' | 'invalid' | 'aborted'
 
@@ -36,6 +37,10 @@ export interface AutonomySessionClient {
   interrupt: (sessionId: string) => Promise<void>
   deleteSession: (sessionId: string) => Promise<void>
   assistantText: (sessionId: string) => Promise<string>
+}
+
+export interface DshAutonomySession extends Pick<AutonomySessionClient, 'prompt' | 'wait' | 'interrupt' | 'deleteSession' | 'assistantText'> {
+  openRun: (bearer: string, tools: McpToolDefinition[]) => Promise<string>
 }
 
 type FetchLike = typeof fetch

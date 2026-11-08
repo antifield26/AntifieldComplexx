@@ -1,0 +1,49 @@
+# 独立 Agent 进程，仅访问专用状态目录和最小凭据。
+[Unit]
+Description=AntifieldComplexx DSH web
+After=network-online.target systemd-tmpfiles-setup.service
+Wants=network-online.target
+StartLimitIntervalSec=90
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=antifield-dsh-web
+Group=antifield-dsh-web
+WorkingDirectory=/var/lib/antifield-dsh-web/workspace
+StateDirectory=antifield-dsh-web
+StateDirectoryMode=0700
+RuntimeDirectory=antifield-dsh-web-status
+RuntimeDirectoryMode=0755
+Environment=HOME=/var/lib/antifield-dsh-web
+Environment=DSH_HOME=/var/lib/antifield-dsh-web/profile
+Environment=DSH_STATUS_PATH=/run/antifield-dsh-web-status/status.json
+LoadCredential=deepseek-key:/etc/antifieldcloud/dsh/web-deepseek-key
+EnvironmentFile=/etc/antifieldcloud/dsh/web.env
+Environment=DSH_BIN=/opt/antifield-dsh/current/node_modules/@deepseek-ai/dsh/lib/bin.js
+Environment=DSH_WEB_SSO_SOCKET=/run/antifield-dsh-web-link/sso.sock
+ExecStartPre=/usr/bin/rm -f /run/antifield-dsh-web-link/sso.sock
+ReadWritePaths=/run/antifield-dsh-web-link
+SupplementaryGroups=dsh-web-link
+ExecStart=/usr/local/bin/node /opt/antifield-dsh/current/web-broker.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectProc=invisible
+InaccessiblePaths=-/var/lib/antifieldcloud -/var/lib/mcbot -/var/lib/opencode -/etc/mcbot -/etc/antifieldcloud
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+# Bubblewrap 通过 Netlink 初始化隔离网络命名空间的 loopback。
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=
+MemoryMax=768M
+
+[Install]
+WantedBy=multi-user.target

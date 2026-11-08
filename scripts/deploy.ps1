@@ -6,6 +6,7 @@
   [switch]$OfflineInstall,
   [switch]$AllowDirty,
   [switch]$AllowSmokeFailure,
+  [switch]$DshRuntime,
   [int]$CommandTimeoutSec = 120,
   [int]$InstallTimeoutSec = 1800
 )
@@ -36,6 +37,8 @@ $switched = $false
 $expectedVersion = $null
 $expectedSchemaVersion = $null
 $expectedOpenCodeVersion = $null
+$expectedDshVersion = $null
+$expectedDshQqVersion = $null
 $headSha = ""
 $tarSha256 = $null
 $tarSize = 0
@@ -282,6 +285,13 @@ try {
     throw "deploy/tool-versions.json schemaVersion 非法：$($toolVersions.schemaVersion)"
   }
   $expectedOpenCodeVersion = [string]$toolVersions.opencodeVersion
+  if ($DshRuntime) {
+    $expectedDshVersion = [string]$toolVersions.dshVersion
+    $expectedDshQqVersion = [string]$toolVersions.dshQqPluginVersion
+    if ($expectedDshVersion -notmatch '^\d+\.\d+\.\d+(?:-[a-z0-9.]+)?$' -or $expectedDshQqVersion -notmatch '^\d+\.\d+\.\d+$') {
+      throw "DSH 候选版本或 QQ 插件版本无效"
+    }
+  }
   if ($expectedOpenCodeVersion -notmatch '^\d+\.\d+\.\d+$') {
     throw "deploy/tool-versions.json opencodeVersion 非法：$expectedOpenCodeVersion"
   }
@@ -483,7 +493,9 @@ fi
     release                = $tag
     version                = $expectedVersion
     schemaVersion          = $expectedSchemaVersion
-    opencodeVersion        = $expectedOpenCodeVersion
+    opencodeVersion        = if ($DshRuntime) { $null } else { $expectedOpenCodeVersion }
+    dshVersion             = $expectedDshVersion
+    dshQqPluginVersion     = $expectedDshQqVersion
     commit                 = $headSha
     tarSha256              = $tarSha256
     tarSizeBytes           = $tarSize
@@ -510,7 +522,12 @@ fi
   $smokePath = Join-Path $PSScriptRoot "smoke.ps1"
   if (Test-Path $smokePath) {
     Write-Host "== 部署后只读 smoke =="
-    & $smokePath -PiHost $PiHost -PiUser $PiUser -SkipPublic -SkipLocalBackup -SkipLocalTaskCheck -ExpectedVersion $expectedVersion -ExpectedSchemaVersion $expectedSchemaVersion -ExpectedOpenCodeVersion $expectedOpenCodeVersion
+    $runtimeChecks = if ($DshRuntime) {
+      @{ ExpectedDshVersion = $expectedDshVersion; ExpectedDshQqVersion = $expectedDshQqVersion }
+    } else {
+      @{ ExpectedOpenCodeVersion = $expectedOpenCodeVersion }
+    }
+    & $smokePath -PiHost $PiHost -PiUser $PiUser -SkipPublic -SkipLocalBackup -SkipLocalTaskCheck -ExpectedVersion $expectedVersion -ExpectedSchemaVersion $expectedSchemaVersion @runtimeChecks
     if ($LASTEXITCODE -ne 0) {
       if ($AllowSmokeFailure) {
         Write-Warning "部署后 smoke 失败（已使用 -AllowSmokeFailure，部署保留；请根据上方 FAIL 项排查）"

@@ -23,7 +23,9 @@ import type { Config } from '../config.ts'
 import { transaction } from '../db.ts'
 import { readOutboundHealth } from '../chatbot/outbound.ts'
 import { nowIso } from '../util/time.ts'
+import { agentServiceUnits, dshReadiness, withDshReadiness } from '../dashboard/dsh.ts'
 import { ExternalAlertOutbox, type InsertPlan } from './outbox.ts'
+import { verifyWecomReply, wecomPayload } from './wecom.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -51,7 +53,7 @@ export function defaultServiceUnits(config: Config): Record<string, string> {
   return {
     minecraft: config.mcSystemdUnit,
     cloudflared: 'cloudflared',
-    opencode: 'opencode',
+    ...agentServiceUnits(config),
     ...(config.mcbotEnabled ? { mcbot: 'mcbot' } : {}),
   }
 }
@@ -374,6 +376,7 @@ export class AlertService {
     this.unknownThreshold = Math.max(1, deps.unknownThreshold ?? UNKNOWN_DEGRADE_THRESHOLD)
     this.serviceUnits = deps.serviceUnits ?? defaultServiceUnits(config)
     this.outbox = new ExternalAlertOutbox(db, {
+      qqDisabled: config.dshQqManaged,
       now: this.deps.now,
       webhook: (id, key, signal) => this.sendWebhook(this.externalEvent(id), signal, key),
       notify: (id) => this.deps.notifyEvent?.(this.externalEvent(id), true),
@@ -524,7 +527,7 @@ export class AlertService {
     } catch {
       return this.unknown('service_down', '服务状态', '无法读取服务状态')
     }
-    states = this.applyMcbotPollHealth(states)
+    states = this.applyMcbotPollHealth(withDshReadiness(states, dshReadiness(this.config)))
     const entries = Object.entries(states)
     const known = entries.filter(([, state]) => state !== 'unknown')
     const down = known.filter(([, state]) => state === 'inactive').map(([name]) => name)
@@ -1085,7 +1088,8 @@ export class AlertService {
   private async sendWebhook(event: AlertEventRow, signal?: AbortSignal, key?: string): Promise<boolean> {
     const url = this.config.alertWebhookUrl.trim()
     if (!url) return false
-    const body = this.buildPayload(event)
+    const wecom = this.config.alertWebhookType === 'wecom'
+    const body = wecom ? wecomPayload(event) : this.buildPayload(event)
     const headers: Record<string, string> = {
       'content-type': 'application/json; charset=utf-8',
       'user-agent': `AntifieldComplexx/${this.config.appVersion}`,
@@ -1100,10 +1104,12 @@ export class AlertService {
       method: 'POST',
       headers,
       body,
+      ...(wecom ? { redirect: 'error' as const } : {}),
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     })
-    await response.body?.cancel()
+    if (!response.ok || !wecom) await response.body?.cancel()
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    if (wecom) await verifyWecomReply(response)
     return true
   }
 
@@ -1146,12 +1152,12 @@ export class AlertService {
   /** 通道关闭或没有可通知目标时在入库时跳过，避免把空入队标成完成。 */
   private channelPlan(): InsertPlan {
     const webhookOpen = this.config.alertWebhookUrl.trim().length > 0
-    const qqOpen = this.config.chatbotEnabled && this.hasNotificationTarget()
+    const qqOpen = !this.config.dshQqManaged && this.config.chatbotEnabled && this.hasNotificationTarget()
     return {
       webhook: webhookOpen ? 'pending' : 'skipped',
       qq: qqOpen ? 'pending' : 'skipped',
       webhookError: webhookOpen ? null : '未配置 webhook URL',
-      qqError: qqOpen ? null : '未启用或没有可通知的目标',
+      qqError: qqOpen ? null : this.config.dshQqManaged ? 'QQ 收发已迁移，告警使用 Webhook' : '未启用或没有可通知的目标',
     }
   }
 

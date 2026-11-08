@@ -53,6 +53,9 @@ const SERVICE_LABELS: Record<keyof ServicesStatus, string> = {
   minecraft: 'Minecraft',
   cloudflared: 'Cloudflare Tunnel',
   opencode: 'opencode',
+  dsh_web: 'DeepSeek Harness 工作区',
+  dsh_qq: 'DeepSeek Harness QQ',
+  dsh_mcbot: 'DeepSeek Harness Minecraft',
   mcbot: 'mcbot',
 }
 
@@ -141,7 +144,8 @@ export function Dashboard() {
 
   if (!data) return null
 
-  const { host, storage, minecraft, backup, opencode, services, activity } = data
+  const { host, storage, minecraft, backup, opencode, services, activity, dsh } = data
+  const dshWeb = dsh?.readiness.dsh_web
   const storagePercent = percentOf(storage.usedBytes, storage.quotaBytes)
   const memPercent = percentOf(host.mem.usedBytes, host.mem.totalBytes)
   const rootPercent = percentOf(host.root.usedBytes, host.root.totalBytes)
@@ -156,7 +160,7 @@ export function Dashboard() {
   const tempClass =
     host.tempC === null ? 'text-dim' : host.tempC >= 85 ? 'text-danger' : host.tempC >= 75 ? 'text-warning' : undefined
   // 域名优先取服务端下发的 aiOrigin，其次 opencode.url；均缺失时不渲染可点击链接
-  const aiUrl = meta.aiOrigin || opencode.url || ''
+  const aiUrl = meta.aiOrigin || dsh?.webUrl || opencode.url || ''
 
   return (
     <div className="dashboard-page">
@@ -401,7 +405,7 @@ export function Dashboard() {
                   <span className="quick-icon" aria-hidden="true"><Sparkles size={18} /></span>
                   <span className="quick-text">
                     <strong>AI 工作区</strong>
-                    <span>opencode · 统一登录</span>
+                    <span>{dshWeb === undefined ? 'opencode' : 'DeepSeek Harness'} · 统一登录</span>
                   </span>
                   <ExternalLink size={15} aria-hidden="true" />
                 </a>
@@ -464,16 +468,17 @@ export function Dashboard() {
               </li>
             ))}
           </ul>
-          {opencode.error || !opencode.reachable ? (
+          {dshWeb === false ? <div className="notice notice-warning">DeepSeek Harness 工作区尚未就绪。</div> : null}
+          {dshWeb === undefined && (opencode.error || !opencode.reachable) ? (
             <div className="notice notice-warning">
               opencode 当前不可达{opencode.error ? `：${opencode.error}` : '，请检查服务状态。'}
             </div>
           ) : null}
           <div className="service-extra">
-            <div className="service-extra-row">
+            {dshWeb === undefined ? <div className="service-extra-row">
               <span>opencode 会话</span>
               <span>{opencode.sessions ?? '—'}</span>
-            </div>
+            </div> : null}
             <div className="service-extra-row">
               <span>根分区使用</span>
               <span>{formatPercent(rootPercent, 1)}</span>

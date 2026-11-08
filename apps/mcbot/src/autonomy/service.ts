@@ -14,7 +14,7 @@ import { Vec3 } from 'vec3'
 import type { AuditLogger } from '../audit.ts'
 import type { Config } from '../config.ts'
 import { buildEnvironment, CHEST_BLOCK_NAMES, formatEnvironment } from '../ai/environment.ts'
-import type { AutonomySessionClient, SessionPermission } from '../ai/session.ts'
+import type { AutonomySessionClient, DshAutonomySession, SessionPermission } from '../ai/session.ts'
 import { OpenCodeSessionError } from '../ai/session.ts'
 import type { EventBus } from '../events/bus.ts'
 import type { Logger } from '../logger.ts'
@@ -107,7 +107,7 @@ export interface AutonomyServiceDeps {
   chatSender: ChatSender
   movement: MovementManager
   tasks: TaskController
-  opencode: AutonomySessionClient
+  opencode: AutonomySessionClient | DshAutonomySession
   getBot: () => Bot | null
   worldMemory?: WorldMemoryStore
 }
@@ -162,6 +162,8 @@ export class AutonomyService {
   private readonly worldMemory: WorldMemoryStore
   private run: ActiveRun | null = null
   private mcpCleanupRequired = true
+  private dshCleanupId: string | null = null
+  private dshCleanupPending = false
 
   constructor (deps: AutonomyServiceDeps) {
     this.deps = deps
@@ -243,6 +245,10 @@ export class AutonomyService {
   async start (goal: string | null, actor: string): Promise<AutonomyStartResult> {
     if (!this.enabled) return { ok: false, code: 'autonomy_disabled', autonomy: this.snapshot() }
     if (this.run?.active) return { ok: false, code: 'autonomy_busy', autonomy: this.snapshot() }
+    if (this.dshCleanupId || this.dshCleanupPending) {
+      this.retryDshCleanup()
+      return { ok: false, code: 'autonomy_busy', autonomy: this.snapshot() }
+    }
     if (!this.deps.config.aiEnabled) return { ok: false, code: 'autonomy_disabled', autonomy: this.snapshot() }
     const bot = this.deps.getBot()
     if (!bot?.entity) return { ok: false, code: 'autonomy_unavailable', autonomy: this.snapshot() }
@@ -312,13 +318,16 @@ export class AutonomyService {
       return { ok: true, autonomy: this.snapshot() }
     } catch (error) {
       if (run.stopRequested) return this.stoppedDuringStart(run)
-      await this.finalize(run, 'failed', this.errorCode(error))
-      return { ok: false, code: this.errorCode(error), autonomy: this.snapshot() }
+      const code = 'openRun' in this.deps.opencode && error instanceof OpenCodeSessionError && error.status === 409
+        ? 'autonomy_busy'
+        : this.errorCode(error)
+      await this.finalize(run, 'failed', code)
+      return { ok: false, code, autonomy: this.snapshot() }
     }
   }
 
   private async removeMcp (): Promise<void> {
-    if (!this.mcpCleanupRequired) return
+    if (!this.mcpCleanupRequired || 'openRun' in this.deps.opencode) return
     try {
       await this.deps.opencode.removeMcp(AUTONOMY_MCP_SERVER)
     } catch (error) {
@@ -327,7 +336,25 @@ export class AutonomyService {
     this.mcpCleanupRequired = false
   }
 
+  private retryDshCleanup (): void {
+    const id = this.dshCleanupId
+    if (!id || this.dshCleanupPending) return
+    this.dshCleanupPending = true
+    void this.deps.opencode.deleteSession(id).then(() => {
+      this.dshCleanupId = null
+    }).catch(() => {
+      this.logger.warn('DSH 自主子进程清理重试失败')
+    }).finally(() => {
+      this.dshCleanupPending = false
+    })
+  }
+
   private async prepareRun (run: ActiveRun): Promise<void> {
+    if ('openRun' in this.deps.opencode) {
+      run.sessionId = await this.deps.opencode.openRun(run.token, buildToolDefinitions())
+      if (!run.stopRequested) this.markRunning(run)
+      return
+    }
     await this.removeMcp()
     if (run.stopRequested) return
     // 注册请求超时也可能已被上游接收，清理标记先于请求设置。
@@ -342,6 +369,10 @@ export class AutonomyService {
     ]
     run.sessionId = await this.deps.opencode.createSession(`mcbot-autonomy-${run.runId.slice(0, 8)}`, permissions)
     if (run.stopRequested) return
+    this.markRunning(run)
+  }
+
+  private markRunning (run: ActiveRun): void {
     run.state = 'running'
     this.publish()
     this.subscribeEvents(run)
@@ -576,7 +607,16 @@ export class AutonomyService {
       } catch { /* best effort */ }
       await taskCleanup
       try {
-        if (run.sessionId) await this.deps.opencode.deleteSession(run.sessionId).catch(() => undefined)
+        if (run.sessionId) {
+          await this.deps.opencode.deleteSession(run.sessionId).catch(() => {
+            if ('openRun' in this.deps.opencode) {
+              this.dshCleanupId = run.sessionId
+              errorCode = 'autonomy_agent_cleanup_failed'
+              outcome = 'failed'
+              this.logger.warn('DSH 自主子进程尚未确认退出')
+            }
+          })
+        }
         await this.removeMcp().catch(() => {
           errorCode = 'autonomy_mcp_cleanup_failed'
           outcome = 'failed'
@@ -643,6 +683,21 @@ export class AutonomyService {
     }
     if (responses.length === 0) return { status: 202, body: null }
     return { status: 200, body: Array.isArray(body) ? responses : responses[0] }
+  }
+
+  /** DSH 私有工具入口，使用现有自主会话的鉴权和业务校验。 */
+  async handleDshTool (bearer: string, body: unknown): Promise<McpHttpResult> {
+    if (!('openRun' in this.deps.opencode) || !this.enabled) return { status: 404, body: { error: 'autonomy_disabled' } }
+    const run = this.run
+    if (!run || !run.active || run.stopRequested || !safeEqual(bearer, run.token)) {
+      return { status: 401, body: { error: 'unauthorized' } }
+    }
+    const record = asRecord(body)
+    const args = asRecord(record?.arguments)
+    if (typeof record?.name !== 'string' || !args) return { status: 400, body: { error: 'invalid_request' } }
+    const result = await this.callTool(run, record.name, args)
+    const parsed: unknown = JSON.parse(result.content[0]?.text ?? '{}')
+    return { status: 200, body: parsed }
   }
 
   private async handleMcpMessage (run: ActiveRun, value: unknown): Promise<unknown | null> {

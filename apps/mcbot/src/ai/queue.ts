@@ -4,7 +4,7 @@ import type { Logger } from '../logger.ts'
 import type { RuntimeState } from '../state.ts'
 import type { MemoryStore } from '../memory/store.ts'
 import type { ChatSender } from '../minecraft/chat.ts'
-import { OpenCodeClient, AiError } from './opencode.ts'
+import { type OpenCodeClient, AiError } from './opencode.ts'
 import { AI_DISABLED_REPLY, FALLBACK_REPLY, buildGameContext, buildPrompt, buildSummaryPrompt, sanitizeAiOutput } from './prompt.ts'
 import { buildAiToolContext } from './tools.ts'
 
@@ -19,7 +19,7 @@ export interface AiChatDeps {
   logger: Logger
   state: RuntimeState
   memory: MemoryStore
-  client: OpenCodeClient
+  client: Pick<OpenCodeClient, 'generate'>
   chatSender: ChatSender
   getBot: () => Bot | null
 }

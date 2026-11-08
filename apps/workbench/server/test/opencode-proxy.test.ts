@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
 import { request } from 'node:http'
+import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 import { buildApp } from '../src/app.ts'
 import { createSession } from '../src/auth/sessions.ts'
 import { cleanupDir, seedAdmin, tempDataDir, testConfig, testDb } from './helpers.ts'
@@ -88,6 +90,88 @@ test('opencode 反代：会话校验、注入 Basic、剥离 Cookie', async () =
   } finally {
     await app.close()
     upstream.close()
+    db.close()
+    cleanupDir(dir)
+  }
+})
+
+test('DSH Web 换票剥离应用及 Access 凭据，拒绝公开启动令牌和已撤销的会话', async () => {
+  const dir = tempDataDir()
+  const socket = process.platform === 'win32' ? `\\\\.\\pipe\\dsh-test-${randomUUID()}` : join(dir, 'sso.sock')
+  const dshCookie = 'dsh-auth-fixture=opaque.ticket'
+  const broker = createServer((req, res) => {
+    assert.equal(req.url, '/session')
+    assert.equal(req.method, 'POST')
+    assert.equal(req.headers.cookie, undefined)
+    res.writeHead(204, { 'set-cookie': dshCookie }).end()
+  })
+  const records: UpstreamRecord[] = []
+  let resolveUpstreamClosed = (): void => {}
+  const upstreamClosed = new Promise<void>((resolve) => { resolveUpstreamClosed = resolve })
+  const upstream = createServer((req, res) => {
+    records.push({ authorization: req.headers.authorization, cookie: req.headers.cookie, url: req.url })
+    assert.equal(req.headers['cf-access-jwt-assertion'], undefined)
+    assert.equal(req.headers.host, 'ai.test')
+    if (req.url === '/api/stream') {
+      res.once('close', resolveUpstreamClosed)
+      res.writeHead(200, { 'content-type': 'text/event-stream' }).write('data: fixture\n\n')
+      return
+    }
+    res.writeHead(200, { 'content-type': 'text/html', 'set-cookie': 'unexpected=credential' }).end('DSH')
+  })
+  const upstreamPort = await listen(upstream)
+  await new Promise<void>((resolve, reject) => {
+    broker.once('error', reject)
+    broker.listen(socket, resolve)
+  })
+  const config = testConfig(dir, { dshWebUrl: `http://127.0.0.1:${upstreamPort}`, dshWebSsoSocket: socket })
+  const db = testDb(dir)
+  const seeded = await seedAdmin(db)
+  const session = createSession(db, seeded.userId, 'csrf-token', 7, '127.0.0.1', 'test')
+  const { app } = await buildApp(config, db)
+  await app.listen({ host: '127.0.0.1', port: 0 })
+  const address = app.server.address()
+  assert.ok(address && typeof address === 'object')
+  try {
+    const headers = { host: 'ai.test', cookie: `af_session=${session.token}; unrelated=value`, accept: 'text/html' }
+    const html = await get(address.port, '/', { ...headers, authorization: 'client-token', 'cf-access-jwt-assertion': 'access-token' })
+    assert.equal(html.status, 200)
+    assert.deepEqual(html.headers['set-cookie'], [`${dshCookie}; Path=/; Secure; HttpOnly; SameSite=Strict`])
+    assert.deepEqual(records, [{ authorization: undefined, cookie: dshCookie, url: '/' }])
+    assert.equal((await get(address.port, '/?%74oken=private', headers)).status, 403)
+    assert.equal((await get(address.port, '/', { ...headers, origin: 'https://other.test' })).status, 403)
+    const apiHeaders = { host: 'ai.test', cookie: `${headers.cookie}; ${dshCookie}`, accept: 'application/json' }
+    for (const path of ['/api/session/uploadFileBinary', '/api/%73ession/uploadFileBinary', '/api/settings/update', '/api/credentials/set', '/api/pluginManager/install']) {
+      const denied = await get(address.port, path, apiHeaders)
+      assert.equal(denied.status, 403)
+      assert.match(denied.body, /dsh_route_restricted/)
+    }
+    assert.equal((await get(address.port, '/api/settings/describe', apiHeaders)).status, 200)
+    let resolveStreamClosed = (): void => {}
+    const streamClosed = new Promise<void>((resolve) => { resolveStreamClosed = resolve })
+    const stream = await new Promise<number>((resolve, reject) => {
+      request({
+        host: '127.0.0.1', port: address.port, path: '/api/stream',
+        headers: { host: 'ai.test', cookie: `${headers.cookie}; ${dshCookie}`, accept: 'text/event-stream' },
+        signal: AbortSignal.timeout(3000),
+      }, (res) => {
+        res.on('error', () => undefined)
+        res.once('close', resolveStreamClosed)
+        res.resume()
+        resolve(res.statusCode ?? 0)
+      }).on('error', reject).end()
+    })
+    assert.equal(stream, 200)
+    db.exec('DELETE FROM sessions')
+    await streamClosed
+    await upstreamClosed
+    assert.equal((await get(address.port, '/api/session', {
+      host: 'ai.test', cookie: `${headers.cookie}; ${dshCookie}`, accept: 'application/json',
+    })).status, 401)
+    assert.equal(records.length, 3)
+  } finally {
+    await app.close()
+    await Promise.all([upstream, broker].map((server) => new Promise<void>((resolve) => server.close(() => resolve()))))
     db.close()
     cleanupDir(dir)
   }

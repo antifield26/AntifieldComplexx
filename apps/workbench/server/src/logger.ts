@@ -13,6 +13,7 @@ const PUBLIC_SHARE_API_PATTERN = /^\/api\/public\/shares\/[^/?#]+/
 const CHATBOT_WEBHOOK_PATTERN = /^\/api\/chatbot\/webhook\/[^/?#]+/
 /** AI SSO 路径包含一次性 ticket；不得写入请求日志（ticket 60s 内可用于换取 ai 会话）。 */
 const AI_SSO_PATTERN = /^\/__af\/sso\/[^/?#]+/
+const DSH_TOKEN_PATTERN = /([?&](?:t|%74)(?:o|%6f)(?:k|%6b)(?:e|%65)(?:n|%6e)=)[^&#]*/gi
 
 /** 把 URL 路径中的分享 token / Chatbot Webhook chatbotId / AI SSO ticket 替换为 [REDACTED]，其余部分保持不变。 */
 export function redactSensitiveRequestUrl(rawUrl: string): string {
@@ -22,6 +23,7 @@ export function redactSensitiveRequestUrl(rawUrl: string): string {
     .replace(PUBLIC_SHARE_API_PATTERN, `/api/public/shares/${CENSOR}`)
     .replace(CHATBOT_WEBHOOK_PATTERN, `/api/chatbot/webhook/${CENSOR}`)
     .replace(AI_SSO_PATTERN, `/__af/sso/${CENSOR}`)
+    .replace(DSH_TOKEN_PATTERN, `$1${CENSOR}`)
 }
 
 interface RawRequestLike {

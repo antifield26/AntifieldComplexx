@@ -1,7 +1,9 @@
 # mcbot（游戏内人格名 Lofii）
+
+> **DSH 候选自主运行时**。配置两个 DSH socket 后，普通文本调用走无动作工具的 Agent，自主会话按运行挂载 `dsh-mcbot` 的 13 个工具。模型进程结束后才释放自主启动槽。工具仍由 mcbot 执行并校验，HTTP 契约和世界记忆格式保持原样。部署和验收见 [候选切换手册](../app/DSH-MIGRATION.md)。
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：**v1.0.13**。挖矿和天然林先读 `resource` 记忆坐标。行走不受 `SAFE_*` 矩形限制。血量 ≤ `CRITICAL_HEALTH` 时只传送回基地。白名单敌对生物可用拳头近战。饥饿时按背包、掉落、食物箱、种田或钓鱼找食。梯子和木门由执行器处理。世界记忆使用固定分类，提示词只带索引。本机契约 v2 发言使用控制 Token；自主会话和移动按单次操作取消。Workbench 兼容 v1 的读取与既有控制。同一启动周期的事件序号空洞由 Workbench 记入 `eventGap`。
+> 当前版本：**v1.1.0**（待生产验收）。自主工具由 DSH 插件通过私有 Unix socket 调用。挖矿和天然林先读 `resource` 记忆坐标。行走不受 `SAFE_*` 矩形限制。血量 ≤ `CRITICAL_HEALTH` 时只传送回基地。白名单敌对生物可用拳头近战。饥饿时按背包、掉落、食物箱、种田或钓鱼找食。梯子和木门由执行器处理。世界记忆使用固定分类，提示词只带索引。本机契约 v2 发言使用控制 Token；自主会话和移动按单次操作取消。Workbench 兼容 v1 的读取与既有控制。同一启动周期的事件序号空洞由 Workbench 记入 `eventGap`。
 
 ## 能做什么
 

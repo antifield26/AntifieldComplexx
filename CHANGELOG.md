@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.1.0] - 待生产验收
+
+- 增加隔离的 DeepSeek Harness Web、QQ 和 Minecraft Agent。提供 Workbench 单点登录换票、腾讯插件接入和 13 个原生自主工具。
+- 增加 QQ 记忆迁移与审核、DSH 加密备份、状态监控和固定版本门禁。Workbench schema 20 与 mcbot 契约 v2。
+- 生产切换、完整权限矩阵、回滚和退役的门禁见候选切换手册。
+
 ## [v1.0.13] - 2026-11-07
 
 - 挖矿和天然林先读 `resource` 记忆坐标。坐标要能解析出整数 x,y,z，并用矿或树的关键词区分。只取两倍 `SCAN_RADIUS` 内、从新到旧最多 8 个点。

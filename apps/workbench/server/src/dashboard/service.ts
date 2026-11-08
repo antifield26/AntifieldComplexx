@@ -8,6 +8,7 @@ import type { MinecraftService } from '../mc/service.ts'
 import { listAudit, type AuditItem } from '../auth/audit.ts'
 import { readStatusFile, type StatusFileRecord } from '../util/status.ts'
 import { HostMonitor, ServiceMonitor, type HostMetrics } from './system.ts'
+import { agentServiceUnits, dshReadiness, withDshReadiness } from './dsh.ts'
 
 /** 备份拉取超期阈值（小时）；与告警阈值独立，面板固定展示 48h。 */
 const BACKUP_OVERDUE_HOURS = 48
@@ -64,6 +65,7 @@ export interface DashboardData {
   }
   minecraft: Awaited<ReturnType<MinecraftService['status']>>
   opencode: OpenCodeStatus
+  dsh?: { webUrl: string; readiness: ReturnType<typeof dshReadiness> }
   services: Record<string, 'active' | 'inactive' | 'unknown'>
   backup: BackupStatus | null
   activity: AuditItem[]
@@ -88,7 +90,7 @@ export class DashboardService {
     this.services = new ServiceMonitor({
       minecraft: config.mcSystemdUnit,
       cloudflared: 'cloudflared',
-      opencode: 'opencode',
+      ...agentServiceUnits(config),
       // mcbot 仅在集成启用时才纳入监控：未启用不探测、不产生 false alarm。
       ...(config.mcbotEnabled ? { mcbot: 'mcbot' } : {}),
     })
@@ -102,6 +104,7 @@ export class DashboardService {
       sessions: null,
       error: null,
     }
+    if (this.config.dshWebUrl) return base
     if (!this.config.opencodePassword) {
       const value = { ...base, error: '未配置 opencode 密码' }
       this.opencodeCache = { at: Date.now(), value }
@@ -278,6 +281,7 @@ export class DashboardService {
   }
 
   async get(): Promise<DashboardData> {
+    const readiness = dshReadiness(this.config)
     const [minecraft, opencode, services, activity] = await Promise.all([
       this.minecraft.status(),
       this.opencodeStatus(),
@@ -289,7 +293,8 @@ export class DashboardService {
       storage: this.storage(),
       minecraft,
       opencode,
-      services,
+      ...(this.config.dshWebUrl || this.config.dshQqManaged ? { dsh: { webUrl: this.config.aiOrigin, readiness } } : {}),
+      services: withDshReadiness(services, readiness),
       backup: this.backupStatus(),
       activity,
       generatedAt: new Date().toISOString(),

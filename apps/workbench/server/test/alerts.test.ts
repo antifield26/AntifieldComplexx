@@ -658,6 +658,49 @@ test('recordExternal：status=event、不写 alert_state、异步 webhook + Chat
   }
 })
 
+test('企业微信业务失败进入告警重试，并以同一个投递键发送纯文本', async () => {
+  const calls: RequestInit[] = []
+  const fx = alertFixture({
+    config: {
+      dshQqManaged: true,
+      alertWebhookType: 'wecom',
+      alertWebhookUrl: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=fixture-key',
+    },
+    deps: {
+      fetch: (async (_url: string | URL | Request, init?: RequestInit) => {
+        calls.push(init ?? {})
+        return Response.json(calls.length === 1 ? { errcode: 45009, errmsg: '响应内容不记录' } : { errcode: 0 })
+      }) as typeof fetch,
+    },
+  })
+  try {
+    const id = fx.alerts.recordExternal({
+      event: 'mcbot_low_health',
+      severity: 'warning',
+      title: '告警验收',
+      message: '中文'.repeat(900) + 'https://private.test/data',
+      details: { internal: '不外发' },
+    })
+    assert.ok(id)
+    await fx.alerts.processExternalDeliveries()
+    assert.equal(calls.length, 1)
+    fx.clock.advanceMs(1000)
+    await fx.alerts.processExternalDeliveries()
+    assert.equal(calls.length, 2)
+    const payload = JSON.parse(String(calls[0]?.body))
+    assert.equal(payload.msgtype, 'text')
+    assert.ok(Buffer.byteLength(payload.text.content) <= 2048)
+    assert.equal(payload.details, undefined)
+    assert.equal(calls[0]?.redirect, 'error')
+    const key = (call: RequestInit) => new Headers(call.headers).get('Idempotency-Key')
+    assert.ok(key(calls[0]!))
+    assert.equal(key(calls[0]!), key(calls[1]!))
+    assert.equal(fx.db.prepare("SELECT status FROM external_alert_deliveries WHERE event_id = ? AND channel = 'webhook'").get(id)?.status, 'done')
+  } finally {
+    fx.close()
+  }
+})
+
 test('recordExternal：webhook 失败只异步记录 delivery_error；未配置 webhook 不阻断通知', async () => {
   const attempts: string[] = []
   const failure = alertFixture({

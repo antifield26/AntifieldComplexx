@@ -155,6 +155,7 @@ export class HttpApi {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
     const pathname = url.pathname
     if (pathname === '/autonomy/mcp') {
+      if (this.deps.config.dshAgentSocket) return sendError(res, 404, 'not_found', '接口不存在')
       if (req.method !== 'POST') return this.methodNotAllowed(res, 'POST')
       if (!this.deps.autonomy) return sendError(res, 503, 'autonomy_disabled', 'autonomy is disabled')
       try {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 以 root 生成 /etc/antifieldcloud/env：
 # - 从 Minecraft server.properties 读取 RCON 密码；
-# - 从 /etc/opencode/opencode.env 读取 OPENCODE_PASSWORD；
+# - OpenCode 仍负责 Web 或 QQ 时，从旧 env 读取代理凭据；
 # - 非敏感配置（域名/路径/端口/阈值）解析顺序：命令行参数 > 现有 env > deploy.conf > 默认值；
 # - --force 只覆盖本脚本管理的键；旧 env 中不认识的键原样保留在文件末尾（OP-03），避免手写配置丢失；
 # - APP_VERSION 从当前 release 的 package.json 读取，读不到直接失败（不再回退历史版本号）；
@@ -73,6 +73,7 @@ MANAGED_KEYS=(
   AUDIT_RETENTION_DAYS ADMIN_USERNAME MC_HOST MC_PORT RCON_HOST RCON_PORT RCON_PASSWORD
   MC_PUBLIC_ADDRESS MC_SYSTEMD_UNIT MC_PROPERTIES OPENCODE_ENV OPENCODE_URL OPENCODE_USERNAME
   OPENCODE_PASSWORD OPENCODE_HTML_MODE SHARES_ENABLED SHARE_DEFAULT_EXPIRY_HOURS
+  DSH_WEB_URL DSH_WEB_SSO_SOCKET DSH_QQ_MANAGED
   SHARE_MAX_EXPIRY_HOURS SHARE_MAX_DOWNLOADS SHARE_MAX_ITEMS ALERTS_ENABLED ALERT_WEBHOOK_URL
   ALERT_WEBHOOK_TYPE ALERT_WEBHOOK_SECRET ALERT_DISK_FREE_PCT ALERT_TEMP_C
   ALERT_BACKUP_MAX_AGE_HOURS ALERT_WORLD_BACKUP_MAX_AGE_HOURS ALERT_DRILL_MAX_AGE_DAYS
@@ -179,25 +180,35 @@ fi
 
 MC_PROPERTIES=$(resolve_value "$MC_PROPERTIES_ARG" "$(read_key "$ENV_FILE" MC_PROPERTIES)" "$(read_key "$DEPLOY_CONF" MC_PROPERTIES)" "/home/antifield/minecraft-server/server.properties")
 OPENCODE_ENV=$(resolve_value "$OPENCODE_ENV_ARG" "$(read_key "$ENV_FILE" OPENCODE_ENV)" "$(read_key "$DEPLOY_CONF" OPENCODE_ENV)" "/etc/opencode/opencode.env")
+DSH_WEB_URL=$(resolve_opt DSH_WEB_URL "")
+DSH_WEB_SSO_SOCKET=$(resolve_opt DSH_WEB_SSO_SOCKET "")
+DSH_QQ_MANAGED=$(resolve_opt DSH_QQ_MANAGED false)
 
 if [[ ! -r "$MC_PROPERTIES" ]]; then
   echo "无法读取 $MC_PROPERTIES" >&2
   exit 1
 fi
-if [[ ! -r "$OPENCODE_ENV" ]]; then
-  echo "无法读取 $OPENCODE_ENV" >&2
-  exit 1
-fi
-
 RCON_PASSWORD=$(grep -E '^rcon\.password=' "$MC_PROPERTIES" | head -n 1 | cut -d= -f2- || true)
-OPENCODE_PASSWORD=$(grep -E '^OPENCODE_PASSWORD=' "$OPENCODE_ENV" | head -n 1 | cut -d= -f2- || true)
 if [[ -z "$RCON_PASSWORD" ]]; then
   echo "server.properties 中 rcon.password 为空" >&2
   exit 1
 fi
-if [[ -z "$OPENCODE_PASSWORD" ]]; then
-  echo "/etc/opencode/opencode.env 中 OPENCODE_PASSWORD 为空" >&2
-  exit 1
+OPENCODE_PASSWORD=""
+case "${DSH_QQ_MANAGED,,}" in
+  1|true|yes|on) DSH_QQ_MANAGED=true ;;
+  0|false|no|off) DSH_QQ_MANAGED=false ;;
+  *) echo "DSH_QQ_MANAGED 必须是布尔值" >&2; exit 1 ;;
+esac
+if [[ "$DSH_QQ_MANAGED" != true || -z "$DSH_WEB_URL" || -z "$DSH_WEB_SSO_SOCKET" ]]; then
+  if [[ ! -r "$OPENCODE_ENV" ]]; then
+    echo "无法读取 OpenCode 回滚凭据文件" >&2
+    exit 1
+  fi
+  OPENCODE_PASSWORD=$(grep -E '^OPENCODE_PASSWORD=' "$OPENCODE_ENV" | head -n 1 | cut -d= -f2- || true)
+  if [[ -z "$OPENCODE_PASSWORD" ]]; then
+    echo "OpenCode 回滚凭据为空" >&2
+    exit 1
+  fi
 fi
 
 # APP_VERSION 必须来自当前 release 的 package.json；读不到即失败，避免写入历史版本误导 /api/version。
@@ -431,6 +442,9 @@ OPENCODE_USERNAME=opencode
 OPENCODE_PASSWORD=$OPENCODE_PASSWORD
 OPENCODE_ENV=$OPENCODE_ENV
 OPENCODE_HTML_MODE=$OPENCODE_HTML_MODE
+DSH_WEB_URL=$DSH_WEB_URL
+DSH_WEB_SSO_SOCKET=$DSH_WEB_SSO_SOCKET
+DSH_QQ_MANAGED=$DSH_QQ_MANAGED
 
 # 分享与告警（v0.2/v0.3）；webhook/密钥等非敏感值可用 deploy.conf 覆盖后重新生成本文件。
 SHARES_ENABLED=$SHARES_ENABLED

@@ -4,7 +4,7 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.0.13（2026-11-07 已部署，运行 commit `1743323`）**：schema 20。挖矿和天然林先读 `resource` 记忆坐标，失效后再做半径扫描。不新增工具、环境变量或模型调用。契约 v2，OpenCode **v2.2.5**。
+**当前版本 v1.1.0（待生产验收）**：schema 20、mcbot 契约 v2，Web、QQ 与 mcbot Agent 迁至 DeepSeek Harness。生产回滚基线为 v1.0.13（`1743323`）与 OpenCode **v2.2.5**。
 
 生产 app `/opt/antifieldcloud/releases/20261107T121119Z`，mcbot `/opt/mcbot/releases/20261107T121646Z`。迁移前快照 `db-predeploy-20261107T121225041Z.sqlite`（schema 20，sha256 `9a0e60b1…77fe9`）。演练仍为 `20261106T135130Z`。回滚 Workbench 使用 `/opt/antifieldcloud/releases/20261107T105450Z` 并保留现行库；mcbot 回滚使用 `/opt/mcbot/releases/20261107T111407Z`。schema 19 回退仍须快照 `db-predeploy-20261105T021746014Z.sqlite`。
 

@@ -1,6 +1,6 @@
 import type { Config } from '../config.ts'
 import type { Logger } from '../logger.ts'
-import { OpenCodeClient } from './opencode.ts'
+import type { OpenCodeClient } from './opencode.ts'
 
 export type IntentAction = 'fish' | 'farm' | 'woodcutting' | 'mining' | 'forest' | 'sleep' | 'patrol' | 'stopTask' | 'home' | 'deposit' | 'status' | 'chat'
 
@@ -27,9 +27,9 @@ function parseJson (text: string): unknown {
 export class IntentClassifier {
   private readonly config: Config
   private readonly logger: Logger
-  private readonly client: OpenCodeClient
+  private readonly client: Pick<OpenCodeClient, 'generate'>
 
-  constructor (config: Config, logger: Logger, client: OpenCodeClient) {
+  constructor (config: Config, logger: Logger, client: Pick<OpenCodeClient, 'generate'>) {
     this.config = config
     this.logger = logger
     this.client = client

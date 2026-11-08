@@ -43,6 +43,8 @@ export interface Config {
   opencodeUrl: string
   opencodeUsername: string
   opencodePassword: string
+  dshAgentSocket: string
+  dshToolSocket: string
   aiModelProvider: string
   aiModelId: string
   aiTimeoutMs: number
@@ -415,7 +417,14 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
 
   const aiEnabled = readBool(env, 'AI_ENABLED', true)
   const opencodePassword = readString(env, 'OPENCODE_PASSWORD', '')
-  if (aiEnabled && opencodePassword === '') {
+  const dshAgentSocket = readString(env, 'DSH_AGENT_SOCKET', '')
+  const dshToolSocket = readString(env, 'DSH_MCBOT_TOOL_SOCKET', '')
+  const socketPath = /^\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.sock$/
+  if (Boolean(dshAgentSocket) !== Boolean(dshToolSocket)
+    || (dshAgentSocket !== '' && (!socketPath.test(dshAgentSocket) || !socketPath.test(dshToolSocket) || dshAgentSocket === dshToolSocket))) {
+    throw new ConfigError('DSH Agent 和工具 socket 必须是两个不同的绝对路径')
+  }
+  if (aiEnabled && dshAgentSocket === '' && opencodePassword === '') {
     throw new ConfigError('OPENCODE_PASSWORD is required when AI_ENABLED=true')
   }
 
@@ -603,8 +612,10 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     opencodeUrl: readUrl(env, 'OPENCODE_URL', 'http://127.0.0.1:4096'),
     opencodeUsername: readString(env, 'OPENCODE_USERNAME', 'opencode'),
     opencodePassword,
-    aiModelProvider: readString(env, 'AI_MODEL_PROVIDER', 'opencode-go'),
-    aiModelId: readString(env, 'AI_MODEL_ID', 'deepseek-v4.1-flash'),
+    dshAgentSocket,
+    dshToolSocket,
+    aiModelProvider: dshAgentSocket ? 'deepseek-official' : readString(env, 'AI_MODEL_PROVIDER', 'opencode-go'),
+    aiModelId: dshAgentSocket ? 'deepseek-flash' : readString(env, 'AI_MODEL_ID', 'deepseek-v4.1-flash'),
     aiTimeoutMs: readInt(env, 'AI_TIMEOUT_MS', 45000, 5000, 180000),
     aiMaxPromptChars: readInt(env, 'AI_MAX_PROMPT_CHARS', 6000, 1000, 30000),
     aiMaxLines: readInt(env, 'AI_MAX_LINES', 3, 1, 5),

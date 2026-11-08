@@ -1,4 +1,6 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.13）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.1.0）
+
+> **v1.1.0 候选运行时**。按 [Agent Harness 候选切换手册](./DSH-MIGRATION.md) 安装与验收。当前生产版本见本手册开头。
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。

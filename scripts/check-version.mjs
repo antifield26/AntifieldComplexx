@@ -53,6 +53,9 @@ function readToolVersions(root) {
     opencodeVersion: parsed.opencodeVersion,
     mcbotVersion: parsed.mcbotVersion,
     mcbotContractVersion: parsed.mcbotContractVersion,
+    ...(parsed.dshVersion !== undefined || parsed.dshQqPluginVersion !== undefined
+      ? { dshVersion: parsed.dshVersion, dshQqPluginVersion: parsed.dshQqPluginVersion }
+      : {}),
   }
 }
 
@@ -246,6 +249,26 @@ export async function checkVersions(root = process.cwd()) {
     const contract = /^export const CONTRACT_VERSION = (\d+)$/m.exec(contractSource ?? '')
     if (Number(contract?.[1]) !== toolVersions.mcbotContractVersion) {
       errors.push({ code: 'mcbot_contract_version_mismatch', message: 'mcbot 契约版本与工具版本清单不一致' })
+    }
+    if ('dshVersion' in toolVersions) {
+      try {
+        const manifest = JSON.parse(readText(resolve(resolvedRoot, 'deploy/dsh/package.json')))
+        const lock = JSON.parse(readText(resolve(resolvedRoot, 'deploy/dsh/package-lock.json')))
+        const expected = {
+          '@deepseek-ai/dsh': toolVersions.dshVersion,
+          '@deepseek-ai/dsh-sdk-client': toolVersions.dshVersion,
+          '@tencent-connect/dsh-qqbot': toolVersions.dshQqPluginVersion,
+        }
+        for (const [name, version] of Object.entries(expected)) {
+          const pinned = lock.packages?.[`node_modules/${name}`]
+          if (!/^\d+\.\d+\.\d+(?:-[a-z0-9.]+)?$/.test(version) || manifest.dependencies?.[name] !== version
+            || pinned?.version !== version || !pinned.integrity?.startsWith('sha512-')) {
+            throw new Error()
+          }
+        }
+      } catch {
+        errors.push({ code: 'dsh_runtime_version_mismatch', message: 'DSH 独立依赖锁与工具版本清单不一致' })
+      }
     }
 
     const allowStaleTools = process.env.CHECK_VERSION_ALLOW_STALE_TOOLS === '1'

@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { Bot } from 'mineflayer'
 import { HttpApi } from '../../src/http/server.ts'
 import type { AuditLogger } from '../../src/audit.ts'
-import type { AutonomySessionClient, SessionPermission } from '../../src/ai/session.ts'
+import type { AutonomySessionClient, DshAutonomySession, SessionPermission } from '../../src/ai/session.ts'
 import { AutonomyService } from '../../src/autonomy/service.ts'
 import { EventBus } from '../../src/events/bus.ts'
 import type { ChatSender } from '../../src/minecraft/chat.ts'
@@ -182,6 +182,47 @@ test('autonomy start registers native MCP, creates permissions and exposes tools
   const body = list.body as { result: { tools: Array<{ name: string }> } }
   assert.ok(body.result.tools.some(tool => tool.name === 'start_task'))
   await s.service.stop('test')
+})
+
+test('DSH 自主急停立即撤销 Bearer，清理重试完成后才能再次启动', async () => {
+  const s = setup()
+  let token = ''
+  let prompt = ''
+  let starts = 0
+  let deletes = 0
+  let finishCleanup: () => void = () => {}
+  const cleanup = new Promise<void>(resolve => { finishCleanup = resolve })
+  const agent: DshAutonomySession = {
+    openRun: async (bearer, tools) => {
+      assert.equal(tools.length, 13)
+      token = bearer
+      return `session-test-${++starts}`
+    },
+    prompt: async (_id, text) => { prompt = text },
+    wait: async (_id, signal) => await new Promise(resolve => signal?.addEventListener('abort', () => resolve(), { once: true })),
+    interrupt: async () => {},
+    deleteSession: async () => {
+      if (++deletes === 1) throw new Error('清理暂时不可用')
+      if (deletes === 2) await cleanup
+    },
+    assistantText: async () => ''
+  }
+  const service = new AutonomyService({ ...s, logger: createLogger('error'), opencode: agent })
+  assert.equal((await service.start(null, '主人')).ok, true)
+  const firstToken = token
+  const input = { name: 'task_status', arguments: { run_id: runIdFromPrompt(prompt) } }
+  assert.equal((await service.handleDshTool(firstToken, input)).status, 200)
+  const stopping = service.stop('manual')
+  assert.equal((await service.handleDshTool(firstToken, input)).status, 401)
+  await stopping
+  assert.equal((await service.start(null, '主人')).code, 'autonomy_busy')
+  assert.equal((await service.start(null, '主人')).code, 'autonomy_busy')
+  assert.equal(starts, 1)
+  finishCleanup()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal((await service.start(null, '主人')).ok, true)
+  assert.equal((await service.handleDshTool(firstToken, input)).status, 401)
+  await service.stop('test')
 })
 
 test('autonomy tool call starts a task through the deterministic controller', async () => {

@@ -18,6 +18,9 @@
   [string]$ExpectedVersion = "",
   [int]$ExpectedSchemaVersion = 0,
   [string]$ExpectedOpenCodeVersion = "",
+  [string]$ExpectedDshVersion = "",
+  [string]$ExpectedDshQqVersion = "",
+  [switch]$RequireOpenCodeStopped,
   [string]$ExpectedMcbotVersion = "",
   [int]$ExpectedMcbotContractVersion = 0,
   [switch]$SkipMcbot,
@@ -157,6 +160,10 @@ function Get-AccessCurlArgs {
 if ($AccessClientId -xor $AccessClientSecret) {
   throw 'Access 凭据必须同时提供 -AccessClientId 与 -AccessClientSecret'
 }
+if (($ExpectedDshVersion -and ($ExpectedDshVersion -notmatch '^\d+\.\d+\.\d+(?:-[a-z0-9.]+)?$' -or
+  $ExpectedDshQqVersion -notmatch '^\d+\.\d+\.\d+$')) -or ($RequireOpenCodeStopped -and -not $ExpectedDshVersion)) {
+  throw 'DSH 冒烟必须提供固定的 DSH 与 QQ 插件版本'
+}
 
 # 解析 JSON：忽略日志/提示行；失败时剥离非 ASCII 再试一次（OP-06）。
 function ConvertFrom-JsonText {
@@ -277,10 +284,34 @@ Check "Pi SSH 可达" {
 }
 
 Check "Pi 服务状态" {
-  $out = Invoke-PiSsh "systemctl is-active antifieldcloud cloudflared opencode minecraft | tr '\n' ' '"
+  $units = if ($ExpectedDshVersion) { "antifieldcloud cloudflared minecraft" } else { "antifieldcloud cloudflared opencode minecraft" }
+  $expected = ($units.Split(" ") | ForEach-Object { "active" }) -join " "
+  $out = Invoke-PiSsh "systemctl is-active $units | tr '\n' ' '"
   $text = ($out | Out-String).Trim()
-  if ($text -notmatch "active active active active") { throw $text }
+  if ($text -ne $expected) { throw $text }
   $text
+}
+
+if ($ExpectedDshVersion) {
+  foreach ($kind in @("web", "qq", "mcbot-agent")) {
+    Check "DSH $kind 就绪与版本" {
+      $unit = "antifield-dsh-$kind"
+      $out = (Invoke-PiSsh "systemctl is-active --quiet $unit && cat /run/$unit-status/status.json" | Out-String).Trim()
+      $state = $out | ConvertFrom-Json -ErrorAction Stop
+      if ($state.ready -ne $true -or $state.version -ne $ExpectedDshVersion -or
+          ($kind -eq "qq" -and $state.pluginVersion -ne $ExpectedDshQqVersion)) {
+        throw "服务或固定版本校验失败"
+      }
+      "$ExpectedDshVersion"
+    }
+  }
+  if ($RequireOpenCodeStopped) {
+    Check "旧 OpenCode 单元与端口已停用" {
+      $out = (Invoke-PiSsh "if ! systemctl is-active --quiet opencode && ! ss -H -ltn 'sport = :4096' | grep -q .; then echo verified; fi" | Out-String).Trim()
+      if ($out -ne "verified") { throw "仍存在旧服务或监听" }
+      "通过"
+    }
+  }
 }
 
 # v0.8.0 mcbot（独立附属服务）：默认只检查 active；指定 -ExpectedMcbotVersion 时同时断言版本/契约。
@@ -360,7 +391,7 @@ Check "healthz db/pendingBackups 字段" {
 }
 
 # OpenCode 运行中版本（/api/info；仅 CLI --version 不足以证明服务进程已切换；可 -SkipOpenCode）。
-if (-not $SkipOpenCode -and $ExpectedOpenCodeVersion) {
+if (-not $ExpectedDshVersion -and -not $SkipOpenCode -and $ExpectedOpenCodeVersion) {
   Check "OpenCode 运行中版本与预期一致（$ExpectedOpenCodeVersion）" {
     $command = @'
 sudo sh -c 'P=$(grep -E "^OPENCODE_PASSWORD=" /etc/opencode/opencode.env | head -n1 | cut -d= -f2-); AUTH=$(printf "%s" "opencode:$P" | base64 -w0); PID=$(systemctl show opencode -p MainPID --value); EXE=$(readlink -f /proc/$PID/exe); INFO=$(curl -fsS --max-time 5 -H "Authorization: Basic $AUTH" http://127.0.0.1:4096/api/info); printf "%s\nEXE=%s\n" "$INFO" "$EXE"'
@@ -376,7 +407,7 @@ sudo sh -c 'P=$(grep -E "^OPENCODE_PASSWORD=" /etc/opencode/opencode.env | head 
 }
 
 # MCP 服务状态（OpenCode 2.2 lifecycle；可 -SkipMcp）：只读 /api/mcp，密码只在远端 shell 变量中使用。
-if (-not $SkipMcp) {
+if (-not $ExpectedDshVersion -and -not $SkipMcp) {
   Check "OpenCode MCP 服务状态" {
     $command = @'
 sudo sh -c 'P=$(grep -E "^OPENCODE_PASSWORD=" /etc/opencode/opencode.env | head -n1 | cut -d= -f2-); AUTH=$(printf "%s" "opencode:$P" | base64 -w0); curl -fsS --max-time 5 -H "Authorization: Basic $AUTH" http://127.0.0.1:4096/api/mcp' 2>&1
@@ -464,6 +495,7 @@ if (-not $SkipEnvDrift) {
 
 # v0.7.3 Chatbot 上下文文档目录：默认关闭时只提示；启用时校验目录/属主/opencode 可读。
 SoftCheck "Chatbot 上下文文档目录（CHATBOT_AI_CONTEXT_READ_ENABLED）" {
+  if ($ExpectedDshVersion) { return "SKIP: QQ 由 DSH 管理" }
   $enabled = (Get-PiEnvValue "CHATBOT_AI_CONTEXT_READ_ENABLED").ToLowerInvariant()
   if (@("1", "true", "yes", "on") -notcontains $enabled) { return "SKIP: 文档模式默认关闭" }
   $dir = (Get-PiEnvValue "CHATBOT_CONTEXT_DIR").Trim()
@@ -525,6 +557,9 @@ Check "备份拉取状态（含密钥包状态）" {
   if ($ageHours -gt 48) { throw "最近拉取已超过 48 小时（$([math]::Round($ageHours,1)) h）" }
   if ($json.secretsAttempted -eq $true -and $json.secretsOk -ne $true) {
     throw "密钥包拉取失败：$($json.secretsLastError)（secretsOk=$($json.secretsOk)）"
+  }
+  if ($RequireOpenCodeStopped -and ($json.secretsOk -ne $true -or $json.secretsAgentRuntime -ne "dsh" -or $json.secretsIncludesDsh -ne $true)) {
+    throw "未验证 DSH 密钥包实际拉取"
   }
   "lastPullAt=$($json.lastPullAt) age=$([math]::Round($ageHours,1))h secretsOk=$($json.secretsOk)"
 }

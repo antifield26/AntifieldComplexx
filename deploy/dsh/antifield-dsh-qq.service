@@ -1,0 +1,47 @@
+# 独立 Agent 进程，仅访问专用状态目录和最小凭据。
+[Unit]
+Description=AntifieldComplexx DSH qq
+After=network-online.target systemd-tmpfiles-setup.service
+Wants=network-online.target
+StartLimitIntervalSec=90
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=antifield-dsh-qq
+Group=antifield-dsh-qq
+WorkingDirectory=/var/lib/antifield-dsh-qq/workspace
+StateDirectory=antifield-dsh-qq
+StateDirectoryMode=0700
+RuntimeDirectory=antifield-dsh-qq-status
+RuntimeDirectoryMode=0755
+Environment=HOME=/var/lib/antifield-dsh-qq
+Environment=DSH_HOME=/var/lib/antifield-dsh-qq/profile
+Environment=DSH_STATUS_PATH=/run/antifield-dsh-qq-status/status.json
+LoadCredential=deepseek-key:/etc/antifieldcloud/dsh/qq-deepseek-key
+LoadCredential=qq-app-id:/etc/antifieldcloud/dsh/qq-app-id
+LoadCredential=qq-app-secret:/etc/antifieldcloud/dsh/qq-app-secret
+LoadCredential=qq-access:/etc/antifieldcloud/dsh/qq-access.json
+Environment=DSH_QQ_ACCESS=%d/qq-access
+Environment=DSH_QQ_MEMORY_DB=/var/lib/antifield-dsh-qq/qq-memory.sqlite
+ExecStart=/usr/local/bin/node /opt/antifield-dsh/current/qq-agent.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectProc=invisible
+InaccessiblePaths=-/var/lib/antifieldcloud -/var/lib/mcbot -/var/lib/opencode -/etc/mcbot -/etc/antifieldcloud
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

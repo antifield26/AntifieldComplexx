@@ -1,6 +1,23 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.13（2026-11-07，schema 20、mcbot 契约 v2、OpenCode v2.2.5）。
+> 当前版本 v1.1.0 待生产验收（schema 20、mcbot 契约 v2）。迁移前的生产回滚基线为 v1.0.13 和 OpenCode v2.2.5。
+
+### v1.1.0 生产切换（2026-11-08）
+
+- Workbench 已切到 `/opt/antifieldcloud/releases/20261108T080545Z`，`/healthz` 返回 v1.1.0 和 schema 20。迁移前快照 `db-predeploy-20261108T080730455Z.sqlite` 的 SHA-256 为 `361d078c42a370d50fc92556a0a2ca1c142dd517d64c1acb2e947107a833d7ac`，SQLite 完整性与外键检查通过。
+- 经生产 Workbench 验证一次性 SSO、票据重放拒绝、加固 Cookie、两轮真实模型对话、在途回合取消、HTTP 和 WebSocket 非法 Origin 拒绝，以及登出后旧连接断开。命令行公网探针收到 Cloudflare 人机挑战，浏览器端 Access 验收待完成。
+- 企业微信生产投递箱核对到 35 条新告警成功。隔离投递箱使用生产发送代码注入一次 `errcode=45009`，在约 1.1 秒后使用同一投递键重试，实际企业微信接收端返回 `errcode=0`。
+- QQ 旧回调继续接收。官方网关查询成功，尚未建立新订阅。隔离导入得到 6 张角色卡、4 条记忆和 4 条设置，跳过 9 条无法确认或不符合导入条件的记录。mcbot v1.1.0 已暂存，Minecraft 运行标识与切换前一致。
+
+### v1.1.0 候选（隔离验收）
+
+- Pi ARM64、Node 26 上通过独立锁文件安装，固定 DSH CLI 报告 `0.2.2-rc.1`，腾讯补丁应用成功。DSH Web 通过 Unix socket 原生换票，原生 13 个工具完成注册，腾讯插件通过本地模拟 Gateway 握手与私聊清除。
+- Workbench SSO 换票、QQ 记忆作用域与私聊清除、mcbot 自主急停撤销和清理重试均有本地夹具。DSH 独立依赖审计无高危和严重级别公告。
+- 独立浏览器验证 SSH 登录页和正式候选均能加载会话及账号菜单。Pi 候选通过 `current` 启动，在完整 systemd 限制下验证换票、设置 RPC 和已保存的账号授权。Workbench 夹具验证上传、配置写入和插件管理仍被拦截。
+- Pi 已安装固定运行时及三个专用服务账号。Bubblewrap 工作区通过越界文件、审批拒绝和命令环境凭据检查，生产单元约束下的网络命名空间初始化通过。独立 Minecraft Agent 的真实模型文本回合和 QQ 视觉模型纯色图探针通过。QQ 平台取令牌成功，旧接收者保留。
+- 企业微信群机器人的定向验收消息获 `errcode=0`。Workbench 夹具验证 HTTP 200 业务失败会重试，并沿用投递键。生产告警配置待随切换启用。
+- 预切换加密档 `agent-precut-20261108T071406Z.tar.age` 在 PC 完成 SHA-256 校验与离线解密。Workbench schema 20 及 OpenCode 快照通过 SQLite `integrity_check`，Workbench 外键检查通过。归档含 mcbot 数据与运行配置，归档时没有世界记忆文件。
+- Pi 在独立网络命名空间使用与归档 SHA-256 一致的 ARM64 二进制和 OpenCode 数据库启动，`/api/info` 返回 2.2.5。现行 OpenCode 与 Minecraft 保持在线。待验收包括 Web 账号授权后的回合、真实 QQ 收发、Access、Windows 备份拉取、冷备和切换后的回滚验证。
 
 ### v1.0.13（2026-11-07）
 

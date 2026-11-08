@@ -41,6 +41,31 @@ async function loginAdmin(app: FastifyInstance, seeded: Seeded): Promise<{ cooki
 const APP_ID = '102345678'
 const APP_SECRET = 'qq-route-app-secret-0123456789abcdef'
 
+test('DSH QQ 接管后只保留登录后的迁移状态，旧入站与外发路由关闭', async () => {
+  const dir = tempDataDir()
+  const config = testConfig(dir, { dshQqManaged: true })
+  const db = testDb(dir)
+  const seeded = await seedAdmin(db)
+  const { app } = await buildApp(config, db)
+  try {
+    assert.equal((await app.inject('/api/chatbots/status')).statusCode, 401)
+    const { cookie, csrf } = await loginAdmin(app, seeded)
+    const migrated = await app.inject({ url: '/api/chatbots/status', headers: { cookie } })
+    assert.equal(migrated.statusCode, 410)
+    assert.equal(migrated.json().error.code, 'chatbot_managed_by_dsh')
+    const webhook = await app.inject({ method: 'POST', url: '/api/chatbot/webhook/qq/legacy', payload: {} })
+    assert.equal(webhook.statusCode, 404)
+    const publish = await app.inject({
+      method: 'POST', url: '/api/chatbots/legacy/publish', headers: { cookie, 'x-csrf-token': csrf }, payload: {},
+    })
+    assert.equal(publish.statusCode, 404)
+  } finally {
+    await app.close()
+    db.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('Chatbot 发布路由：无 TOTP 400，带有效 TOTP 才创建外发任务', async () => {
   const dir = tempDataDir()
   const config = testConfig(dir, { chatbotEnabled: true, chatbotSecretKey: randomBytes(32).toString('base64') })

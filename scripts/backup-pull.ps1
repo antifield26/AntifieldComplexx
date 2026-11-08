@@ -16,7 +16,7 @@
 # 2) 逐个下载到 .part → SHA-256 校验（密文归档按密文 SHA）→ 原子改名 → 写 .sha256 旁文件
 #    →（可选 -AgeIdentityPath）解密校验 plainSha256/plainSize 后删除临时明文 → --ack → 删除 Pi 归档/旁文件；
 # 3) 加密归档（.tar.gz.age）必须同时有 <name>.meta.json（plainSha256/plainSize/encryptedWith），缺失即失败；
-# 4) 密钥包独立步骤，成功/失败都写入状态 JSON；`includesOpencode` 必须为 true（缺 opencode DB 视为失败）；
+# 4) 密钥包独立步骤，按当前 Agent 运行时校验，成功和失败都写入状态 JSON；
 # 5) 失败保留 pending（下一轮重试同一归档，不重复生成）；重试时跳过本轮已 ack 的归档；
 # 6) 状态 JSON 在拉取结束后一次性幂等写入，写失败不触发整轮重试（OP-11）；状态中的错误文本会脱敏路径；
 # 7) 本地锁文件防同日重复运行（计划任务另有 IgnoreNew；手动运行也会被锁挡住）。
@@ -49,6 +49,8 @@ $script:secretsState = @{
   lastSuccessAt    = $null
   archiveName      = $null
   includesOpencode = $null
+  includesDsh      = $null
+  agentRuntime     = $null
 }
 $script:lastArchiveName = ""
 $script:lastArchiveMode = ""
@@ -327,6 +329,8 @@ function Write-PiStatus {
     lastSecretsAt       = $script:secretsState.lastSuccessAt
     secretsArchiveName  = $script:secretsState.archiveName
     secretsIncludesOpencode = $script:secretsState.includesOpencode
+    secretsIncludesDsh = $script:secretsState.includesDsh
+    secretsAgentRuntime = $script:secretsState.agentRuntime
     includesHostConfig  = [bool]$script:lastIncludesHostConfig
     error               = $ErrorMessage
     errorDetail         = (ConvertTo-StatusMessage $ErrorDetail)
@@ -347,6 +351,8 @@ function Invoke-SecretsPull {
   $script:secretsState.ok = $null
   $script:secretsState.lastError = $null
   $script:secretsState.includesOpencode = $null
+  $script:secretsState.includesDsh = $null
+  $script:secretsState.agentRuntime = $null
   $scriptPath = "/opt/antifieldcloud/current/scripts/backup-secrets.sh"
   try {
     $exists = (Invoke-PiSsh "test -f '$scriptPath' && echo YES || echo NO" -TimeoutSeconds 30) -join ""
@@ -364,9 +370,19 @@ function Invoke-SecretsPull {
     $sha = ([string]$meta.sha256).ToLower()
     if ($sha -notmatch '^[0-9a-f]{64}$') { throw "密钥归档 SHA 异常：$name" }
     $size = [long]$meta.sizeBytes
-    # OPS-03：opencode 已安装时密钥包必须包含 DB；PC 侧拒绝把“缺失 opencode DB”当作成功。
-    if ($meta.includesOpencode -ne $true) { throw "密钥包未包含 opencode DB（includesOpencode=$($meta.includesOpencode)）" }
-    $script:secretsState.includesOpencode = $true
+    $runtime = if ($null -eq $meta.agentRuntime) { "opencode" } else { [string]$meta.agentRuntime }
+    switch ($runtime) {
+      "opencode" {
+        if ($meta.includesOpencode -ne $true) { throw "密钥包未包含 OpenCode 数据库" }
+        $script:secretsState.includesOpencode = $true
+      }
+      "dsh" {
+        if ($meta.includesDsh -ne $true) { throw "密钥包未包含 DSH 配置、凭据和 QQ 记忆" }
+        $script:secretsState.includesDsh = $true
+      }
+      default { throw "密钥包 Agent 运行时未知" }
+    }
+    $script:secretsState.agentRuntime = $runtime
     $script:lastIncludesHostConfig = [bool]$meta.includesHostConfig
     $remote = "/var/lib/antifieldcloud/backups/secrets/$name"
     $dateDir = Join-Path (Join-Path $destRoot "secrets") (Get-Date).ToString("yyyy-MM-dd")
@@ -389,7 +405,7 @@ function Invoke-SecretsPull {
     $script:secretsState.ok = $true
     $script:secretsState.lastSuccessAt = (Get-Date).ToUniversalTime().ToString("o")
     $script:secretsState.archiveName = $name
-    Write-Log "密钥备份已拉取：$local（includesOpencode=true，hostConfig=$($script:lastIncludesHostConfig)）"
+    Write-Log "密钥备份已拉取：$local（Agent=$runtime，hostConfig=$($script:lastIncludesHostConfig)）"
   } catch {
     $script:secretsState.ok = $false
     $script:secretsState.lastError = $_.Exception.Message
