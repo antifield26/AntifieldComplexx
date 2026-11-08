@@ -9,7 +9,7 @@
 - **版本**：**v1.0.13**；schema **v20**；OpenCode **v2.2.5**；mcbot **v1.0.13**（契约 v2）。Workbench 继续兼容契约 v1 的读取与既有控制。
 - **范围**：挖矿和天然林先读 `resource` 记忆坐标。坐标在两倍扫描半径内、方块仍有效时，本轮跳过半径扫描；区块未加载时走近一次再确认。不新增工具、环境变量或模型调用。
 - **边界**：不启用整包加密与异地副本，不收紧 Pi sudo，不重启 Minecraft，不重启 OpenCode。本版只读 `resource` 坐标，写入仍只由模型的记忆工具完成。
-- **状态**：提交 `1743323`。app `/opt/antifieldcloud/releases/20261107T121119Z`，mcbot `/opt/mcbot/releases/20261107T121646Z`。回滚到 v1.0.12：app `/opt/antifieldcloud/releases/20261107T105450Z`、mcbot `/opt/mcbot/releases/20261107T111407Z`，并保留现行库。演练仍为 `20261106T135130Z`。部署内 smoke **26/0/0/2**，随后 **28/0/0/2**。计划任务标记仍是 1.0.12。已发布 annotated Tag `v1.0.13`。
+- **状态**：提交 `1743323`。app `/opt/antifieldcloud/releases/20261107T121119Z`，mcbot `/opt/mcbot/releases/20261107T121646Z`。回滚到 v1.0.12：app `/opt/antifieldcloud/releases/20261107T105450Z`、mcbot `/opt/mcbot/releases/20261107T111407Z`，并保留现行库。演练仍为 `20261106T135130Z`。部署内 smoke **26/0/0/2**，随后 **28/0/0/2**。计划任务已于 `2026-11-07T13:13:54.6451312Z` 重装为 1.0.13。已发布 annotated Tag `v1.0.13`。
 - **测试基线**：app **625**（624 pass、1 skip）+ web **283** + mcbot **173**。
 - **发布门禁**：打 Tag 前再做一次文档对齐和临时文件清理。
 

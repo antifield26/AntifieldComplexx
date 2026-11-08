@@ -17,13 +17,14 @@
 
 ## v1.0.13 发布记录
 
-schema 保持 20，OpenCode 保持 2.2.5，契约保持 v2。Minecraft 启动时间仍为 2026-11-06 23:00:21 CST，OpenCode 仍为 2026-11-06 23:00:25 CST。
+schema 保持 20，OpenCode 保持 2.2.5，契约保持 v2。OpenCode 启动时间仍为 2026-11-06 23:00:25 CST。Minecraft 于 2026-11-07 22:14:58 CST 因插件更新重启。
 
 1. 代码提交 `1743323`。挖矿和天然林先读 `resource` 记忆坐标。不新增工具或环境变量。
 2. 已部署 Workbench `/opt/antifieldcloud/releases/20261107T121119Z` 与 mcbot `/opt/mcbot/releases/20261107T121646Z`。迁移前快照 `db-predeploy-20261107T121225041Z.sqlite`。antifieldcloud 于 2026-11-07 20:12:26 CST 重启，mcbot 于 2026-11-07 20:17:05 CST 重启。
 3. 部署内 smoke **26/0/0/2**，随后带 mcbot 契约和本地归档旁文件的 smoke **28/0/0/2**。公网 Access smoke 这次没有跑。
 4. 回滚：mcbot 切回 `/opt/mcbot/releases/20261107T111407Z`。Workbench 切回 `/opt/antifieldcloud/releases/20261107T105450Z` 并保留现行库。应用保留 3 份后，v1.0.9 应用 release `/opt/antifieldcloud/releases/20261106T134109Z` 已不在磁盘上。mcbot 保留 5 份，含 v1.0.12、v1.0.10、预发布 `20261107T084917Z` 与 v1.0.9 `20261106T134625Z`。
-5. Windows 计划任务标记仍是 1.0.12，installedAt `2026-11-07T11:43:26.7121209Z`。两次 smoke 都使用 `-SkipLocalTaskCheck`。已发布 annotated Tag `v1.0.13`。不移动已有 Tag。
+5. 部署 smoke 当时 Windows 计划任务标记仍是 1.0.12，installedAt `2026-11-07T11:43:26.7121209Z`。两次 smoke 都使用 `-SkipLocalTaskCheck`。已发布 annotated Tag `v1.0.13`。不移动已有 Tag。发布后于 `2026-11-07T13:13:54.6451312Z` 重装为 1.0.13。每日任务与世界拉取任务均为 Ready，脚本 SHA 与仓库一致，下次运行都是 2026-11-08 12:00。异地副本任务未安装。重装后未再跑 smoke。
+6. 2026-11-07 在线玩家为 0。`save-all flush` 后重启 Paper。插件换为 Chunky 1.5.66、CoreProtect CE 24.1、LuckPerms 5.5.91、ViaVersion 5.12.2、VaultUnlocked 2.20.3。EssentialsX 2.22.0、PlaceholderAPI 2.12.3、Vote2Sleep 1.3.0 与 Paper 26.1.2 未换。启动日志为 Done (28.295s)，五个新版本均已 Enabling。Node 与 cloudflared 的旧回滚二进制已删除。cloudflared 与 OpenCode 未再重启。
 
 ## v1.0.12 发布记录
 
@@ -399,10 +400,12 @@ sudo -u opencode /var/lib/opencode/.opencode/bin/opencode --version   # 期望 v
 ```
 
 回滚后同步 `deploy/tool-versions.json.opencodeVersion=2.1.4` 并重跑 `check-version`/smoke；v2.2.0 升级记录：`/var/backups/opencode/last-upgrade-from-v2.1.4` 与 `20261028T020723Z`。
-### 3.3 Node.js 运行时安全更新（v26.12.1）
+### 3.3 Node.js 运行时安全更新（v26.13.0）
 
 生产应用使用 `/usr/local/bin/node`（systemd `ExecStart`）；npm/npx 仍指向 nvm（仅构建/部署工具）。
-2026-10-22 按 Node.js 安全补丁把运行时从 v26.11.1 更新到 **v26.12.1**（linux-arm64），未改动应用版本/schema。
+当前生产为 **v26.13.0**（2026-11-07，官方 linux-arm64，SHA-256 校验通过）。相对 v26.12.1 只切换 Lithium LTS 标记，没有其它运行时改动。npm 仍是 nvm 12.2.0。`/usr/local/bin/node` 与 `/usr/local/lib/nodejs/node-v26.13.0-linux-arm64` 保留；`node.v26.12.1`、`node.v26.11.1` 和 `node-v26.12.1-linux-arm64` 已删除。`/healthz` 仍为 1.0.13 / schema 20，mcbot `/healthz` 仍为 1.0.13 / 契约 v2。
+
+下面是 2026-10-22 从 v26.11.1 升到 **v26.12.1** 的记录。未改动应用版本/schema。
 
 ```bash
 # 1) 下载并校验官方 arm64 包（在 PC 或 Pi 执行）
@@ -933,8 +936,8 @@ cd "$env:USERPROFILE\projects\AntifieldComplexx"
 
 - **journald persistent**：`/etc/systemd/journald.conf.d/60-workbench-persistent.conf` 设
   `Storage=persistent`、`SystemMaxUse=64M`、`RuntimeMaxUse=32M`；Pi 的 `/var/log` 由 log2ram 承载，关机前同步。
-- **cloudflared**：`2026.10.1`；`/etc/systemd/system/cloudflared.service.d/20-hardening.conf` 启用
-  `NoNewPrivileges/PrivateTmp/ProtectSystem=full/ProtectHome` 等；回滚二进制在 `/var/backups/antifieldcloud/cloudflared-2026.8.1`。
+- **cloudflared**：`2026.10.7`（2026-11-07）；`/etc/systemd/system/cloudflared.service.d/20-hardening.conf` 仍启用
+  `NoNewPrivileges/PrivateTmp/ProtectSystem=full/ProtectHome` 等。旧回滚二进制 `cloudflared-2026.10.1` 与 `cloudflared-2026.10.3` 已删除。配置备份 `cloudflared-config.yml.20261019T175406` 仍保留。升级当时登记了 4 条隧道连接；本次清理没有重启 cloudflared，服务仍为 active。
 - **rpcbind** 已禁用（111 关闭）；**fake-hwclock** load/save 已启用（无 RTC 电池时近似关机时间），NTP 仍负责校时。
 - **RCON**：Paper 无 bind 配置，25575 仍监听所有接口；仅由 nftables 丢弃非 loopback 入站。
 - **SSH 已改仅公钥**；**`fail2ban` 已安装并启用 `sshd` jail**

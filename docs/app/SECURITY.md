@@ -250,8 +250,8 @@
     删除 Bot 时只级联删除 DB 行，镜像文件无自动清理路径，需按保留期/人工清理；不要把该目录挂到 Web 静态目录。
 24. **QQ 群/频道触发限制**：默认只推送 @Bot 事件；可在目标开启“接受全部消息”并由 QQ 后台开启接收所有消息，但仅 @/名字模式仍过滤，全量模式由模型 `NO_REPLY` 决定是否发送；C2C 私聊开放 Chat 但接触面由 QQ 平台“谁可添加 Bot”控制；
     管理员应确认目标 `allow_chat` 与入站目标登记，避免误以为群内所有消息都会触发。
-25. **Node.js 运行时安全更新**：生产 `/usr/local/bin/node` 已从 v26.11.1 更新到 **v26.12.1**（2026-10-22，官方 linux-arm64 + SHA-256 校验）；
-    旧二进制保留 `/usr/local/bin/node.v26.11.1` 以便回滚；npm/npx 仍指向 nvm（12.2.0），仅作构建/部署工具。后续安全更新应重复
+25. **Node.js 运行时安全更新**：生产 `/usr/local/bin/node` 为 **v26.13.0**（2026-11-07，官方 linux-arm64 + SHA-256 校验）。相对 v26.12.1 只切换 Lithium LTS 标记。
+    旧回滚二进制 `node.v26.12.1`、`node.v26.11.1` 与目录 `node-v26.12.1-linux-arm64` 已删除；当前树为 `/usr/local/lib/nodejs/node-v26.13.0-linux-arm64`。npm/npx 仍指向 nvm（12.2.0），仅作构建/部署工具。后续安全更新应重复
     `docs/app/DEPLOY.md` §3.3 并跑带 Access token 的 smoke；Node 更新不影响 DB/schema。
 26. **Bot 出站连通性**：服务端探测只发无凭据只读 GET（外网 + QQ 平台 API），不记录平台响应正文或 AppSecret；`/api/chatbots/connectivity` 仅返回 `checkedAt/checking/internet/platforms`，无 `deviceOnline/proxy`。
     Bot 出站为 Pi 直连，不读取代理变量；Pi 出站不可达时检查路由/DNS/防火墙，不要恢复代理变量。
