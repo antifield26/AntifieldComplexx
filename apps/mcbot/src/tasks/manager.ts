@@ -45,6 +45,14 @@ interface ActiveTask {
   stopRequested: boolean
   depositRequested: boolean
   defenseFailed: boolean
+  goalExecutionId?: string
+}
+
+export interface GoalTaskResult {
+  taskId: string
+  executionId: string
+  produced: number | null
+  error: string | null
 }
 
 interface PendingTask {
@@ -172,6 +180,8 @@ export class TaskManager implements TaskController {
   private persistTimer: NodeJS.Timeout | null = null
   private restocking = false
   private survivalBusy = false
+  private goalBusy: () => boolean = () => false
+  private manualDeposit = false
   private foodTriedPickup = false
   private foodTriedChest = false
   private foodTriedTask = false
@@ -185,6 +195,72 @@ export class TaskManager implements TaskController {
 
   setTaskEndedHandler (handler: () => void): void {
     this.taskEndedHandler = handler
+  }
+
+  setGoalBusy (check: () => boolean): void {
+    this.goalBusy = check
+  }
+
+  isGoalBlocked (): boolean {
+    return this.stopped || this.active !== null || this.pending !== null ||
+      this.queue.length > 0 || this.restocking || this.survivalBusy || this.manualDeposit
+  }
+
+  async runGoalTask (name: TaskName, executionId: string, signal: AbortSignal): Promise<GoalTaskResult> {
+    signal.throwIfAborted()
+    if (!this.deps.config.taskEnabled) throw new TaskError('自动化开关没有打开')
+    if (this.isGoalBlocked()) throw new TaskError('任务仍在占用 Bot')
+    const active = this.createActive(name, randomUUID(), Date.now())
+    active.goalExecutionId = executionId
+    const controller = new AbortController()
+    this.active = active
+    this.controller = controller
+    const stop = (): void => {
+      active.stopRequested = true
+      controller.abort()
+    }
+    signal.addEventListener('abort', stop, { once: true })
+    this.publish(active, 'starting')
+    try {
+      this.loop = this.run(active)
+      await this.loop
+      const progress = active.progress
+      const production = {
+        fishing: progress.fishCaught,
+        farming: progress.wheatHarvested,
+        woodcutting: progress.logsChopped,
+        mining: progress.oresMined,
+        forest: progress.naturalLogsChopped
+      } as Partial<Record<TaskName, number>>
+      return {
+        taskId: active.taskId,
+        executionId,
+        produced: production[name] ?? null,
+        error: active.lastError ?? (active.stopRequested ? '任务已停止' : null)
+      }
+    } finally {
+      signal.removeEventListener('abort', stop)
+      this.active = null
+      this.controller = null
+      this.loop = null
+      this.publishIdle(active)
+      this.taskEndedHandler?.()
+    }
+  }
+
+  async depositForGoal (signal: AbortSignal): Promise<number> {
+    signal.throwIfAborted()
+    const active = this.createActive('fishing', randomUUID(), Date.now())
+    active.goalExecutionId = 'deposit'
+    try {
+      return await oneShotDeposit({ ...this.context(active, false), signal })
+    } catch (error) {
+      const count = active.progress.deposited
+      if (count > 0 && !signal.aborted) {
+        throw new TaskError(`已存入 ${count} 个，仍有物品未存：${error instanceof Error ? error.message : String(error)}`)
+      }
+      throw error
+    }
   }
 
   async init (): Promise<void> {
@@ -259,6 +335,7 @@ export class TaskManager implements TaskController {
 
   async start (name: TaskName, username: string, source: 'chat' | 'http_control' | 'autonomy' = username === 'panel' ? 'http_control' : 'chat'): Promise<TaskStartResult> {
     const { config } = this.deps
+    if (this.goalBusy()) return { status: 'rejected', reason: 'goal_busy' }
     if (this.stopped) return { status: 'rejected', reason: 'stopped' }
     if (!config.taskEnabled) {
       await this.say('自动化开关没有打开。')
@@ -462,9 +539,14 @@ export class TaskManager implements TaskController {
     let attempt = 0
     while (!this.stopped && !active.stopRequested) {
       try {
-        if (!this.deps.getBot()?.entity) await this.waitForBot(60000)
+        if (!this.deps.getBot()?.entity) {
+          if (active.goalExecutionId) throw new TaskError('Bot 已断线')
+          await this.waitForBot(60000)
+        }
         await this.ensureAtAnchor(active)
+        if (active.stopRequested) break
         await this.ensureSupplies(active)
+        if (active.stopRequested) break
         if (this.deps.config.defenseEnabled && this.deps.defender) {
           try {
             await this.deps.defender.prepare(this.context(active))
@@ -474,7 +556,9 @@ export class TaskManager implements TaskController {
             })
           }
         }
+        if (active.stopRequested) break
         await this.defend(active)
+        if (active.stopRequested) break
         this.publish(active, 'running')
         const ctx = this.context(active)
         if (active.name === 'fishing') await runFishing(ctx)
@@ -491,13 +575,23 @@ export class TaskManager implements TaskController {
         break
       } catch (error) {
         if (this.shutdownPending) break
-        if (active.stopRequested || this.stopped || error instanceof TaskStopError) break
+        if (active.stopRequested || this.stopped || error instanceof TaskStopError) {
+          if (active.goalExecutionId && error instanceof TaskStopError && error.message !== '任务时间到了') {
+            active.stopRequested = true
+          }
+          break
+        }
         if (error instanceof DefenseRetreatError) {
           active.defenseFailed = true
           active.lastError = error.message
           break
         }
         const message = error instanceof Error ? error.message : String(error)
+        if (active.goalExecutionId) {
+          active.lastError = message
+          active.failures = 1
+          break
+        }
         if (isTransientConnectionLoss(message)) {
           active.lastError = message
           this.logger.warn('task paused for reconnect', { name: active.name, error: message })
@@ -732,6 +826,11 @@ export class TaskManager implements TaskController {
   }
 
   private async finish (active: ActiveTask, attempts: number): Promise<void> {
+    if (active.goalExecutionId) {
+      const result = active.stopRequested ? 'stopped' : active.lastError ? 'failed' : 'completed'
+      this.auditFinish(active, active.failures, result, null)
+      return
+    }
     if (this.shutdownPending) {
       await this.persistState(active)
       this.pending = {
@@ -989,6 +1088,7 @@ export class TaskManager implements TaskController {
   /** 空闲时按需去主箱补食物/工具；失败只告警，不打断在线状态。 */
   async autoRestock (): Promise<void> {
     const { config } = this.deps
+    if (this.goalBusy()) return
     if (!config.autoRestock || this.restocking || this.stopped || this.active || this.pending || this.queue.length > 0) return
     const bot = this.deps.getBot()
     if (!bot?.entity || !bot.inventory) return
@@ -1046,6 +1146,7 @@ export class TaskManager implements TaskController {
    */
   async autoSurvival (): Promise<void> {
     const { config } = this.deps
+    if (this.goalBusy()) return
     if (!config.autoSurvival || this.survivalBusy || this.stopped ||
       this.active || this.pending || this.queue.length > 0) return
     const bot = this.deps.getBot()
@@ -1227,7 +1328,8 @@ export class TaskManager implements TaskController {
     return null
   }
 
-  async depositNow (): Promise<void> {    if (this.active) {
+  async depositNow (): Promise<void> {
+    if (this.active) {
       this.active.depositRequested = true
       await this.say('好，我存一下。')
       return
@@ -1240,6 +1342,7 @@ export class TaskManager implements TaskController {
     const previous = this.deps.state.task
     const fake = this.createActive('fishing', randomUUID(), Date.now())
     fake.progress = { ...previous.progress }
+    this.manualDeposit = true
     try {
       const count = await oneShotDeposit(this.context(fake, false))
       this.deps.state.setTask({
@@ -1258,6 +1361,8 @@ export class TaskManager implements TaskController {
       await this.say(count > 0 ? `存好了，共 ${count} 个。` : '背包里没有需要存的东西。')
     } catch (error) {
       await this.say(`存箱失败：${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      this.manualDeposit = false
     }
   }
 
@@ -1361,7 +1466,7 @@ export class TaskManager implements TaskController {
   }
 
   private schedulePersist (active: ActiveTask): void {
-    if (this.persistTimer) return
+    if (this.persistTimer || active.goalExecutionId) return
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null
       void this.persistState(active)

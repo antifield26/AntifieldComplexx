@@ -12,13 +12,13 @@
 )
 
 # 构建前端 → 打包 → 上传到 Pi 的 releases/<UTC> → 安装生产依赖 → 迁移前 DB 快照 → 切换 current
-# → 重启并按 package.json 版本做健康检查；失败自动回滚（含还原迁移前 DB 快照）。
+# → 重启并校验版本、schema 与运行时；同 schema 支持自动回滚。
 # 前置：Pi 已完成服务账号/目录/systemd 初始化（见 docs/app/DEPLOY.md），并已运行 bootstrap-env.sh。
 # 约束：
 # - 所有 ssh/scp 都有硬超时（Start-Process + taskkill /T /F），不会无限挂起；
 # - 上传后校验远端 tar SHA-256；安装前校验远端 package.json 版本与本地一致；
 # - APP_VERSION 注入 /etc/antifieldcloud/env，健康检查断言 /healthz.version（OP-04）；
-# - 回滚前先停止服务并还原迁移前 DB 快照（schema 只向上、无 down，OP-05）；无快照则拒绝自动回滚并打印手工步骤。
+# - 同 schema 回滚只还原 release 指针和配置，跨 schema 由人工维护。
 # Windows PowerShell 5.1 会把原生命令的 stderr 当作错误记录；这里显式检查退出码。
 $ErrorActionPreference = "Continue"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -33,6 +33,11 @@ $currentLink = "/opt/antifieldcloud/current"
 $envFile = "/etc/antifieldcloud/env"
 $previousTarget = $null
 $snapshotJson = $null
+$deployState = "/var/lib/antifieldcloud/deploy-state/$tag"
+$savedEnv = "$deployState/env"
+$previousVersion = $null
+$previousSchema = 0
+$usesDsh = $false
 $switched = $false
 $expectedVersion = $null
 $expectedSchemaVersion = $null
@@ -150,25 +155,23 @@ function Copy-ToPi {
   }
 }
 
-# 健康检查：解析 /healthz JSON，断言 version 与本地 package.json 一致（OP-04）。
+# 健康检查同时断言版本、DB 就绪和实际 Agent 运行时。
 function Test-Health {
-  param([int]$Attempts = 15)
+  param([string]$Version = $expectedVersion, [int]$Schema = $expectedSchemaVersion, [int]$Attempts = 15)
+  $runtimeCheck = if ($usesDsh) {
+    "systemctl is-active --quiet antifield-dsh-web && systemctl is-active --quiet antifield-dsh-qq && systemctl is-active --quiet antifield-dsh-mcbot-agent && /usr/local/bin/node '$releaseDir/scripts/deploy-state.mjs' dsh-ready '$expectedDshVersion' '$expectedDshQqVersion'"
+  } else {
+    "systemctl is-active --quiet opencode"
+  }
   for ($i = 0; $i -lt $Attempts; $i++) {
-    $raw = $null
-    try { $raw = Invoke-Remote "curl -fsS --max-time 3 http://127.0.0.1:3000/healthz" -Attempts 1 -TimeoutSeconds 20 } catch { $raw = $null }
-    if ($raw) {
+    try {
+      $raw = Invoke-Remote "$runtimeCheck && curl -fsS --max-time 3 http://127.0.0.1:3000/healthz" -Attempts 1 -TimeoutSeconds 20
       $health = ConvertFrom-JsonLine @($raw)
-      if ($health -and $expectedVersion) {
-        if ([string]$health.version -eq [string]$expectedVersion) {
-          Write-Host ("healthz ok：version=" + $health.version)
-          return $true
-        }
-        Write-Warning ("healthz version 不匹配：期望 $expectedVersion，实际 $($health.version)")
-      } elseif ($health) {
-        Write-Host $raw
+      if ($health.ok -eq $true -and $health.db -eq "ok" -and $health.version -eq $Version -and $health.schemaVersion -eq $Schema) {
+        Write-Host "healthz ok：version=$Version schema=$Schema"
         return $true
       }
-    }
+    } catch { }
     Start-Sleep -Seconds 2
   }
   return $false
@@ -185,76 +188,31 @@ ls -1dt /opt/antifieldcloud/releases/* | awk -v c="`$cur" -v p="`$prev" 'NR>3 &&
   Invoke-RemoteScript $script | Out-Null
 }
 
-# 回滚：先停服务 →（有迁移前快照时）还原 DB → 切回上一 release → 启动 → 健康检查。
-# 没有快照则拒绝自动回滚，打印手工步骤，避免“回滚成功但 schema 不兼容”的假成功（OP-05）。
+# 同 schema 只还原配置和 release 指针，数据库与 WAL 保持原位。
 function Invoke-Rollback {
-  param([string]$Reason)
-  Write-Warning "开始回滚：$Reason"
-  try { Invoke-Remote "sudo journalctl -u antifieldcloud --no-pager -n 80" | Out-Host } catch { }
-  if (-not $previousTarget) {
-    Write-Warning "没有可回滚的上一 release（首次部署）。本次 release 保持 current，请人工处理。"
+  if (-not $previousTarget -or -not $previousVersion -or -not $snapshotJson) {
+    Write-Warning "缺少已验证的回滚基线，请人工维护。"
     return $false
   }
-  if (-not $snapshotJson -or -not $snapshotJson.snapshot) {
-    Write-Warning "没有迁移前 DB 快照，拒绝自动回滚（新 release 可能已执行 schema 迁移）。"
-    Write-Warning "手工回滚步骤：1) sudo systemctl stop antifieldcloud；2) 找到 /var/lib/antifieldcloud/backups/db-predeploy-*.sqlite 最新一份；"
-    Write-Warning "3) 复制为 db.sqlite 并删除 -wal/-shm；4) sudo ln -sfn $previousTarget $currentLink；5) sudo systemctl start antifieldcloud；6) 重新验证 /healthz。"
-    return $false
-  }
-  Write-Warning "开始回滚到：$previousTarget（先还原迁移前 DB 快照：$($snapshotJson.snapshot)）"
-  # 回滚必须同时还原 APP_VERSION；否则旧 release 会以新版本号通过 /healthz（OPS4-03）。
-  $prevVersion = ""
-  try {
-    $prevVersion = (Invoke-Remote "sudo /usr/local/bin/node -p \"require('$previousTarget/package.json').version\"" -Attempts 2 | Out-String).Trim()
-  } catch { }
-  if ($prevVersion -notmatch '^\d+\.\d+\.\d+$') {
-    Write-Warning "无法读取上一 release 版本号，拒绝自动回滚以免健康检查假阳性。"
-    return $false
-  }
-  # 还原前校验快照哈希：快照被替换/损坏时不能把坏库当回滚结果（OPS-17）。
-  $snapshotSha = [string]$snapshotJson.sha256
-  if ($snapshotSha -notmatch '^[0-9a-f]{64}$') {
-    Write-Warning "迁移前 DB 快照缺少合法 sha256，拒绝自动回滚；快照：$($snapshotJson.snapshot)"
-    return $false
-  }
-  $rollbackReason = ($Reason -replace "['`r`n]", ' ').Trim()
   $rollbackScript = @"
-set -e
+set -euo pipefail
+test -f '$savedEnv'
+test -d '$previousTarget'
+sudo -u antifieldcloud /usr/local/bin/node '$releaseDir/scripts/deploy-state.mjs' snapshot '$($snapshotJson.snapshot)' '$($snapshotJson.sha256)' >/dev/null
+sudo /usr/local/bin/node '$releaseDir/scripts/deploy-state.mjs' same-schema '$savedEnv' '$previousSchema'
 sudo systemctl stop antifieldcloud
-sudo cp -a '$($snapshotJson.snapshot)' /var/lib/antifieldcloud/db.sqlite
-sudo rm -f /var/lib/antifieldcloud/db.sqlite-wal /var/lib/antifieldcloud/db.sqlite-shm
-SNAP_SHA='$snapshotSha'
-ACTUAL_SHA=`$(sha256sum /var/lib/antifieldcloud/db.sqlite | cut -d' ' -f1)
-if [ "`$ACTUAL_SHA" != "`$SNAP_SHA" ]; then
-  echo "DB 快照 SHA 校验失败（expected=`$SNAP_SHA actual=`$ACTUAL_SHA）" >&2
-  exit 1
-fi
-sudo chown antifieldcloud:antifieldcloud /var/lib/antifieldcloud/db.sqlite
-sudo chmod 0640 /var/lib/antifieldcloud/db.sqlite
-if grep -q '^APP_VERSION=' /etc/antifieldcloud/env; then
-  sudo sed -i 's/^APP_VERSION=.*/APP_VERSION=$prevVersion/' /etc/antifieldcloud/env
-else
-  printf 'APP_VERSION=%s\n' '$prevVersion' | sudo tee -a /etc/antifieldcloud/env >/dev/null
-fi
-sudo ln -sfn $previousTarget $currentLink
+sudo cp --preserve=mode,ownership '$savedEnv' '$envFile.rollback-$tag'
+sudo mv -T '$envFile.rollback-$tag' '$envFile'
+sudo ln -sfn '$previousTarget' '$currentLink'
 sudo systemctl start antifieldcloud
-STAMP=`$(date -u +%Y-%m-%dT%H:%M:%SZ)
-printf '%s rollback to=%s reason=%s snapshot=%s\n' "`$STAMP" '$previousTarget' '$rollbackReason' '$($snapshotJson.snapshot)' | sudo tee -a /var/lib/antifieldcloud/deploy-history.log >/dev/null
 "@
   try {
-    Invoke-RemoteScript $rollbackScript -TimeoutSeconds 300 | Out-Null
+    Invoke-RemoteScript $rollbackScript -Attempts 1 -TimeoutSeconds 300 | Out-Null
   } catch {
-    Write-Warning "回滚命令执行失败：$($_.Exception.Message)"
-    Write-Warning "需要人工介入；迁移前 DB 快照：$($snapshotJson.snapshot)"
+    Write-Warning "自动回滚失败或涉及跨 schema。请保全现行库和 WAL，再验证恢复源后人工维护。"
     return $false
   }
-  $ok = Test-Health
-  if ($ok) {
-    Write-Host "回滚成功：已还原迁移前 DB 快照并切回上一 release：$previousTarget"
-    return $true
-  }
-  Write-Warning "回滚后健康检查仍失败，需要人工介入；迁移前 DB 快照：$($snapshotJson.snapshot)"
-  return $false
+  return (Test-Health -Version $previousVersion -Schema $previousSchema)
 }
 
 Push-Location $root
@@ -285,7 +243,7 @@ try {
     throw "deploy/tool-versions.json schemaVersion 非法：$($toolVersions.schemaVersion)"
   }
   $expectedOpenCodeVersion = [string]$toolVersions.opencodeVersion
-  if ($DshRuntime) {
+  if ($toolVersions.dshVersion) {
     $expectedDshVersion = [string]$toolVersions.dshVersion
     $expectedDshQqVersion = [string]$toolVersions.dshQqPluginVersion
     if ($expectedDshVersion -notmatch '^\d+\.\d+\.\d+(?:-[a-z0-9.]+)?$' -or $expectedDshQqVersion -notmatch '^\d+\.\d+\.\d+$') {
@@ -329,19 +287,8 @@ try {
   Write-Host "== 打包 $tag（workspace 感知 staging）=="
   if (Test-Path $tarPath) { Remove-Item $tarPath -Force }
   if (Test-Path $stageDir) { Remove-Item $stageDir -Recurse -Force }
-  $stageApp = Join-Path $stageDir "apps/workbench"
-  New-Item -ItemType Directory -Path $stageApp -Force | Out-Null
-  Copy-Item (Join-Path $root "apps/workbench/server") (Join-Path $stageApp "server") -Recurse
-  New-Item -ItemType Directory -Path (Join-Path $stageApp "web") -Force | Out-Null
-  Copy-Item (Join-Path $root "apps/workbench/web/dist") (Join-Path $stageApp "web/dist") -Recurse
-  Copy-Item (Join-Path $root "apps/workbench/package.json") (Join-Path $stageApp "package.json")
-  Copy-Item (Join-Path $root "package.json"), (Join-Path $root "package-lock.json") $stageDir
-  foreach ($item in @("scripts", "deploy", "docs")) {
-    Copy-Item (Join-Path $root $item) (Join-Path $stageDir $item) -Recurse
-  }
-  foreach ($file in @("README.md", "AGENTS.md", "CHANGELOG.md", "LICENSE")) {
-    Copy-Item (Join-Path $root $file) (Join-Path $stageDir $file)
-  }
+  & node (Join-Path $PSScriptRoot "release-files.mjs") stage workbench $stageDir $expectedVersion $root
+  if ($LASTEXITCODE -ne 0) { throw "发布文件清单校验失败" }
   & tar.exe -czf $tarPath -C $stageDir .
   if ($LASTEXITCODE -ne 0) { throw "打包失败" }
   $tarSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $tarPath).Hash.ToLower()
@@ -370,6 +317,7 @@ try {
   Write-Host "上传校验通过（sha256 一致）"
   $previousTarget = (Invoke-Remote "readlink -f $currentLink 2>/dev/null || true" | Out-String).Trim()
   if ($previousTarget -eq "") { $previousTarget = $null }
+  if ($previousTarget -and $previousTarget -notmatch '^/opt/antifieldcloud/releases/[0-9TZ]+$') { throw "上一 release 指针不在部署目录" }
   Write-Host "上一 release：$(if ($previousTarget) { $previousTarget } else { '（无，首次部署）' })"
   if ($previousTarget) {
     $enabled = (Invoke-Remote "systemctl is-enabled antifieldcloud 2>/dev/null || true" -Attempts 1 | Out-String).Trim()
@@ -378,17 +326,12 @@ try {
 
   Write-Host "== 解包与安装生产依赖 =="
   Invoke-Remote "sudo mkdir -p $releaseDir && sudo tar -xzf /tmp/antifieldcloud-$tag.tar.gz -C $releaseDir && sudo chown -R root:root $releaseDir && sudo chmod -R u+rwX,go-w $releaseDir && sudo rm -f /tmp/antifieldcloud-$tag.tar.gz" -TimeoutSeconds 900 | Out-Null
-  # 远端 release 版本必须与本地一致（防止打包/上传错版本）：读取远端 workbench package.json。
-  $remotePackageText = (Invoke-Remote "cat $releaseDir/apps/workbench/package.json" -Attempts 2 | Out-String)
-  try {
-    $remotePackageJson = $remotePackageText | ConvertFrom-Json
-  } catch {
-    throw "无法解析远端 release apps/workbench/package.json：$remotePackageText"
-  }
-  $remoteVersion = [string]$remotePackageJson.version
-  if ($remoteVersion -ne $expectedVersion) {
-    throw "远端 release workbench 版本（$remoteVersion）与本地 apps/workbench/package.json（$expectedVersion）不一致"
-  }
+  Invoke-Remote "sudo /usr/local/bin/node '$releaseDir/scripts/release-files.mjs' verify workbench '$releaseDir' '$expectedVersion'" -TimeoutSeconds 120 | Out-Null
+  $runtime = (Invoke-Remote "if sudo test -f '$envFile'; then sudo /usr/local/bin/node '$releaseDir/scripts/deploy-state.mjs' runtime '$envFile'; else echo first; fi" | Out-String).Trim()
+  if ($runtime -notin @("first", "dsh", "opencode")) { throw "无法确定生产 Agent 运行时" }
+  if ($DshRuntime -and $runtime -eq "opencode") { throw "-DshRuntime 与生产环境配置冲突" }
+  $usesDsh = ($runtime -eq "dsh")
+  $envReady = ($runtime -ne "first")
   $cacheFlag = if ($OfflineInstall) { " --offline" } else { "" }
   $install = "cd $releaseDir && sudo /usr/local/bin/npm ci$cacheFlag --omit=dev --ignore-scripts --no-audit --no-fund && sudo chown -R root:root $releaseDir && sudo chmod -R u+rwX,go-w $releaseDir"
   $installResult = Invoke-NativeWithTimeout -FilePath "ssh.exe" -Arguments @(
@@ -398,7 +341,6 @@ try {
   $installResult.Output | Out-Host
   if ($installResult.ExitCode -ne 0) { throw "npm ci 失败（exit=$($installResult.ExitCode)）" }
 
-  $envReady = ((Invoke-Remote "test -f $envFile && echo YES || echo NO" | Out-String).Trim() -match "YES")
   if (-not $envReady) {
     # 首次部署：env 尚未生成（bootstrap-env.sh），此时无法做 DB 快照/健康检查。
     Write-Warning "未找到 $envFile：按首次部署处理，跳过迁移前快照、重启与健康检查。"
@@ -417,72 +359,43 @@ try {
   if (-not $snapshotJson -or -not $snapshotJson.ok) {
     throw "迁移前 DB 快照失败：$snapshotRaw`n已停止部署，current 未切换。"
   }
-  Write-Host "DB 快照：$($snapshotJson.snapshot)（sha256=$($snapshotJson.sha256)）"
-
-  # APP_VERSION 注入 env（OP-04）：只改这一行，不重写 env 其它内容。
-  $versionScript = @"
-set -e
-if grep -q '^APP_VERSION=' '$envFile'; then
-  sudo sed -i 's/^APP_VERSION=.*/APP_VERSION=$expectedVersion/' '$envFile'
-else
-  printf 'APP_VERSION=%s\n' '$expectedVersion' | sudo tee -a '$envFile' >/dev/null
-fi
-"@
-  Invoke-RemoteScript $versionScript | Out-Null
-  $appVersion = (Invoke-Remote "sudo grep '^APP_VERSION=' $envFile | cut -d= -f2-" -Attempts 2 | Out-String).Trim()
-  if ($appVersion -ne $expectedVersion) { throw "APP_VERSION 注入失败：期望 $expectedVersion，实际 $appVersion" }
-
-  # WEB_DIST_DIR 注入 env（v1.0.0 workspaces）：指向 current/apps/workbench/web/dist，避免沿用旧根布局路径。
-  $webDistPath = "$currentLink/apps/workbench/web/dist"
-  $webDistScript = @"
-set -e
-if grep -q '^WEB_DIST_DIR=' '$envFile'; then
-  sudo sed -i 's#^WEB_DIST_DIR=.*#WEB_DIST_DIR=$webDistPath#' '$envFile'
-else
-  printf 'WEB_DIST_DIR=%s\n' '$webDistPath' | sudo tee -a '$envFile' >/dev/null
-fi
-"@
-  Invoke-RemoteScript $webDistScript | Out-Null
+  $snapshotPath = [string]$snapshotJson.snapshot
+  $snapshotSha = [string]$snapshotJson.sha256
+  if ($snapshotPath -notmatch '^/[A-Za-z0-9_./-]+/db-predeploy-[0-9TZ-]+\.sqlite$' -or $snapshotSha -notmatch '^[0-9a-f]{64}$') {
+    throw "迁移前快照元数据非法，current 保持原样"
+  }
+  $snapshotSchemaText = (Invoke-Remote "sudo -u antifieldcloud /usr/local/bin/node '$releaseDir/scripts/deploy-state.mjs' snapshot '$snapshotPath' '$snapshotSha'" | Out-String).Trim()
+  if (-not [int]::TryParse($snapshotSchemaText, [ref]$previousSchema) -or $previousSchema -lt 1 -or $previousSchema -gt $expectedSchemaVersion) {
+    throw "迁移前快照 schema 不兼容，current 保持原样"
+  }
+  Write-Host "已验证 DB 快照：$snapshotPath（schema=$previousSchema，sha256=$snapshotSha）"
+  if ($previousTarget) {
+    $oldHealth = ConvertFrom-JsonLine @(Invoke-Remote "curl -fsS --max-time 5 http://127.0.0.1:3000/healthz")
+    $previousVersion = [string]$oldHealth.version
+    if ($previousVersion -notmatch '^\d+\.\d+\.\d+$' -or $oldHealth.schemaVersion -ne $previousSchema -or $oldHealth.db -ne "ok") {
+      throw "当前 release 的健康状态和迁移前快照不一致"
+    }
+  }
+  Invoke-Remote "sudo install -d -m 0700 '$deployState' && sudo cp --preserve=mode,ownership '$envFile' '$savedEnv' && printf '%s\n' '$previousTarget' | sudo tee '$deployState/previous-release' >/dev/null" | Out-Null
 
   Write-Host "== 切换 current 并重启 =="
-  # ln 与 restart 分开执行：只要 current 已切换就标记 switched，失败清理不会误删 current 目标。
-  Invoke-Remote "sudo ln -sfn $releaseDir $currentLink" | Out-Null
+  $switchScript = @"
+set -euo pipefail
+sudo cp --preserve=mode,ownership '$savedEnv' '$envFile.next-$tag'
+sudo sed -i -E '/^[[:space:]]*(APP_VERSION|WEB_DIST_DIR)[[:space:]]*=/d' '$envFile.next-$tag'
+printf '\nAPP_VERSION=%s\nWEB_DIST_DIR=%s\n' '$expectedVersion' '$currentLink/apps/workbench/web/dist' | sudo tee -a '$envFile.next-$tag' >/dev/null
+sudo mv -T '$envFile.next-$tag' '$envFile'
+sudo ln -sfn '$releaseDir' '$currentLink'
+sudo systemctl restart antifieldcloud
+"@
   $switched = $true
-  # 重启失败同样视为部署失败：current 已切换、APP_VERSION 已改、DB 可能已迁移，必须回滚（OPS-02）。
-  $restartError = $null
   try {
-    Invoke-Remote "sudo systemctl restart antifieldcloud" | Out-Null
+    Invoke-RemoteScript $switchScript -Attempts 1 | Out-Null
+    if (-not (Test-Health)) { throw "新 release 未通过版本、schema 和运行时就绪检查" }
   } catch {
-    $restartError = $_
-  }
-  if ($null -ne $restartError) {
-    $rolledBack = Invoke-Rollback "systemctl restart 失败：$($restartError.Exception.Message)"
-    if ($previousTarget -and $rolledBack) {
-      try { Invoke-Remote "sudo rm -rf $releaseDir" | Out-Null } catch { }
-    }
-    if ($previousTarget) {
-      if ($rolledBack) {
-        throw "部署失败（重启失败），已回滚到上一 release 并还原迁移前 DB 快照：$previousTarget"
-      }
-      throw "部署失败（重启失败）且自动回滚未完成，需人工介入；迁移前 DB 快照：$($snapshotJson.snapshot)"
-    }
-    throw "首次部署重启失败，无回滚目标；请排查 journalctl 后手工处理（current 已指向 $releaseDir）。"
-  }
-
-  Write-Host "== 健康检查（断言 version=$expectedVersion）=="
-  if (-not (Test-Health)) {
-    $rolledBack = Invoke-Rollback "新 release 未通过 /healthz（version=$expectedVersion）"
-    if ($previousTarget -and $rolledBack) {
-      # 仅在 current 已切回上一 release 后清理坏 release，避免留下悬空 current。
-      try { Invoke-Remote "sudo rm -rf $releaseDir" | Out-Null } catch { }
-    }
-    if ($previousTarget) {
-      if ($rolledBack) {
-        throw "部署失败，已回滚到上一 release 并还原迁移前 DB 快照：$previousTarget"
-      }
-      throw "部署失败且自动回滚未完成，需人工介入：current 可能仍指向 $releaseDir；迁移前 DB 快照：$($snapshotJson.snapshot)"
-    }
-    throw "部署失败：首次部署无回滚目标（current 保持指向新 release，便于排查）。journalctl 日志见上方；迁移前 DB 快照：$($snapshotJson.snapshot)"
+    $failure = $_.Exception.Message
+    if (Invoke-Rollback) { throw "部署失败，已恢复上一 release 和配置，保留现行库：$failure" }
+    throw "部署失败，需人工维护。迁移前 DB 快照：$snapshotPath。$failure"
   }
 
   Write-Host "== 清理旧 release（保留 3 个，保护 current/previous）=="
@@ -493,7 +406,7 @@ fi
     release                = $tag
     version                = $expectedVersion
     schemaVersion          = $expectedSchemaVersion
-    opencodeVersion        = if ($DshRuntime) { $null } else { $expectedOpenCodeVersion }
+    opencodeVersion        = if ($usesDsh) { $null } else { $expectedOpenCodeVersion }
     dshVersion             = $expectedDshVersion
     dshQqPluginVersion     = $expectedDshQqVersion
     commit                 = $headSha
@@ -522,7 +435,7 @@ fi
   $smokePath = Join-Path $PSScriptRoot "smoke.ps1"
   if (Test-Path $smokePath) {
     Write-Host "== 部署后只读 smoke =="
-    $runtimeChecks = if ($DshRuntime) {
+    $runtimeChecks = if ($usesDsh) {
       @{ ExpectedDshVersion = $expectedDshVersion; ExpectedDshQqVersion = $expectedDshQqVersion }
     } else {
       @{ ExpectedOpenCodeVersion = $expectedOpenCodeVersion }

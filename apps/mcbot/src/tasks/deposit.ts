@@ -37,6 +37,7 @@ async function openChestAt (ctx: TaskContext, point: ConfigPoint, label: string)
     }
     try {
       await ctx.movement.waitForChunks()
+      if (ctx.signal.aborted) throw new TaskStopError()
       const block = findChestAt(bot, point, label)
       const position = bot.entity?.position
       const close = position
@@ -53,7 +54,9 @@ async function openChestAt (ctx: TaskContext, point: ConfigPoint, label: string)
         }
       }
       await ctx.movement.waitForChunks()
+      if (ctx.signal.aborted) throw new TaskStopError()
       await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true)
+      if (ctx.signal.aborted) throw new TaskStopError()
       const chest = await bot.openContainer(block) as Chest
       return { bot, chest }
     } catch (error) {
@@ -83,6 +86,7 @@ export async function withdrawSupplies (ctx: TaskContext, requests: SupplyReques
     const { bot, chest } = await openChestAt(ctx, chestPoint(ctx, category), label)
     try {
       for (const request of categoryRequests) {
+        if (ctx.signal.aborted) throw new TaskStopError()
         const have = bot.inventory.items()
           .filter(item => item.name === request.name)
           .reduce((sum, item) => sum + item.count, 0)
@@ -93,6 +97,7 @@ export async function withdrawSupplies (ctx: TaskContext, requests: SupplyReques
           : chest.containerItems().filter(item => item.name === request.name)
         let remaining = missing
         for (const stack of stacks) {
+          if (ctx.signal.aborted) throw new TaskStopError()
           if (remaining <= 0) break
           const take = Math.min(remaining, stack.count)
           await chest.withdraw(stack.type, null, take)
@@ -139,6 +144,7 @@ export async function depositProduce (ctx: TaskContext): Promise<number> {
       const { chest } = opened
       if (chestFreeSlots(chest) === 0) throw new TaskError(`${label}满了，我先停下`)
       for (const item of bucket) {
+        if (ctx.signal.aborted) throw new TaskStopError()
         try {
           await chest.deposit(item.type, null, item.count)
           deposited += item.count
@@ -159,6 +165,7 @@ export async function depositProduce (ctx: TaskContext): Promise<number> {
         }
       }
     }
+    if (ctx.signal.aborted) throw new TaskStopError()
   }
   if (deposited > 0) {
     ctx.updateProgress({ deposited: ctx.progress.deposited + deposited })

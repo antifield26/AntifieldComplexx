@@ -113,8 +113,10 @@ async function main (): Promise<void> {
     details: { version: config.version }
   })
 
+  let goals: GoalRunner | null = null
   const movement = new MovementManager(logger.withScope('movement'), config)
   movement.setCriticalListener(health => {
+    goals?.interrupt('血量过低，已触发生存保护', 'survival')
     audit.append({
       event: 'movement.critical_home',
       source: 'movement',
@@ -181,6 +183,7 @@ async function main (): Promise<void> {
     }
   })
   client.setDisconnectHandler(reason => {
+    goals?.interrupt('Bot 已断线，连接恢复后请继续目标')
     alerts.raise('disconnected', `Lofii 断线：${reason}`, { reason }, 'error')
   })
 
@@ -218,19 +221,8 @@ async function main (): Promise<void> {
     survivalTimer.unref?.()
   }
   const goalStore = new GoalStore(config.goalsFile)
-  let goals: GoalRunner | null = null
   try {
     goalStore.init()
-    goals = new GoalRunner({
-      config,
-      logger: logger.withScope('goals'),
-      state,
-      tasks,
-      movement,
-      events,
-      audit,
-      store: goalStore
-    })
   } catch (error) {
     logger.error('goal store init failed; goals disabled', {
       error: error instanceof Error ? error.message : String(error)
@@ -245,7 +237,9 @@ async function main (): Promise<void> {
     movement,
     tasks,
     audit,
-    getBot: () => client.getBot()
+    getBot: () => client.getBot(),
+    goalBusy: () => goals?.isBusy() ?? false,
+    stopGoal: () => goals?.interrupt('主人已停止目标') ?? false
   })
 
   const dshClient = config.dshAgentSocket ? new DshAgentClient(config.dshAgentSocket, config.aiTimeoutMs) : null
@@ -277,8 +271,34 @@ async function main (): Promise<void> {
     movement,
     tasks,
     opencode: sessionClient,
-    getBot: () => client.getBot()
+    getBot: () => client.getBot(),
+    goalBusy: () => goals?.isBusy() ?? false
   })
+  if (goalStore.isOpen()) {
+    goals = new GoalRunner({
+      logger: logger.withScope('goals'),
+      tasks,
+      movement,
+      audit,
+      store: goalStore,
+      occupied: () => autonomy.isBusy(),
+      blocker: () => {
+        const bot = client.getBot()
+        if (!client.isConnected() || !bot?.entity) {
+          return { kind: 'interrupted', message: 'Bot 未连接，连接恢复后请继续目标' }
+        }
+        if (!Number.isFinite(bot.health) || bot.health <= 0 || bot.health < config.defenseHealthThreshold) {
+          return { kind: 'survival', message: '血量未达到安全阈值' }
+        }
+        if (!Number.isFinite(bot.food) || bot.food < config.defenseFoodThreshold) {
+          return { kind: 'survival', message: '饥饿值未达到安全阈值' }
+        }
+        if (defender.hasThreat()) return { kind: 'survival', message: '附近有已知威胁' }
+        return null
+      }
+    })
+    tasks.setGoalBusy(() => goals?.isBusy() ?? false)
+  }
 
   const router = new ChatRouter({
     config,
@@ -336,7 +356,7 @@ async function main (): Promise<void> {
     logger: logger.withScope('presence'),
     state,
     controller: client,
-    keepOnline: () => tasks.keepOnline() || autonomy.isActive(),
+    keepOnline: () => tasks.keepOnline() || autonomy.isActive() || (goals?.isBusy() ?? false),
     store: presenceStore,
     ...(savedPresence
       ? { initialMode: savedPresence.mode, initialSource: 'persisted' as const, initialUpdatedAt: savedPresence.updatedAt }
@@ -387,8 +407,8 @@ async function main (): Promise<void> {
       alerts.stop()
       admin.stop()
       history.stop()
+      await goals?.stop()
       await tasks.shutdown()
-      goals?.stop()
       goalStore.close()
       proactive.detach()
       await presence.stop()

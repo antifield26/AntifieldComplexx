@@ -74,6 +74,9 @@ try {
     throw "apps/mcbot/package.json has no version"
   }
   Write-Host "mcbot deploy: version $expectedVersion -> $target ($releaseDir)"
+  $toolVersions = Get-Content -Raw -Encoding UTF8 (Join-Path $repoRoot "deploy/tool-versions.json") | ConvertFrom-Json
+  $expectedContract = [int]$toolVersions.mcbotContractVersion
+  if ($expectedVersion -ne $toolVersions.mcbotVersion -or $expectedContract -lt 1) { throw "mcbot 工具版本清单与包不一致" }
 
   if (-not $SkipChecks) {
     Write-Host "== local checks =="
@@ -92,13 +95,8 @@ try {
   Write-Host "== packaging (workspace-aware staging) =="
   if (Test-Path -LiteralPath $tarPath) { Remove-Item -LiteralPath $tarPath -Force }
   if (Test-Path -LiteralPath $stageDir) { Remove-Item -LiteralPath $stageDir -Recurse -Force }
-  $stagePackage = Join-Path $stageDir "apps/mcbot"
-  New-Item -ItemType Directory -Path $stagePackage -Force | Out-Null
-  Copy-Item (Join-Path $repoRoot "package.json"), (Join-Path $repoRoot "package-lock.json") $stageDir
-  Copy-Item (Join-Path $packageRoot "*") $stagePackage -Recurse -Force
-  foreach ($excluded in @("node_modules", "data", "data-local", "coverage", "*.tar.gz")) {
-    Get-ChildItem -Path (Join-Path $stagePackage $excluded) -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-  }
+  & node (Join-Path $repoRoot "scripts/release-files.mjs") stage mcbot $stageDir $expectedVersion $repoRoot
+  if ($LASTEXITCODE -ne 0) { throw "mcbot 发布文件清单校验失败" }
   & tar.exe -czf $tarPath -C $stageDir .
   if ($LASTEXITCODE -ne 0) {
     throw "tar packaging failed"
@@ -118,7 +116,7 @@ try {
 
   Write-Host "== installing release =="
   $cacheFlag = if ($OfflineInstall) { " --offline" } else { "" }
-  $install = "sudo install -d -m 0755 $releaseDir && sudo tar -xzf /tmp/mcbot-$tag.tar.gz -C $releaseDir && cd $releaseDir && sudo timeout 900 /usr/local/bin/npm ci$cacheFlag --omit=dev --ignore-scripts --no-audit --no-fund && sudo chown -R root:root $releaseDir && sudo chmod -R u+rwX,go-w $releaseDir"
+  $install = "sudo install -d -m 0755 $releaseDir && sudo tar -xzf /tmp/mcbot-$tag.tar.gz -C $releaseDir && cd $releaseDir && sudo /usr/local/bin/node scripts/release-files.mjs verify mcbot . $expectedVersion && sudo timeout 900 /usr/local/bin/npm ci$cacheFlag --omit=dev --ignore-scripts --no-audit --no-fund && sudo chown -R root:root $releaseDir && sudo chmod -R u+rwX,go-w $releaseDir"
   Must-Remote -Command $install -Label "install release" | Write-Host
 
   $previousTarget = (Invoke-Remote -Command "readlink -f $currentLink 2>/dev/null || true" -Label "read current").Output
@@ -138,6 +136,9 @@ try {
   }
 
   Write-Host "== switching current and restarting =="
+  if ($previousTarget -and -not $SkipServiceSwitch) {
+    Must-Remote -Command "sudo /usr/local/bin/node '$releaseDir/scripts/deploy-state.mjs' mcbot-idle /etc/mcbot/env" -Label "mcbot 空闲检查" | Out-Null
+  }
   Must-Remote -Command "sudo ln -sfn $releaseDir $currentLink" -Label "switch current" | Out-Null
   $switched = $true
   if ($SkipServiceSwitch) {
@@ -159,7 +160,8 @@ try {
       $lastHealth = $healthText
       try {
         $health = $healthText | ConvertFrom-Json
-        if ([string]$health.version -eq $expectedVersion) {
+        if ([string]$health.version -eq $expectedVersion -and $health.status -eq "ok" -and $health.contractVersion -eq $expectedContract) {
+          Must-Remote -Command "sudo /usr/local/bin/node '$releaseDir/scripts/deploy-state.mjs' mcbot-ready /etc/mcbot/env" -Label "mcbot 运行时就绪" | Out-Null
           $healthy = $true
           break
         }

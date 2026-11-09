@@ -4,7 +4,7 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.1.0（2026-11-08 已部署）**：schema 20、mcbot 契约 v2，Web、QQ 与 mcbot Agent 迁至 DeepSeek Harness。生产回滚基线为 v1.0.13（`1743323`）与 OpenCode **v2.2.5**。
+**当前版本 v1.1.1（生产基线 v1.1.0）**：schema 20、mcbot 契约 v2，Web、QQ 与 mcbot Agent 迁至 DeepSeek Harness。生产回滚基线为 v1.0.13（`1743323`）与 OpenCode **v2.2.5**。
 
 生产 Workbench 和 mcbot release 均为 `20261108T080545Z`，DSH release 为 `20261108T143448Z`。迁移前快照 `db-predeploy-20261108T080730455Z.sqlite`，schema 20。应用与世界恢复演练 `20261108T143038Z` 通过。OpenCode 已退役，回滚使用 PC 上验证过的加密档和 v1.0.13 release，Workbench 保留现行 schema 20 库。
 

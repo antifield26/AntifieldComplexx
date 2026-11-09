@@ -525,6 +525,7 @@ export class HttpApi {
       const result = await tasks.start(body.name as TaskName, 'panel')
       if (result.status === 'rejected') {
         this.auditDenied('task.start', result.reason ?? 'rejected', requestId, body.name)
+        if (result.reason === 'goal_busy') return sendError(res, 409, 'goal_busy', 'goal is running or stopping')
         if (result.reason === 'queue_full') return sendError(res, 409, 'queue_full', 'task queue is full')
         if (result.reason === 'resume_pending') return sendError(res, 409, 'resume_pending', 'a pending task must be resumed first')
         if (result.reason === 'task_disabled') return sendError(res, 503, 'task_disabled', 'tasks are disabled')
@@ -560,6 +561,9 @@ export class HttpApi {
     const { state, tasks } = this.deps
     this.deps.autonomy?.interrupt('manual_task')
     const requestId = this.requestId(req)
+    if (this.deps.goals?.interrupt('主人已停止目标')) {
+      return sendJson(res, { status: 202, body: { ok: true, requestId, task: state.task } })
+    }
     if (state.task.active || state.task.queue.length > 0) {
       tasks.requestStop('http')
       this.deps.audit.append({
@@ -635,17 +639,21 @@ export class HttpApi {
     this.deps.autonomy?.interrupt('manual_move')
     const requestId = this.requestId(req)
     if (!isJsonRequest(req)) return sendError(res, 415, 'unsupported_media_type', 'Content-Type must be application/json')
-    if (state.task.active) {
-      this.auditDenied('move', 'task_active', requestId, 'move')
-      return sendError(res, 409, 'task_active', 'stop the task before moving')
-    }
-    if (!this.deps.chatSender.isConnected()) return sendError(res, 409, 'not_connected', 'bot is not connected')
     try {
       const body = await readJsonBody(req)
       if (!isObject(body) || (body.action !== 'home' && body.action !== 'come' && body.action !== 'follow' && body.action !== 'stop')) {
         throw new InvalidMessageError('action must be home, come, follow or stop')
       }
       const action = body.action as MoveAction
+      if (action === 'stop' && this.deps.goals?.interrupt('主人已停止目标移动')) {
+        return sendJson(res, { status: 202, body: { ok: true, requestId, action, target: null } })
+      }
+      if (this.deps.goals?.isBusy()) return sendError(res, 409, 'goal_busy', 'goal is running or stopping')
+      if (state.task.active) {
+        this.auditDenied('move', 'task_active', requestId, 'move')
+        return sendError(res, 409, 'task_active', 'stop the task before moving')
+      }
+      if (!this.deps.chatSender.isConnected()) return sendError(res, 409, 'not_connected', 'bot is not connected')
       let target: string | undefined
       if (action === 'come' || action === 'follow') {
         target = typeof body.target === 'string' ? body.target : config.commandAllowlist[0]

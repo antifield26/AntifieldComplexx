@@ -297,6 +297,25 @@ test('断电截断分片：complete 拒绝并要求重传，重传后可完成�
   }
 })
 
+test('等长分片损坏只使坏片失效，保留会话和其它分片', async () => {
+  const ctx = setup()
+  try {
+    const init = ctx.uploads.init(ctx.actor, { name: 'damaged.bin', parentId: null, size: 8 })
+    await ctx.uploads.putChunk(ctx.actor, init.uploadId, 0, Buffer.from('abcd'))
+    await ctx.uploads.putChunk(ctx.actor, init.uploadId, 1, Buffer.from('efgh'))
+    writeFileSync(join(ctx.dir, 'tmp', 'chunks', init.uploadId, '1.part'), 'xxxx')
+    await assert.rejects(ctx.uploads.complete(ctx.actor, init.uploadId), { code: 'chunks_missing' })
+    assert.deepEqual(ctx.uploads.status(ctx.actor, init.uploadId).missing, [1])
+    assert.deepEqual(ctx.uploads.status(ctx.actor, init.uploadId).received, [0])
+    assert.deepEqual(ctx.db.prepare("SELECT id FROM files WHERE kind = 'file'").all(), [])
+    await ctx.uploads.putChunk(ctx.actor, init.uploadId, 1, Buffer.from('efgh'))
+    const result = await ctx.uploads.complete(ctx.actor, init.uploadId)
+    assert.equal(result.file.sha256, createHash('sha256').update('abcdefgh').digest('hex'))
+  } finally {
+    close(ctx)
+  }
+})
+
 test('assembling 崩溃超过 2 小时：释放配额并标记过期（DR2-03）', () => {
   const ctx = setup()
   try {

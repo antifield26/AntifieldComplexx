@@ -74,7 +74,7 @@ function parseStoredItem (value: unknown): WorldMemoryItem | null {
   }
 }
 
-function parseFile (raw: string): WorldMemoryItem[] | null {
+export function parseWorldMemory (raw: string): WorldMemoryItem[] | null {
   let value: unknown
   try {
     value = JSON.parse(raw)
@@ -254,7 +254,7 @@ export class WorldMemoryStore {
       this.warn('world memory unreadable')
       return []
     }
-    const items = parseFile(raw)
+      const items = parseWorldMemory(raw)
     if (!items) {
       this.quarantine()
       return []

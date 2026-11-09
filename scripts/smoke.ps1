@@ -22,6 +22,7 @@
   [string]$ExpectedDshQqVersion = "",
   [switch]$RequireOpenCodeStopped,
   [string]$ExpectedMcbotVersion = "",
+  [switch]$RequireMcbotState,
   [int]$ExpectedMcbotContractVersion = 0,
   [switch]$SkipMcbot,
   [string[]]$ExpectedSshSources = @(),
@@ -560,6 +561,12 @@ Check "备份拉取状态（含密钥包状态）" {
   }
   if ($RequireOpenCodeStopped -and ($json.secretsOk -ne $true -or $json.secretsAgentRuntime -ne "dsh" -or $json.secretsIncludesDsh -ne $true)) {
     throw "未验证 DSH 密钥包实际拉取"
+  }
+  if ($RequireMcbotState -and ($json.secretsOk -ne $true -or $json.secretsMcbotStateRequired -ne $true -or
+      $json.secretsIncludesMcbotState -ne $true -or $json.secretsMcbotStateFiles.'goals.db' -ne "included" -or
+      $json.secretsMcbotStateFiles.'task-state.json' -notin @("included", "not_created") -or
+      $json.secretsMcbotStateFiles.'world-memory.json' -notin @("included", "not_created"))) {
+    throw "未验证收录 mcbot 状态的密钥包实际拉取"
   }
   "lastPullAt=$($json.lastPullAt) age=$([math]::Round($ageHours,1))h secretsOk=$($json.secretsOk)"
 }

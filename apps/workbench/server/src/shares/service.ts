@@ -238,6 +238,8 @@ export class ShareService {
   private readonly clock: () => Date
   /** share+IP → 最近一次写入下载审计的时间戳（毫秒）。 */
   private readonly downloadAuditSeen = new Map<string, number>()
+  /** 同一会话的并发文件或 Range 共用一个持久名额。 */
+  private readonly transfers = new Map<string, { active: number; delivered: boolean }>()
 
   constructor(db: DatabaseSync, config: Config, options: ShareServiceOptions | ShareStorage = {}) {
     this.db = db
@@ -834,8 +836,44 @@ export class ShareService {
     return true
   }
 
-  /** 会话首次成功取内容时原子 +1；次数用尽/已吊销/已过期返回 410。 */
+  /** 在发送正文前持久占用名额，正常中断时由最后一个在途请求退还。 */
+  reserveDownload(access: ContentAccess, ip: string | null): (delivered: boolean) => void {
+    const session = access.session
+    if (!session) return () => {}
+    let transfer = this.transfers.get(session.id)
+    if (!transfer) {
+      if (!access.mustCount || !this.claimDownload(access)) return () => {}
+      transfer = { active: 0, delivered: false }
+      this.transfers.set(session.id, transfer)
+    }
+    const reservation = transfer
+    reservation.active += 1
+    let settled = false
+    return (delivered) => {
+      if (settled) return
+      settled = true
+      reservation.active -= 1
+      if (delivered && !reservation.delivered) {
+        reservation.delivered = true
+        this.auditDownload(access, ip)
+      }
+      if (reservation.active !== 0) return
+      this.transfers.delete(session.id)
+      if (reservation.delivered) return
+      transaction(this.db, () => {
+        this.db.prepare('UPDATE share_sessions SET downloaded = 0 WHERE id = ? AND share_id = ?')
+          .run(session.id, access.share.id)
+        this.db.prepare('UPDATE shares SET download_count = MAX(0, download_count - 1) WHERE id = ?')
+          .run(access.share.id)
+      })
+    }
+  }
+
   markDownloaded(access: ContentAccess, ip: string | null): void {
+    this.reserveDownload(access, ip)(true)
+  }
+
+  private claimDownload(access: ContentAccess): boolean {
     const now = this.nowIso()
     let counted = false
     transaction(this.db, () => {
@@ -843,9 +881,14 @@ export class ShareService {
       // downloaded 从 0 置 1，其余请求不再 +1（多文件按会话只计一次）。
       if (access.session) {
         const claimed = this.db
-          .prepare('UPDATE share_sessions SET downloaded = 1 WHERE id = ? AND downloaded = 0')
-          .run(access.session.id)
-        if (Number(claimed.changes) === 0) return
+          .prepare('UPDATE share_sessions SET downloaded = 1 WHERE id = ? AND downloaded = 0 AND expires_at > ?')
+          .run(access.session.id, now)
+        if (Number(claimed.changes) === 0) {
+          const existing = this.db.prepare('SELECT downloaded FROM share_sessions WHERE id = ? AND expires_at > ?')
+            .get(access.session.id, now)
+          if (!existing) throw shareLocked()
+          return
+        }
       }
       const result = this.db
         .prepare(
@@ -861,7 +904,10 @@ export class ShareService {
       }
       counted = true
     })
-    if (!counted) return
+    return counted
+  }
+
+  private auditDownload(access: ContentAccess, ip: string | null): void {
     // 计数已提交；审计是 best-effort（D-17）：审计失败不得让已完成的下载计数回滚或向客户端抛错。
     try {
       if (this.shouldAuditDownload(access.share.id, ip, this.nowDate().getTime())) {

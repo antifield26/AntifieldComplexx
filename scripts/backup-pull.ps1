@@ -50,6 +50,9 @@ $script:secretsState = @{
   archiveName      = $null
   includesOpencode = $null
   includesDsh      = $null
+  includesMcbotState = $null
+  mcbotStateRequired = $null
+  mcbotStateFiles = $null
   agentRuntime     = $null
 }
 $script:lastArchiveName = ""
@@ -330,6 +333,9 @@ function Write-PiStatus {
     secretsArchiveName  = $script:secretsState.archiveName
     secretsIncludesOpencode = $script:secretsState.includesOpencode
     secretsIncludesDsh = $script:secretsState.includesDsh
+    secretsIncludesMcbotState = $script:secretsState.includesMcbotState
+    secretsMcbotStateRequired = $script:secretsState.mcbotStateRequired
+    secretsMcbotStateFiles = $script:secretsState.mcbotStateFiles
     secretsAgentRuntime = $script:secretsState.agentRuntime
     includesHostConfig  = [bool]$script:lastIncludesHostConfig
     error               = $ErrorMessage
@@ -352,6 +358,9 @@ function Invoke-SecretsPull {
   $script:secretsState.lastError = $null
   $script:secretsState.includesOpencode = $null
   $script:secretsState.includesDsh = $null
+  $script:secretsState.includesMcbotState = $null
+  $script:secretsState.mcbotStateRequired = $null
+  $script:secretsState.mcbotStateFiles = $null
   $script:secretsState.agentRuntime = $null
   $scriptPath = "/opt/antifieldcloud/current/scripts/backup-secrets.sh"
   try {
@@ -365,6 +374,17 @@ function Invoke-SecretsPull {
     $secretsFlags = if ($IncludeHostConfig) { " --include-host-config" } else { "" }
     $meta = Invoke-RemoteJson "sudo /usr/bin/timeout -k 10 300 bash '$scriptPath'$secretsFlags" -TimeoutSeconds $SecretsTimeoutSec
     if (-not $meta.ok) { throw "密钥备份失败：$($meta.error)" }
+    if ($meta.mcbotStateRequired -isnot [bool] -or $meta.includesMcbotState -isnot [bool] -or
+        $meta.mcbotStateRequired -ne $meta.includesMcbotState) { throw "密钥包缺少有效的 mcbot 收录状态" }
+    if ($meta.mcbotStateRequired -and
+        ($meta.mcbotStateFiles.'goals.db' -ne "included" -or
+         $meta.mcbotStateFiles.'task-state.json' -notin @("included", "not_created") -or
+         $meta.mcbotStateFiles.'world-memory.json' -notin @("included", "not_created"))) {
+      throw "密钥包未验证目标库、待恢复任务和世界记忆的收录状态"
+    }
+    $script:secretsState.includesMcbotState = $meta.includesMcbotState
+    $script:secretsState.mcbotStateRequired = $meta.mcbotStateRequired
+    $script:secretsState.mcbotStateFiles = $meta.mcbotStateFiles
     $name = [string]$meta.archiveName
     if ($name -notmatch '^secrets-[0-9TZ-]+\.tar\.age$') { throw "密钥归档名异常：$name" }
     $sha = ([string]$meta.sha256).ToLower()

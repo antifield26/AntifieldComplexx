@@ -153,12 +153,31 @@ export class GoalStore {
       CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status, updated_at DESC);
     `)
     // 进程上次退出时未结束的目标不能自动继续执行。
-    this.db.prepare("UPDATE goals SET status = 'paused', updated_at = ? WHERE status = 'running'").run(new Date().toISOString())
+    this.atomic(() => {
+      this.requireDb().exec("UPDATE goal_steps SET status = 'pending' WHERE status = 'running' AND goal_id IN (SELECT id FROM goals WHERE status IN ('running', 'paused'))")
+      this.requireDb().prepare("UPDATE goals SET status = 'paused', updated_at = ? WHERE status = 'running'").run(new Date().toISOString())
+    })
+  }
+
+  atomic (action: () => void): void {
+    const db = this.requireDb()
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      action()
+      db.exec('COMMIT')
+    } catch (error) {
+      db.exec('ROLLBACK')
+      throw error
+    }
   }
 
   close (): void {
     this.db?.close()
     this.db = null
+  }
+
+  isOpen (): boolean {
+    return this.db !== null
   }
 
   create (owner: string, objective: string, steps: GoalStepInput[]): Goal {

@@ -34,12 +34,12 @@ const PRESENCE_HINTS: Record<McbotPresenceMode, string> = {
 /** 预设计划：只使用任务白名单，创建后仍需显式开始。 */
 const PRESET_PLANS: Array<{ label: string, objective: string, steps: Array<{ kind: McbotGoalKind, taskName?: McbotTaskName }> }> = [
   {
-    label: '采集→存箱→补种',
-    objective: '采集资源、存入分类箱并补种',
+    label: '采集→存箱→回家',
+    objective: '采集资源、存入分类箱并回家',
     steps: [
       { kind: 'task', taskName: 'woodcutting' },
       { kind: 'deposit' },
-      { kind: 'task', taskName: 'farming' },
+      { kind: 'home' },
     ],
   },
   {
@@ -50,10 +50,18 @@ const PRESET_PLANS: Array<{ label: string, objective: string, steps: Array<{ kin
 ]
 
 interface PendingConfirm {
-  kind: 'presence' | 'start' | 'pause' | 'cancel'
+  kind: 'presence' | 'start' | 'resume' | 'pause' | 'cancel'
   goalId?: string
   mode?: McbotPresenceMode
   label: string
+}
+
+const FAILURE_LABELS: Record<string, string> = {
+  path: '路线阻塞',
+  survival: '生存保护',
+  supplies: '物资阻塞',
+  interrupted: '执行中断',
+  unknown: '步骤失败',
 }
 
 function goalStatusTone (status: string): 'muted' | 'success' | 'warning' | 'danger' | 'info' {
@@ -71,6 +79,7 @@ function goalStatusLabel (status: string): string {
     case 'completed': return '已完成'
     case 'failed': return '失败'
     case 'canceled': return '已取消'
+    case 'skipped': return '已跳过'
     default: return '待开始'
   }
 }
@@ -117,8 +126,16 @@ export function McbotPresenceGoalsCard({
 
   useEffect(() => {
     const controller = new AbortController()
-    void load(controller.signal).catch(() => {})
-    return () => controller.abort()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const refresh = async () => {
+      await load(controller.signal).catch(() => {})
+      if (!controller.signal.aborted) timer = setTimeout(() => { void refresh() }, 5000)
+    }
+    void refresh()
+    return () => {
+      controller.abort()
+      clearTimeout(timer)
+    }
   }, [load])
 
   async function runAction (work: () => Promise<void>, success: string): Promise<void> {
@@ -142,8 +159,9 @@ export function McbotPresenceGoalsCard({
       void runAction(async () => {
         if (confirm.mode) await api.mcbot.setPresence(confirm.mode)
       }, `在线模式已切换为「${confirm.mode ? PRESENCE_LABELS[confirm.mode] : ''}」`)
-    } else if (confirm.kind === 'start' && confirm.goalId) {
-      void runAction(() => api.mcbot.goalAction(confirm.goalId!, 'start').then(() => {}), '目标已开始')
+    } else if ((confirm.kind === 'start' || confirm.kind === 'resume') && confirm.goalId) {
+      const { goalId, kind } = confirm
+      void runAction(() => api.mcbot.goalAction(goalId, kind).then(() => {}), kind === 'resume' ? '已请求继续目标' : '目标已开始')
     } else if (confirm.kind === 'pause' && confirm.goalId) {
       void runAction(() => api.mcbot.goalAction(confirm.goalId!, 'pause').then(() => {}), '目标已暂停')
     } else if (confirm.kind === 'cancel' && confirm.goalId) {
@@ -165,6 +183,7 @@ export function McbotPresenceGoalsCard({
     if (!confirm) return ''
     if (confirm.kind === 'presence') return '切换在线模式'
     if (confirm.kind === 'start') return '开始长期目标'
+    if (confirm.kind === 'resume') return '继续长期目标'
     if (confirm.kind === 'pause') return '暂停长期目标'
     return '取消长期目标'
   }
@@ -173,7 +192,8 @@ export function McbotPresenceGoalsCard({
     if (!confirm) return ''
     if (confirm.kind === 'presence') return `确定切换到「${confirm.mode ? PRESENCE_LABELS[confirm.mode] : ''}」？`
     if (confirm.kind === 'start') return '目标将按步骤串行执行；失败会暂停并等待处理。确定开始？'
-    if (confirm.kind === 'pause') return '暂停会停止当前任务，目标保留以便稍后恢复。确定暂停？'
+    if (confirm.kind === 'resume') return `将从${confirm.label}，已完成的步骤会保留。确定继续？`
+    if (confirm.kind === 'pause') return '当前动作会停止并收尾，目标保留以便稍后恢复。确定暂停？'
     return '取消后不可恢复，已完成的步骤保留。确定取消？'
   }
 
@@ -249,10 +269,16 @@ export function McbotPresenceGoalsCard({
                         {step.kind === 'task'
                           ? mcbotTaskNameLabel(step.taskName)
                           : step.kind === 'deposit' ? '存箱' : '回家'}
+                        {step.status !== 'pending' ? `（${goalStatusLabel(step.status)}）` : ''}
                       </span>
                     ))}
                   </div>
-                  {goal.lastError ? <div className="notice notice-warning">{goal.lastError}</div> : null}
+                  {goal.lastError ? (
+                    <div className="notice notice-warning">
+                      {goal.lastFailureKind ? `${FAILURE_LABELS[goal.lastFailureKind] ?? '步骤失败'} · ` : ''}
+                      {goal.lastError}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="mcbot-pending-actions">
                   {goal.status === 'pending' || goal.status === 'paused' ? (
@@ -261,9 +287,11 @@ export function McbotPresenceGoalsCard({
                       variant="primary"
                       disabled={!controlReady || busy}
                       icon={<Play size={14} />}
-                      onClick={() => setConfirm({ kind: 'start', goalId: goal.id, label: '开始' })}
+                      onClick={() => setConfirm(goal.status === 'paused'
+                        ? { kind: 'resume', goalId: goal.id, label: `第 ${goal.currentStep + 1} 步继续` }
+                        : { kind: 'start', goalId: goal.id, label: '开始' })}
                     >
-                      开始
+                      {goal.status === 'paused' ? `从第 ${goal.currentStep + 1} 步继续` : '开始'}
                     </Button>
                   ) : null}
                   {goal.status === 'running' ? (

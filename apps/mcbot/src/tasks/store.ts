@@ -107,6 +107,30 @@ function isQueueTask (value: unknown): value is PersistedQueueTask {
     typeof record.requestedAt === 'string'
 }
 
+/** 只解析状态内容，供运行时和只读备份校验共用。 */
+export function parseTaskState (raw: string): PersistedTaskState {
+  const parsed = JSON.parse(raw) as Record<string, unknown>
+  if (parsed.version === 2) {
+    const active = parsed.active
+    if (active !== null && !isActive(active)) throw new Error('invalid active task')
+    if (!Array.isArray(parsed.queue) || !parsed.queue.every(isQueueTask)) throw new Error('invalid queue')
+    if (typeof parsed.savedAt !== 'number' || !Number.isFinite(parsed.savedAt)) throw new Error('invalid savedAt')
+    return {
+      version: 2,
+      active: active === null ? null : { ...active, progress: normalizeProgress(active.progress) },
+      queue: parsed.queue.map(item => ({ ...item })),
+      savedAt: parsed.savedAt
+    }
+  }
+  if (!isActive(parsed)) throw new Error('invalid task state')
+  return {
+    version: 2,
+    active: { ...parsed, progress: normalizeProgress(parsed.progress) },
+    queue: [],
+    savedAt: parsed.savedAt
+  }
+}
+
 export class TaskStore {
   private readonly file: string
   private readonly logger: Logger
@@ -125,27 +149,7 @@ export class TaskStore {
       return null
     }
     try {
-      const parsed = JSON.parse(raw) as Record<string, unknown>
-      if (parsed.version === 2) {
-        const active = parsed.active === null ? null : parsed.active
-        if (active !== null && !isActive(active)) throw new Error('invalid active task')
-        if (!Array.isArray(parsed.queue) || !parsed.queue.every(isQueueTask)) throw new Error('invalid queue')
-        if (typeof parsed.savedAt !== 'number' || !Number.isFinite(parsed.savedAt)) throw new Error('invalid savedAt')
-        return {
-          version: 2,
-          active: active === null ? null : { ...active, progress: normalizeProgress(active.progress) },
-          queue: (parsed.queue as PersistedQueueTask[]).map(item => ({ ...item })),
-          savedAt: parsed.savedAt
-        }
-      }
-      // v0.2/v0.3 single-active file migration.
-      if (!isActive(parsed)) throw new Error('invalid task state')
-      return {
-        version: 2,
-        active: { ...parsed, progress: normalizeProgress(parsed.progress) },
-        queue: [],
-        savedAt: parsed.savedAt
-      }
+      return parseTaskState(raw)
     } catch (error) {
       this.logger.warn('task state corrupt; quarantining', {
         error: error instanceof Error ? error.message : String(error)

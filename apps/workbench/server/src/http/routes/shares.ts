@@ -185,6 +185,19 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, shares
       reply.code(416).header('content-range', `bytes */${size}`).send()
       return reply
     }
+    const settle = request.method === 'HEAD' ? null : shares.reserveDownload(access, ip)
+    let sourceEnded = size === 0
+    if (settle) {
+      const complete = (delivered: boolean): void => {
+        try {
+          settle(delivered)
+        } catch {
+          request.log.error('分享下载名额结算失败')
+        }
+      }
+      reply.raw.once('finish', () => complete(sourceEnded))
+      reply.raw.once('close', () => complete(false))
+    }
     const start = range ? range.start : 0
     const end = range ? range.end : Math.max(0, size - 1)
     const length = size === 0 ? 0 : end - start + 1
@@ -197,30 +210,10 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, shares
       .header('cache-control', 'no-store')
       .header('content-disposition', contentDisposition(file.name, false))
     if (range) reply.header('content-range', `bytes ${start}-${end}/${size}`)
-    if (size === 0) {
-      if (access.mustCount) markCounted(access, ip)
-      return reply.send()
-    }
+    if (size === 0) return reply.send()
     const stream = shares.storage.createReadStream(file.id, { start, end })
-    // 下载计数只在流完整读完后 +1：客户端中断（连接失败/取消）不计次，避免半开连接刷掉次数。
-    if (access.mustCount) {
-      let counted = false
-      stream.once('end', () => {
-        if (counted) return
-        counted = true
-        markCounted(access, ip)
-      })
-    }
+    if (settle) stream.once('end', () => { sourceEnded = true })
     return reply.send(stream)
-  }
-
-  /** 响应已开始发送后的计数失败只影响次数，不能再改状态码；异常交给 Fastify 日志。 */
-  function markCounted(access: ContentAccess, ip: string): void {
-    try {
-      shares.markDownloaded(access, ip)
-    } catch {
-      // 次数用尽/分享被并发吊销：静默忽略，下载内容已开始发送。
-    }
   }
 
   app.get('/api/public/shares/:token/content', async (request, reply) => {

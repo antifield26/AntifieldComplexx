@@ -78,6 +78,8 @@ export interface CommandDeps {
   tasks: TaskController
   audit?: AuditLogger
   getBot: () => Bot | null
+  goalBusy?: () => boolean
+  stopGoal?: () => boolean
 }
 
 const HIGH_RISK_COMMANDS = new Set<CommandName>([
@@ -112,6 +114,15 @@ export class CommandExecutor {
         details: { reason: 'http_only_high_risk' }
       })
       await this.safeSay('这个动作现在需要从面板操作哦。')
+      return
+    }
+    const stopping = command.name === 'stopTask' || command.name === 'stop'
+    if (stopping && this.deps.stopGoal?.()) {
+      await this.safeSay('目标已暂停，动作正在收尾。')
+      return
+    }
+    if (HIGH_RISK_COMMANDS.has(command.name) && this.deps.goalBusy?.()) {
+      await this.safeSay('目标正在执行或收尾，请先暂停。')
       return
     }
     if (HIGH_RISK_COMMANDS.has(command.name)) {

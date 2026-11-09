@@ -1,6 +1,7 @@
 /** 分享模块测试：token 哈希、密码解锁、过期/吊销/次数、Range/HEAD/ETag、Origin 与限流。 */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { PassThrough } from 'node:stream'
 import type { Config } from '../src/config.ts'
 import { ShareService } from '../src/shares/service.ts'
 import { AppError } from '../src/util/errors.ts'
@@ -526,6 +527,68 @@ test('同一分享会话并发下载只计一次（DATA-04）', async () => {
     assert.equal(Number(after.download_count), 2)
     expectAppError(() => fx.shares.metadata(token, null), 410, 'share_exhausted')
   } finally {
+    fx.close()
+  }
+})
+
+test('最后一个下载名额在发送前独占，同一会话全部中断时归还', async () => {
+  const fx = shareFixture()
+  try {
+    const file = await uploadFile(fx.files, 'limited.txt', 'hello')
+    const created = await fx.shares.create(ACTOR, file.id, { maxDownloads: 1 })
+    const token = tokenFromUrl(created.url)
+    const first = fx.shares.openContent(token, null, 'GET')
+    const other = fx.shares.openContent(token, null, 'GET')
+    const settleFirst = fx.shares.reserveDownload(first, IP)
+    const settleRange = fx.shares.reserveDownload(fx.shares.openContent(token, first.newSessionToken, 'GET'), IP)
+    expectAppError(() => fx.shares.reserveDownload(other, IP), 410, 'share_exhausted')
+    settleFirst(false)
+    expectAppError(() => fx.shares.reserveDownload(other, IP), 410, 'share_exhausted')
+    settleRange(false)
+    fx.shares.reserveDownload(other, IP)
+
+    // 重启后只有 SQLite 记录，发送结果未知的名额继续归原会话。
+    const restarted = new ShareService(fx.db, fx.config, { storage: fx.files.storage, now: fx.clock.now })
+    expectAppError(() => restarted.openContent(token, first.newSessionToken, 'GET'), 410, 'share_exhausted')
+    const resumed = restarted.openContent(token, other.newSessionToken, 'GET')
+    assert.equal(resumed.mustCount, false)
+    restarted.reserveDownload(resumed, IP)(true)
+  } finally {
+    fx.close()
+  }
+})
+
+test('单文件和条目端点争抢最后一个名额时，另一会话在正文前收到 410', { timeout: 5000 }, async () => {
+  const fx = shareFixture()
+  const file = await uploadFile(fx.files, 'limited-http.txt', 'hello')
+  const created = await fx.shares.create(ACTOR, file.id, { maxDownloads: 1 })
+  const token = tokenFromUrl(created.url)
+  let markOpened = (): void => {}
+  const opened = new Promise<void>(resolve => { markOpened = resolve })
+  const stream = new PassThrough()
+  const app = await createAuthedApp(fx.db, (instance) => {
+    registerShareRoutes(instance, fx.config, fx.shares)
+  })
+  const actual = fx.shares.storage.createReadStream
+  fx.shares.storage.createReadStream = () => {
+    markOpened()
+    return stream as unknown as ReturnType<typeof actual>
+  }
+  try {
+    const first = Promise.resolve(app.inject({ method: 'GET', url: `/api/public/shares/${token}/content` }))
+    await opened
+    const result = await app.inject({
+      method: 'GET',
+      url: `/api/public/shares/${token}/items/${file.id}/content`,
+    })
+    assert.equal(result.statusCode, 410)
+    assert.equal(result.json().error.code, 'share_exhausted')
+    stream.end('hello')
+    assert.equal((await first).body, 'hello')
+  } finally {
+    stream.end()
+    fx.shares.storage.createReadStream = actual
+    await app.close()
     fx.close()
   }
 })

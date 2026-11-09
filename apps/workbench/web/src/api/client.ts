@@ -172,7 +172,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   attachment_limit: '附件数量超过限制',
   invalid_response: '服务端返回的数据无法解析',
   too_many_uploads: '未完成的分片上传会话过多，请清理后重试',
-  chunks_missing: '仍有分片未上传，请重试',
+  chunks_missing: '有分片缺失或校验失败，重试会重新上传这些分片',
   chunk_conflict: '同一分片内容不一致，请放弃后重新上传',
   upload_completed: '上传会话已完成，无法取消',
   invalid_chunk_index: '分片序号不合法',

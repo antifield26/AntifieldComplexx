@@ -160,7 +160,11 @@ export class MovementManager {
   }
 
   isBusy (): boolean {
-    return this.current !== null
+    return this.current !== null || this.criticalBusy
+  }
+
+  atHome (): boolean {
+    return Boolean(this.bot && this.config && this.reachedTarget(this.bot, this.config.home, 1))
   }
 
   private requireBot (): Bot {

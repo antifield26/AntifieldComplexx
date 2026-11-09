@@ -1,5 +1,9 @@
 # 备份与恢复
 
+> v1.1.1 起，`MCBOT_ENABLED=true` 时，age 密钥包在 `mcbot-state/` 收录目标库 SQLite 一致性快照、手动任务状态及世界记忆。清单逐项记录 SHA-256 和大小，状态为 `included`、`not_created` 或 `read_failed`。目标库必须已初始化。读取或校验失败时密钥包失败。Windows 拉取和 `smoke.ps1 -RequireMcbotState` 检查收录状态。
+
+在 PC 私有临时目录解密密钥包后，仅解出 `mcbot-state/`。先执行 `node scripts/backup-mcbot-state.mjs verify <隔离目录>/mcbot-state` 核对清单与内容，再在该副本上执行 `restore`。恢复检查只输出计数与是否有待恢复任务。启动时在途目标转入暂停，已完成步骤保留。核对目标、任务和记忆后清理临时明文。
+
 > **DSH 密钥包与冷备**。Workbench 配置 `DSH_QQ_MANAGED=true` 后，密钥包必须包含 DSH 配置、凭据、Web Cookie 签名凭据和 QQ 结构化记忆一致性快照。PC 校验 `agentRuntime=dsh` 和 `includesDsh=true`。旧格式仍要求 `includesOpencode=true`。部署和退役窗口用 `scripts/dsh-cold-backup.sh` 保存包括会话历史的独立加密归档，转移到 PC 并做隔离解密与恢复。密钥包和冷备保持 age 加密。
 
 > 目标：SD 卡损坏、误删、升级失败或世界存档损坏时，能恢复 `/var/lib/antifieldcloud` 与 Minecraft 世界。

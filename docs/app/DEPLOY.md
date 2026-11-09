@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.1.0）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.1.1）
 
 > **v1.1.0 已部署（2026-11-08）**。Workbench 与 mcbot release 为 `20261108T080545Z`，DSH release 为 `20261108T143448Z`。Workbench schema 20，mcbot 契约 v2。OpenCode 2.2.5 已从 Pi 退役。安装、验收与回滚见 [Agent Harness 切换手册](./DSH-MIGRATION.md)。
 
@@ -241,14 +241,11 @@ npm run check
 .\scripts\deploy.ps1 -PiHost 192.0.2.10   # 替换为 Pi 实际直连地址
 ```
 
-`deploy.ps1` 流程：运行检查 → Vite 构建 → 打包（含 LICENSE/CHANGELOG/docs）→ 远程预检（Node≥26、npm、磁盘 ≥2 GiB + 包体、
-systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifieldcloud/releases/<UTC>` → 校验远端 `package.json` 版本
-→ `npm ci --omit=dev --ignore-scripts` → **迁移前 `backup.mjs --snapshot-db`**（失败则中止，不切换）
-→ 注入 `APP_VERSION` 到 `/etc/antifieldcloud/env` → 切换 `current` → `systemctl restart` → 健康检查断言 `/healthz.version`。
+`deploy.ps1` 在本机生成 Workbench 文件清单，上传后先验 tar 的 SHA-256，再核对包内版本与逐项哈希。DSH 源码和独立锁文件随包分发。生产依赖在目标机用锁文件安装。脚本从生产环境配置识别 DSH 模式，配置冲突时中止。
 
-- 健康检查失败时脚本先 `systemctl stop`、还原迁移前 DB 快照、**把 `APP_VERSION` 改回上一 release 的版本**、`ln -sfn` 回上一 release、
-  `systemctl start` 并复检；读不到上一 release 版本或没有迁移前快照时**拒绝自动回滚**并打印手工步骤（schema 只向上、无 down）。
-  回滚成功才清理坏 release，失败则保留现场并输出 journalctl 日志与 DB 快照路径。首次部署无回滚目标时保留新 release 便于排查。
+- 切换前验证 SQLite 一致性快照的 SHA-256、完整性和 schema，并保存在用 release 指针及生产配置。切换后同时校验应用版本、schema、DB 和运行时就绪。
+- 同 schema 健康检查失败时，脚本恢复旧配置与指针，并复检上一版本。现行 SQLite 与 WAL 保留原位。跨 schema 进入人工维护，先保全现行库，再验证恢复源。
+- 先部署 Workbench 并验收分享、上传与回滚，再在 Bot 空闲时运行 `apps/mcbot/scripts/deploy.ps1`。mcbot 发布包有独立清单，启动校验版本、契约与运行时 socket。随后更新 Windows 计划任务，实际拉取并隔离恢复，最后执行完整 smoke。
 - 部署成功后脚本自动运行只读 smoke 子集：`smoke.ps1 -SkipPublic -SkipLocalBackup -ExpectedVersion <版本>`；
   **smoke 失败默认让部署脚本失败**（发布门禁），确需只告警时用 `-AllowSmokeFailure`；两种情况都不会自动回滚已完成的部署。
 - **首次部署**（`/etc/antifieldcloud/env` 尚不存在）：脚本只上传/安装并切换 current，跳过 DB 快照、重启与健康检查；
@@ -1168,35 +1165,16 @@ sudo systemctl daemon-reload && sudo systemctl restart cloudflared
 
 ## 11. 应用回滚与数据库
 
-```bash
-ls -1dt /opt/antifieldcloud/releases/*
-# 优先使用 deploy.ps1 的自动回滚；手工回滚前优先评估新写入，有新写入时优先前向修复
-sudo systemctl stop antifieldcloud
-# 保全当前库和存在的 WAL/SHM，再使用对应迁移前快照
-SAVE=/var/lib/antifieldcloud/rollback-safety-$(date -u +%Y%m%dT%H%M%SZ)
-sudo install -d -m 0700 "$SAVE"
-for suffix in '' -wal -shm; do
-  source="/var/lib/antifieldcloud/db.sqlite$suffix"
-  if sudo test -f "$source"; then sudo cp -a -- "$source" "$SAVE/" || exit 1; fi
-done
-sudo cp -a /var/lib/antifieldcloud/backups/db-predeploy-<对应迁移前快照>.sqlite /var/lib/antifieldcloud/db.sqlite
-sudo rm -f /var/lib/antifieldcloud/db.sqlite-wal /var/lib/antifieldcloud/db.sqlite-shm
-# 关键：同步还原 APP_VERSION（否则旧 release 会以新版本号通过 /healthz）
-PREV=/opt/antifieldcloud/releases/<上一个>
-PREV_VERSION=$(sudo /usr/local/bin/node -p "require('$PREV/package.json').version")
-sudo sed -i "s/^APP_VERSION=.*/APP_VERSION=$PREV_VERSION/" /etc/antifieldcloud/env
-sudo ln -sfn /opt/antifieldcloud/releases/<上一个> /opt/antifieldcloud/current
-sudo systemctl start antifieldcloud
-curl -fsS http://127.0.0.1:3000/healthz
-```
+同 schema 回滚先通过新 release 的 `deploy-state.mjs same-schema` 校验 live schema，再停止 Workbench。按部署留存的记录恢复旧配置和 release 指针，启动后校验版本、schema 及 Agent 就绪。数据库文件及 WAL 保持原位。
 
+跨 schema 由管理员在维护窗口完成。优先前向修复以保留新写入。必须回退时先停止 Workbench，并把当前数据库和同名 WAL/SHM 保存到权限为 0700 的独立目录。用 `node scripts/deploy-state.mjs snapshot <迁移前快照> <部署记录中的 SHA-256>` 验证哈希、SQLite 完整性和旧 schema 后，才恢复已验证的快照。旧 WAL/SHM 需与原库一起保全，恢复的快照以独立文件启动。最后恢复配置和指针并复检。
 - 每次部署在切换前生成 `/var/lib/antifieldcloud/backups/db-predeploy-*.sqlite`（0600，**保留最新 2 个**：`MAX_PREDEPLOY_SNAPSHOTS=2`，供自动回滚；明文快照属威胁模型明确豁免项，见 `docs/app/SECURITY.md` §4）。
 - **schema 只向上（当前 v20）**（迁移 5 结构、迁移 6 孤儿 shares 修复、迁移 7 Bot 表、迁移 8 重建 Bot 表/静默列/AI 会话、
   迁移 9 `allow_chat`/`chatbot_ai_memories`/`chatbot_inbound_targets`、迁移 10 `chatbot_ai_sessions.mode`、迁移 11 `chatbot_chat_roles`、
   迁移 12 `chat_trigger`/`chatbot_events` 诊断列、迁移 13 删除非 QQ Bot 及级联数据、迁移 14 结构化记忆两表、迁移 15 `qq_number` 兼容列、
   迁移 16 群聊角色卡 `chatbot_group_roles`、迁移 17 审计失败诊断表、迁移 18 chatbot 全量改名、迁移 19 `alert_events.dedupe_key`、迁移 20 `external_alert_deliveries`）：迁移前会清理不可达孤儿 shares 并做 `PRAGMA foreign_key_check`，
   其它外键不一致会拒绝启动；旧代码遇到更高 schema 会拒绝启动。迁移单向、无 down；回滚旧 release 前必须恢复对应迁移前快照
-  （`stop → 保全当前库 → 复制迁移前快照 → 删除旧 -wal/-shm → 还原 APP_VERSION → 切 release → start`）。
+  ，此操作只适用于跨 schema 的人工回退。
 - Bot 数据回滚：`chatbots`/`chatbot_targets`/`chatbot_deliveries`/`chatbot_publish_jobs`/`chatbot_events`/`chatbot_ai_sessions`/`chatbot_ai_memories`/`chatbot_inbound_targets`/`chatbot_chat_roles` 随 DB 快照恢复；
   `CHATBOT_SECRET_KEY` 不在 DB 中，必须保持与快照生成时一致的 env（否则 QQ AppSecret 不可解密）。`DATA_DIR/bot-memory` 镜像文件不由快照恢复，
   如需与 DB 摘要一致，可保留现有镜像或按保留期/人工清理；不通过 API 暴露。

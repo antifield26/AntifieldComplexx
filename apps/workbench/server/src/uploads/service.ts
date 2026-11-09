@@ -344,8 +344,8 @@ export class UploadService {
     if (Number(count.c) !== Number(session.total_chunks)) throw badRequest('还有分片未上传', 'chunks_missing')
     // 行存在但物理块缺失/截断时不能拼接：删除异常行，让客户端重传（DR2-02）。
     const chunkRows = this.db
-      .prepare('SELECT idx, size FROM upload_chunks WHERE session_id = ? ORDER BY idx ASC')
-      .all(id) as unknown as { idx: number; size: number }[]
+      .prepare('SELECT idx, size, sha256 FROM upload_chunks WHERE session_id = ? ORDER BY idx ASC')
+      .all(id) as unknown as ChunkRow[]
     for (const chunk of chunkRows) {
       const expected =
         chunk.idx === Number(session.total_chunks) - 1
@@ -382,12 +382,33 @@ export class UploadService {
     try {
       const hash = createHash('sha256')
       const chunkPath = (index: number) => this.chunkPath(id, index)
+      const invalidate = (index: number): void => {
+        transaction(this.db, () => {
+          const removed = this.db.prepare('DELETE FROM upload_chunks WHERE session_id = ? AND idx = ?').run(id, index)
+          if (Number(removed.changes) === 1) {
+            this.db.prepare('UPDATE upload_sessions SET received = MAX(0, received - 1), updated_at = ? WHERE id = ?')
+              .run(nowIso(), id)
+          }
+        })
+      }
       const chunks = async function* () {
-        for (let index = 0; index < Number(session.total_chunks); index++) {
-          const stream = createReadStream(chunkPath(index))
-          for await (const chunk of stream) {
-            hash.update(chunk as Buffer)
-            yield chunk
+        for (const row of chunkRows) {
+          const stream = createReadStream(chunkPath(row.idx))
+          const partHash = createHash('sha256')
+          try {
+            for await (const chunk of stream) {
+              partHash.update(chunk as Buffer)
+              hash.update(chunk as Buffer)
+              yield chunk
+            }
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+            invalidate(row.idx)
+            throw badRequest('分片已丢失，请重传', 'chunks_missing')
+          }
+          if (partHash.digest('hex') !== row.sha256) {
+            invalidate(row.idx)
+            throw badRequest('分片校验失败，请重传', 'chunks_missing')
           }
         }
       }

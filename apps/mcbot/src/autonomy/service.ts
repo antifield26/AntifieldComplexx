@@ -109,6 +109,7 @@ export interface AutonomyServiceDeps {
   tasks: TaskController
   opencode: AutonomySessionClient | DshAutonomySession
   getBot: () => Bot | null
+  goalBusy?: () => boolean
   worldMemory?: WorldMemoryStore
 }
 
@@ -179,6 +180,10 @@ export class AutonomyService {
     return this.run?.active === true
   }
 
+  isBusy (): boolean {
+    return this.isActive() || Boolean(this.dshCleanupId || this.dshCleanupPending)
+  }
+
   keepOnline (): boolean {
     return this.isActive()
   }
@@ -243,6 +248,7 @@ export class AutonomyService {
   }
 
   async start (goal: string | null, actor: string): Promise<AutonomyStartResult> {
+    if (this.deps.goalBusy?.()) return { ok: false, code: 'autonomy_busy', autonomy: this.snapshot() }
     if (!this.enabled) return { ok: false, code: 'autonomy_disabled', autonomy: this.snapshot() }
     if (this.run?.active) return { ok: false, code: 'autonomy_busy', autonomy: this.snapshot() }
     if (this.dshCleanupId || this.dshCleanupPending) {

@@ -33,7 +33,7 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "1.0.9", "schemaVersion": 20, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
+{ "ok": true, "version": "1.1.1", "schemaVersion": 20, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
 ```
 
 - `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
@@ -323,7 +323,7 @@ Header：`Content-Type: application/octet-stream`；body 必须是该块的精�
 
 #### POST /api/uploads/:id/complete
 
-body 可带 `{ "sha256": "hex" }`；服务端校验缺块、拼接、SHA 后调用文件登记，返回 `200 { "ok": true, "file": FileItem }`。缺块 `400 chunks_missing`；SHA 不匹配 `400 checksum_mismatch`；重复 complete 幂等返回已登记文件。
+body 可带 `{ "sha256": "hex" }`。服务端拼接时逐片比对保存的 SHA-256，再检查整文件 SHA-256 并登记文件，返回 `200 { "ok": true, "file": FileItem }`。缺失或损坏的分片返回 `400 chunks_missing`，只使受影响的分片失效。客户端刷新会话并重传缺片。整文件 SHA-256 不匹配返回 `400 checksum_mismatch`，重复 complete 返回已登记文件。
 
 #### DELETE /api/uploads/:id
 
@@ -396,7 +396,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "1.0.9", "schemaVersion": 20, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
+- `GET /api/version`（需要会话）：`{ "version": "1.1.1", "schemaVersion": 20, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
   - `schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。旧服务端不下发时前端按关闭/未配置/null 降级。
   - `mcbotEnabled`/`mcbotControlEnabled`（v0.8.0）：mcbot 集成是否启用、控制接口是否可用（`MCBOT_ENABLED=true` 且 `MCBOT_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 mcbot 标签与控制操作。两者都不含 mcbot 地址/Token。
   - schema **17**；`audit.persisted` 表示诊断是否来自 DB 持久化行（DB 不可用时 false，回退内存计数）。
@@ -440,8 +440,9 @@ RCON 不可用：`502 rcon_unavailable`。
 
 - `GET /api/public/shares/:token` → 200 `{share:{fileName,size,mime,itemCount,totalSizeBytes,expiresAt,hasPassword,maxDownloads,downloadCount,items?}, state:"active", requiresPassword:boolean}`；未知 404；失效 410（`share_expired/share_revoked/share_exhausted`）；文件已删除 410 `share_gone`。公开信息不含 `note`。`items:[{id,name,size,mime}]` 仅在无需密码或已解锁时返回；`totalSizeBytes` 在未解锁时也返回。
 - `POST /api/public/shares/:token/unlock` body `{password?}` → 200 `{ok:true,state,share,requiresPassword:false,expiresAt}`（`share` 含 `items`）并 Set-Cookie `af_share`（HttpOnly/SameSite=Lax/Secure，Path 限定该 token，5 分钟）；错误密码 401 `invalid_password`；限流 429。
-- `GET /api/public/shares/:token/items/:itemId/content`（密码分享需 `af_share` Cookie）→ 单个文件流，`content-disposition: attachment`；支持 `Range`/`HEAD`/`ETag`/`304`/`416`；`itemId` 必须属于该分享，否则 404 `share_item_not_found`；文件已删除 410 `share_gone`；会话首次成功取内容计一次下载（按分享会话计数，不按文件累加）。
+- `GET /api/public/shares/:token/items/:itemId/content`（密码分享需 `af_share` Cookie）返回单文件流，`content-disposition: attachment`。支持 `Range`、`HEAD`、`ETag`。条目必须属于分享，否则返回 `404 share_item_not_found`。文件已删除返回 `410 share_gone`。
 - `GET /api/public/shares/:token/content`：仅单文件分享可用；多文件分享返回 409 `share_bundle`，客户端改用 `items/:itemId/content`。
+- 两个内容端点在校验后、发送正文前按会话预占一个下载名额。抢占失败返回 `410 share_exhausted`。同会话的多文件和 Range 共用名额。`HEAD`、`304` 和 `416` 跳过预占。全部在途响应中断时归还名额，服务异常退出时保留预占，原会话可继续下载。
 - 公开页 `/s/:token` 带 `X-Robots-Tag: noindex, nofollow`。
 
 ## 10. 告警
@@ -838,6 +839,8 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 ### POST /api/mcbot/goals/:goalId/:action（v1.0.5）
 
 需要会话 + CSRF + 控制 20/min；`action=start|pause|resume|cancel`；`goalId` 为 1–80 字母数字/连字符；成功返回 `{ goal }`；404/409 由上游映射，消息不含目标正文。
+
+开始和继续立即返回目标快照，步骤在后台推进。目标独占任务、存箱和移动，收尾期间冲突操作返回 409。暂停与取消会先撤销执行权，已完成步骤保留。服务重启后在途目标暂停，主人可通过 `resume` 继续。阻塞原因见 `lastFailureKind` 与 `lastError`。
 
 ### GET /api/mcbot/status（v1.0.2 增量）
 

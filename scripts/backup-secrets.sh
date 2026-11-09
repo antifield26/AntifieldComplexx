@@ -97,11 +97,13 @@ find "$snapshot_parent" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null ||
 work=$(mktemp -d "$tmp_parent/work.XXXXXX")
 chmod 0700 "$work"
 snapshot_root=""
+mcbot_snapshot=""
 archive=""
 tmp_tar="$work/secrets.tar.gz"
 cleanup() {
   rm -rf "$work"
   if [[ -n "$snapshot_root" ]]; then rm -rf "$snapshot_root"; fi
+  if [[ -n "$mcbot_snapshot" ]]; then rm -rf "$mcbot_snapshot"; fi
   if [[ -n "${snapshot_parent:-}" ]]; then rmdir "$snapshot_parent" 2>/dev/null || true; fi
   if [[ -n "$archive" && -e "$archive" && -z "${archive_committed:-}" ]]; then
     rm -f "$archive" "$archive.sha256"
@@ -133,6 +135,38 @@ case "${qq_managed,,}" in
   1|true|yes|on) agent_runtime=dsh ;;
   ""|0|false|no|off) ;;
   *) json_error "DSH_QQ_MANAGED 配置无效" ;;
+esac
+
+read_setting() {
+  sed -nE "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*//p" "$1" |
+    tail -n 1 | sed -E "s/[[:space:]]+$//; s/^\"(.*)\"$/\1/; s/^'(.*)'$/\1/"
+}
+
+mcbot_required=false
+mcbot_included=false
+mcbot_files='null'
+mcbot_enabled=$(read_setting /etc/antifieldcloud/env MCBOT_ENABLED)
+case "${mcbot_enabled,,}" in
+  1|true|yes|on)
+    mcbot_required=true
+    [[ -f /etc/mcbot/env ]] || json_error "缺少 mcbot 生产配置"
+    data=$(read_setting /etc/mcbot/env DATA_DIR)
+    data=${data:-/var/lib/mcbot}
+    goals=$(read_setting /etc/mcbot/env GOALS_FILE)
+    task=$(read_setting /etc/mcbot/env TASK_STATE_FILE)
+    mcbot_snapshot=$(mktemp -d "$snapshot_parent/mcbot.XXXXXX")
+    chown mcbot:mcbot "$mcbot_snapshot"
+    helper=$(dirname -- "${BASH_SOURCE[0]}")/backup-mcbot-state.mjs
+    if ! result=$(runuser -u mcbot -- "$NODE_BIN" "$helper" capture "$mcbot_snapshot/mcbot-state" \
+        "$data" "${goals:-$data/goals.db}" "${task:-$data/task-state.json}" 2>/dev/null); then
+      printf '%s\n' "$result" >&2
+      json_error "mcbot 状态读取或一致性快照失败"
+    fi
+    mcbot_files=$("$NODE_BIN" -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(0, "utf8")).files)' <<< "$result")
+    mcbot_included=true
+    ;;
+  ""|0|false|no|off) ;;
+  *) json_error "MCBOT_ENABLED 配置无效" ;;
 esac
 
 # 汇总要加密的根文件；env 必须存在，其它缺失时跳过并计数。
@@ -281,13 +315,18 @@ if [[ "$agent_runtime" == "dsh" ]]; then
   ' >/dev/null 2>&1; then
     json_error "DSH QQ 记忆库一致性快照失败"
   fi
-  tar -czf "$tmp_tar" -C / "${root_files[@]}" -C "$snapshot_root" dsh
   dsh_included=true
-elif [[ "$opencode_included" == "true" ]]; then
-  tar -czf "$tmp_tar" -C / "${root_files[@]}" -C "$snapshot_root" opencode
-else
-  tar -czf "$tmp_tar" -C / "${root_files[@]}"
 fi
+tar_args=(-C / "${root_files[@]}")
+if [[ "$dsh_included" == "true" ]]; then
+  tar_args+=(-C "$snapshot_root" dsh)
+elif [[ "$opencode_included" == "true" ]]; then
+  tar_args+=(-C "$snapshot_root" opencode)
+fi
+if [[ "$mcbot_included" == "true" ]]; then
+  tar_args+=(-C "$mcbot_snapshot" mcbot-state)
+fi
+tar -czf "$tmp_tar" "${tar_args[@]}"
 
 age -r "$RECIPIENT" -o "$archive" "$tmp_tar"
 chmod 0640 "$archive"
@@ -319,9 +358,12 @@ if [[ "$opencode_included" == "true" || "$dsh_included" == "true" ]]; then
   extra_files=1
 fi
 file_count=$(( ${#root_files[@]} + extra_files ))
+if [[ "$mcbot_included" == "true" ]]; then
+  file_count=$((file_count + 1))
+fi
 warnings_json="[]"
 if [[ -n "$opencode_warning" ]]; then
   warnings_json="[\"$opencode_warning\"]"
 fi
-printf '{"ok":true,"archive":"%s","archiveName":"%s","sha256":"%s","sizeBytes":%s,"fileCount":%s,"agentRuntime":"%s","includesOpencode":%s,"includesDsh":%s,"includesHostConfig":%s,"hostConfigFileCount":%s,"createdAt":"%s","keep":%s,"warnings":%s}\n' \
-  "$archive" "$archive_name" "$sha256" "$size" "$file_count" "$agent_runtime" "$opencode_included" "$dsh_included" "$([[ "$INCLUDE_HOST_CONFIG" == "1" ]] && printf true || printf false)" "$host_files_count" "$created_at" "$KEEP" "$warnings_json"
+printf '{"ok":true,"archive":"%s","archiveName":"%s","sha256":"%s","sizeBytes":%s,"fileCount":%s,"agentRuntime":"%s","includesOpencode":%s,"includesDsh":%s,"includesHostConfig":%s,"hostConfigFileCount":%s,"createdAt":"%s","keep":%s,"warnings":%s,"mcbotStateRequired":%s,"includesMcbotState":%s,"mcbotStateFiles":%s}\n' \
+  "$archive" "$archive_name" "$sha256" "$size" "$file_count" "$agent_runtime" "$opencode_included" "$dsh_included" "$([[ "$INCLUDE_HOST_CONFIG" == "1" ]] && printf true || printf false)" "$host_files_count" "$created_at" "$KEEP" "$warnings_json" "$mcbot_required" "$mcbot_included" "$mcbot_files"

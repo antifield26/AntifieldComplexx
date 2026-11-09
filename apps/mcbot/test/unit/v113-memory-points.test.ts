@@ -42,14 +42,17 @@ test('v1.0.13 memory coordinates keep ore and tree points inside two scan radii'
     item('resource', 'plain', '12,64,12', '2026-11-07T00:00:05.000Z'),
     item('food', 'bread', '食物 3,64,3', '2026-11-07T00:00:06.000Z'),
     item('resource', 'far', '煤矿 400,64,0', '2026-11-07T00:00:01.000Z'),
-    item('resource', 'spaced', 'copper ore 6 70 1', '2026-11-07T00:00:00.000Z')
+    item('resource', 'spaced', 'copper ore 6 70 1', '2026-11-07T00:00:00.000Z'),
+    item('resource', 'forest-01', '2,64,2', '2026-11-07T00:00:00.000Z'),
+    item('resource', 'store-01', '3,64,3', '2026-11-07T00:00:00.000Z')
   ]
   assert.deepEqual(rememberedCoordinates(items, 'ore', origin, 64).map(point => point.toArray()), [
     [8, 64, 2],
     [6, 70, 1]
   ])
   assert.deepEqual(rememberedCoordinates(items, 'tree', origin, 64).map(point => point.toArray()), [
-    [4, 64, 6]
+    [4, 64, 6],
+    [2, 64, 2]
   ])
 })
 

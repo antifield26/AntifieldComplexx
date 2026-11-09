@@ -71,8 +71,8 @@ export function rememberedProbes (
 
 function pointKind (key: string, text: string): 'ore' | 'tree' | null {
   const blob = `${key}\n${text}`
-  const ore = /coal|iron|copper|ore|矿/i.test(blob)
-  const tree = /oak|spruce|birch|log|tree|sapling|原木|树|林/i.test(blob)
+  const ore = /(?:^|[^a-z])(?:coal|iron|copper|ores?)(?![a-z])|矿/i.test(blob)
+  const tree = /(?:^|[^a-z])(?:oak|spruce|birch|logs?|trees?|saplings?|forest)(?![a-z])|原木|树|林/i.test(blob)
   if (ore === tree) return null
   return ore ? 'ore' : 'tree'
 }

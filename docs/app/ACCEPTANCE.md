@@ -1,6 +1,6 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.1.0 已部署（schema 20、mcbot 契约 v2、DSH 0.2.2-rc.1）。迁移前的生产回滚基线为 v1.0.13 和 OpenCode v2.2.5。
+> 当前版本 v1.1.1 候选，生产基线 v1.1.0（schema 20、mcbot 契约 v2、DSH 0.2.2-rc.1）。迁移前的生产回滚基线为 v1.0.13 和 OpenCode v2.2.5。
 
 ### v1.1.0 生产切换（2026-11-08）
 
