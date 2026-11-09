@@ -155,14 +155,18 @@ function Copy-ToPi {
   }
 }
 
-# 健康检查同时断言版本、DB 就绪和实际 Agent 运行时。
-function Test-Health {
-  param([string]$Version = $expectedVersion, [int]$Schema = $expectedSchemaVersion, [int]$Attempts = 15)
-  $runtimeCheck = if ($usesDsh) {
+# 运行时就绪在切换前后检查，避免因部署前已有的 Agent 故障重启 Workbench。
+function Get-RuntimeCheck {
+  if ($usesDsh) {
     "systemctl is-active --quiet antifield-dsh-web && systemctl is-active --quiet antifield-dsh-qq && systemctl is-active --quiet antifield-dsh-mcbot-agent && /usr/local/bin/node '$releaseDir/scripts/deploy-state.mjs' dsh-ready '$expectedDshVersion' '$expectedDshQqVersion'"
   } else {
     "systemctl is-active --quiet opencode"
   }
+}
+
+function Test-Health {
+  param([string]$Version = $expectedVersion, [int]$Schema = $expectedSchemaVersion, [int]$Attempts = 15, [switch]$AppOnly)
+  $runtimeCheck = if ($AppOnly) { "true" } else { Get-RuntimeCheck }
   for ($i = 0; $i -lt $Attempts; $i++) {
     try {
       $raw = Invoke-Remote "$runtimeCheck && curl -fsS --max-time 3 http://127.0.0.1:3000/healthz" -Attempts 1 -TimeoutSeconds 20
@@ -212,7 +216,7 @@ sudo systemctl start antifieldcloud
     Write-Warning "自动回滚失败或涉及跨 schema。请保全现行库和 WAL，再验证恢复源后人工维护。"
     return $false
   }
-  return (Test-Health -Version $previousVersion -Schema $previousSchema)
+  return (Test-Health -Version $previousVersion -Schema $previousSchema -AppOnly)
 }
 
 Push-Location $root
@@ -332,6 +336,9 @@ try {
   if ($DshRuntime -and $runtime -eq "opencode") { throw "-DshRuntime 与生产环境配置冲突" }
   $usesDsh = ($runtime -eq "dsh")
   $envReady = ($runtime -ne "first")
+  if ($envReady) {
+    Invoke-Remote (Get-RuntimeCheck) -Attempts 1 -TimeoutSeconds 20 | Out-Null
+  }
   $cacheFlag = if ($OfflineInstall) { " --offline" } else { "" }
   $install = "cd $releaseDir && sudo /usr/local/bin/npm ci$cacheFlag --omit=dev --ignore-scripts --no-audit --no-fund && sudo chown -R root:root $releaseDir && sudo chmod -R u+rwX,go-w $releaseDir"
   $installResult = Invoke-NativeWithTimeout -FilePath "ssh.exe" -Arguments @(
