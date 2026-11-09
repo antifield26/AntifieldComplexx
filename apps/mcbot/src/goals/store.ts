@@ -155,7 +155,9 @@ export class GoalStore {
     // 进程上次退出时未结束的目标不能自动继续执行。
     this.atomic(() => {
       this.requireDb().exec("UPDATE goal_steps SET status = 'pending' WHERE status = 'running' AND goal_id IN (SELECT id FROM goals WHERE status IN ('running', 'paused'))")
-      this.requireDb().prepare("UPDATE goals SET status = 'paused', updated_at = ? WHERE status = 'running'").run(new Date().toISOString())
+      this.requireDb().prepare(
+        "UPDATE goals SET status = 'paused', last_failure_kind = 'interrupted', last_error = ?, updated_at = ? WHERE status = 'running'"
+      ).run('服务重启，需主人确认继续', new Date().toISOString())
     })
   }
 

@@ -819,7 +819,10 @@ export class TaskManager implements TaskController {
       depositRequested: () => active.depositRequested,
       clearDepositRequest: () => { active.depositRequested = false },
       defend: async () => {
-        return await this.defend(active)
+        if (active.stopRequested) throw new TaskStopError()
+        const result = await this.defend(active)
+        if (active.stopRequested) throw new TaskStopError()
+        return result
       },
       serverTimeTicks: this.deps.getServerTimeTicks
     }

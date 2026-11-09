@@ -171,6 +171,7 @@ function freshAxe (bot: Bot): ReturnType<Bot['inventory']['items']>[number] | nu
 }
 
 async function moveNear (ctx: TaskContext, position: Vec3): Promise<void> {
+  if (ctx.signal.aborted) throw new TaskStopError()
   await ctx.movement.goNearPoint(position.x + 0.5, position.y, position.z + 0.5, 3, 15000, true)
 }
 
@@ -182,9 +183,11 @@ async function digLog (ctx: TaskContext, bot: Bot, log: Vec3): Promise<boolean> 
       const block = bot.blockAt(log, false)
       if (!block || !block.name.endsWith('_log')) return false
       await bot.lookAt(log.offset(0.5, 0.5, 0.5), true)
+      if (ctx.signal.aborted) throw new TaskStopError()
       await bot.dig(block)
       return true
     } catch (error) {
+      if (error instanceof TaskStopError) throw error
       ctx.logger.warn('forest: dig failed', {
         position: `${log.x},${log.y},${log.z}`,
         error: error instanceof Error ? error.message : String(error)
@@ -217,6 +220,7 @@ async function plantSapling (ctx: TaskContext, bot: Bot, tree: NaturalTree): Pro
     await bot.placeBlock(below, new Vec3(0, 1, 0))
     return true
   } catch (error) {
+    if (error instanceof TaskStopError) throw error
     ctx.logger.warn('forest: plant failed', {
       base: `${tree.base.x},${tree.base.y},${tree.base.z}`,
       error: error instanceof Error ? error.message : String(error)

@@ -84,6 +84,7 @@ function freshAxe (bot: Bot): ReturnType<Bot['inventory']['items']>[number] | nu
 }
 
 async function moveNear (ctx: TaskContext, position: Vec3): Promise<void> {
+  if (ctx.signal.aborted) throw new TaskStopError()
   await ctx.movement.goNearPoint(position.x + 0.5, position.y, position.z + 0.5, 2, 12000, true)
 }
 
@@ -93,13 +94,16 @@ async function digReachable (ctx: TaskContext, bot: Bot, position: Vec3): Promis
   const target = new Vec3(position.x + 0.5, position.y + 0.5, position.z + 0.5)
   let attempts = 0
   while (attempts < 4) {
+    if (ctx.signal.aborted) throw new TaskStopError()
     const distance = bot.entity?.position.distanceTo(target) ?? 99
     if (distance <= 4.2) {
       try {
         await bot.lookAt(target, true)
+        if (ctx.signal.aborted) throw new TaskStopError()
         await bot.dig(block)
         return true
       } catch (error) {
+        if (error instanceof TaskStopError) throw error
         ctx.logger.warn('woodcutting: dig failed', {
           position: `${position.x},${position.y},${position.z}`,
           error: error instanceof Error ? error.message : String(error)
@@ -131,9 +135,11 @@ async function plantSapling (ctx: TaskContext, bot: Bot, base: Vec3): Promise<bo
   }
   try {
     await bot.equip(sapling, 'hand')
+    if (ctx.signal.aborted) throw new TaskStopError()
     await bot.placeBlock(below, new Vec3(0, 1, 0))
     return true
   } catch (error) {
+    if (error instanceof TaskStopError) throw error
     ctx.logger.warn('woodcutting: plant failed', {
       base: `${base.x},${base.y},${base.z}`,
       error: error instanceof Error ? error.message : String(error)
@@ -144,6 +150,7 @@ async function plantSapling (ctx: TaskContext, bot: Bot, base: Vec3): Promise<bo
 
 async function chopTree (ctx: TaskContext, bot: Bot, tree: OakTree): Promise<number> {
   await moveNear(ctx, tree.base)
+  if (ctx.signal.aborted) throw new TaskStopError()
   const axe = freshAxe(bot)
   if (!axe) throw new TaskError('铁斧快坏了，箱子里没有备用斧')
   await equipItem(bot, axe)

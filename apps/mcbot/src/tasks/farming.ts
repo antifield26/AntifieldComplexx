@@ -35,6 +35,7 @@ async function collectDrops (ctx: TaskContext, bot: Bot): Promise<void> {
 }
 
 async function navigateToBlock (ctx: TaskContext, block: Block): Promise<void> {
+  if (ctx.signal.aborted) throw new TaskStopError()
   await ctx.movement.goNearPoint(block.position.x, block.position.y, block.position.z, 2, 10000, true)
 }
 
@@ -46,10 +47,12 @@ async function plantSeeds (ctx: TaskContext, bot: Bot, farmland: Block): Promise
   if (existing && existing.name !== 'air' && existing.name !== 'cave_air') return false
   try {
     await bot.equip(seeds, 'hand')
+    if (ctx.signal.aborted) throw new TaskStopError()
     await bot.placeBlock(farmland, new Vec3(0, 1, 0))
     await sleep(250, ctx.signal)
     return true
   } catch (error) {
+    if (error instanceof TaskStopError) throw error
     ctx.logger.warn('farming: plant failed', {
       position: cropPos,
       error: error instanceof Error ? error.message : String(error)
@@ -63,6 +66,7 @@ async function harvestOne (ctx: TaskContext, bot: Bot, crop: Block): Promise<boo
   const farmland = bot.blockAt(crop.position.offset(0, -1, 0), false)
   if (!farmland || farmland.name !== 'farmland') return false
   try {
+    if (ctx.signal.aborted) throw new TaskStopError()
     await bot.dig(crop)
     ctx.updateProgress({ wheatHarvested: ctx.progress.wheatHarvested + 1 })
     await collectDrops(ctx, bot)

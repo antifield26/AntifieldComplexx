@@ -16,6 +16,7 @@ function freshPickaxe (bot: Bot): ReturnType<Bot['inventory']['items']>[number] 
 }
 
 async function moveToOre (ctx: TaskContext, target: Vec3): Promise<void> {
+  if (ctx.signal.aborted) throw new TaskStopError()
   await ctx.movement.goNearPoint(target.x + 0.5, target.y + 0.5, target.z + 0.5, 3, 15000, true)
 }
 
@@ -31,9 +32,11 @@ async function mineOre (ctx: TaskContext, bot: Bot, target: OreTarget): Promise<
       const block = bot.blockAt(target.position, false)
       if (!block || block.name !== target.name) return false
       await bot.lookAt(target.position.offset(0.5, 0.5, 0.5), true)
+      if (ctx.signal.aborted) throw new TaskStopError()
       await bot.dig(block)
       return true
     } catch (error) {
+      if (error instanceof TaskStopError) throw error
       ctx.logger.warn('mining: dig failed', {
         position: `${target.position.x},${target.position.y},${target.position.z}`,
         error: error instanceof Error ? error.message : String(error)
