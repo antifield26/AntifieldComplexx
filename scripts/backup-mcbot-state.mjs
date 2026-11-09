@@ -3,8 +3,7 @@
  */
 import { createHash } from 'node:crypto'
 import { constants, createReadStream, existsSync, lstatSync, mkdirSync, openSync, readFileSync, closeSync, fstatSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { isAbsolute, join } from 'node:path'
 import { DatabaseSync, backup } from 'node:sqlite'
 import { GoalStore } from '../apps/mcbot/src/goals/store.ts'
 import { parseTaskState } from '../apps/mcbot/src/tasks/store.ts'
@@ -131,7 +130,7 @@ export async function verifyMcbotState(directory, { restore = false } = {}) {
   return details
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (import.meta.main) {
   try {
     const [command, directory, data, goals, task] = process.argv.slice(2)
     if (command === 'capture') {

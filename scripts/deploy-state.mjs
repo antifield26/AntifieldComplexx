@@ -3,8 +3,7 @@
  */
 import { createHash } from 'node:crypto'
 import { createReadStream, lstatSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { parseEnv } from 'node:util'
 
@@ -76,7 +75,7 @@ async function assertMcbotIdle(path) {
       result.goals.some(goal => goal.status === 'running')) throw new Error('mcbot_busy')
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (import.meta.main) {
   const [command, ...args] = process.argv.slice(2)
   try {
     if (command === 'runtime') {

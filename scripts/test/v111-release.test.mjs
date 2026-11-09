@@ -2,9 +2,9 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync, backup } from 'node:sqlite'
 import test from 'node:test'
 import { GoalStore } from '../../apps/mcbot/src/goals/store.ts'
@@ -73,6 +73,11 @@ test('密钥包快照含 WAL 目标，隔离恢复暂停运行中目标并验证
     const directory = join(dir, 'capture')
     const files = await captureMcbotState(directory, { 'goals.db': source, 'task-state.json': task, 'world-memory.json': memory })
     assert.deepEqual(Object.values(files).map(file => file.status), ['included', 'included', 'included'])
+    const repo = resolve(import.meta.dirname, '../..')
+    const current = process.platform === 'win32' ? repo : join(dir, 'current')
+    if (current !== repo) symlinkSync(repo, current, 'dir')
+    const result = execFileSync(process.execPath, [join(current, 'scripts/backup-mcbot-state.mjs'), 'verify', directory], { encoding: 'utf8' })
+    assert.equal(JSON.parse(result).pendingTask, true)
     assert.deepEqual(await verifyMcbotState(directory, { restore: true }),
       { goals: 1, running: 1, pendingTask: true, queuedTasks: 0, worldMemoryItems: 1 })
     assert.equal(store.get(goal.id).status, 'running')
