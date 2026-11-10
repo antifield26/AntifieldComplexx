@@ -1,6 +1,6 @@
 # AntifieldComplexx 文档索引
 
-> 当前版本 v1.1.0（2026-11-08），schema 20 / mcbot 契约 v2 / DeepSeek Harness 0.2.2-rc.1。OpenCode 2.2.5 已从 Pi 退役。生产路径见 [ACCEPTANCE](app/ACCEPTANCE.md)。上一发布版本为 v1.0.13。
+> 当前版本 v1.1.1（2026-11-10），schema 20 / mcbot 契约 v2 / DeepSeek Harness 0.2.2-rc.1。OpenCode 2.2.5 已从 Pi 退役。生产路径见 [ACCEPTANCE](app/ACCEPTANCE.md)。上一发布版本为 v1.1.0。
 > 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区、主机监控与备份灾备。
 
 ## 应用（apps/workbench，Web 端）
@@ -15,9 +15,9 @@
 | [BACKUP](app/BACKUP.md) | 应用归档、世界备份、恢复演练 |
 | [SECURITY](app/SECURITY.md) | 安全模型、边界与加固 |
 | [CHATBOT](app/CHATBOT.md) | QQ chatbot 子系统（原 bot，schema v18 更名） |
-| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.1.0 与历史版本结果） |
+| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.1.1 与历史版本结果） |
 | [ROADMAP](app/ROADMAP.md) | 版本边界与后续路线 |
-| [AUDIT](app/AUDIT.md) | 审计与修复总记录（含 v1.1.0 至 v1.0.5、磁盘审计附录） |
+| [AUDIT](app/AUDIT.md) | 审计与修复总记录（含 v1.1.1 至 v1.0.5、磁盘审计附录） |
 
 ## Minecraft bot（apps/mcbot）
 

@@ -1,10 +1,18 @@
-# AntifieldComplexx v1.1.0 实施计划（当前状态）
+# AntifieldComplexx v1.1.1 实施计划（当前状态）
 
 本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`；审计见 `docs/app/AUDIT.md`。
 
 > 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区、主机监控与备份灾备）。
 
-## v1.1.0 当前状态
+## v1.1.1 当前状态
+
+- **版本**：**v1.1.1**；schema **v20**；mcbot **v1.1.1**（契约 v2）；DeepSeek Harness **0.2.2-rc.1**；QQ 插件 **0.5.5**。OpenCode **v2.2.5** 已从 Pi 退役，只作历史回滚运行时。
+- **范围**：采集、存箱与回家按动作结果推进，支持暂停、取消和按步骤恢复。防御准备识别已装备的护甲和盾牌。树场选择最近的原木，成功砍伐后立即计数。分享下载在发送前原子预占名额。分片拼接逐片校验 SHA-256。age 密钥包收录 mcbot 目标库、任务状态和世界记忆。同 schema 回滚保留数据库及 WAL。
+- **边界**：schema 与契约不变。整包加密与异地副本保持关闭。回滚到 v1.1.0 release，Workbench 保留现行 schema 20 库及 WAL。
+- **状态**：Workbench `/opt/antifieldcloud/releases/20261109T143755Z`，mcbot `/opt/mcbot/releases/20261110T022539Z`，DSH `/opt/antifield-dsh/releases/20261108T143448Z`。部署前快照 `db-predeploy-20261109T143804671Z.sqlite` 已校验 schema 20。演练 `20261110T022941Z` 通过。Access smoke **37/0/0/2**。Windows 计划任务标记为 1.1.1。验收证据见 `docs/app/ACCEPTANCE.md`。
+- **测试基线**：2026-11-09 全量 check 为服务端 **640**（639 pass、1 skip）+ web **283**。2026-11-10 mcbot 单测为 **181** pass。
+
+## v1.1.0 已部署状态（历史）
 
 - **版本**：**v1.1.0**；schema **v20**；mcbot **v1.1.0**（契约 v2）；DeepSeek Harness **0.2.2-rc.1**；QQ 插件 **0.5.5**。OpenCode **v2.2.5** 已从 Pi 退役，只作回滚运行时。
 - **范围**：Web、QQ 与 mcbot Agent 使用隔离的 DeepSeek Harness。Workbench 做单点登录换票。QQ 记忆按平台确认的身份导入并审核。mcbot 的 13 个自主工具由 DSH 插件经私有 Unix socket 调用。配置该 socket 后，旧 `/autonomy/mcp` 返回 404。

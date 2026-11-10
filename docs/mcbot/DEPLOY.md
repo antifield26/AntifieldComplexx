@@ -1,6 +1,6 @@
 # 部署与运维（mcbot）
 
-> 目标 Pi：`antifield@192.0.2.10`（TEST-NET 占位；Raspberry Pi 5，Debian 13，Node `/usr/local/bin/node` v26.13.0。实际主机见 `.local/DEPLOYMENT.md`）。v1.1.0 已部署 release `/opt/mcbot/releases/20261108T080545Z`。回滚目标为 v1.0.13 release `/opt/mcbot/releases/20261107T121646Z`。
+> 目标 Pi：`antifield@192.0.2.10`（TEST-NET 占位；Raspberry Pi 5，Debian 13，Node `/usr/local/bin/node` v26.13.0。实际主机见 `.local/DEPLOYMENT.md`）。v1.1.1 已部署 release `/opt/mcbot/releases/20261110T022539Z`。回滚目标为 v1.1.0 release `/opt/mcbot/releases/20261108T080545Z`。
 > 服务器：Paper 26.1.2，`~/minecraft-server`，RCON 已启用。
 > 所有操作从 Windows 工作区通过 SSH/SCP 执行；不使用 Docker。
 

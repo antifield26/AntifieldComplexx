@@ -9,7 +9,7 @@ AntifieldComplexx 的生产 QQ 由 DeepSeek Harness QQ Agent 处理白名单私�
 生产图片由 DSH QQ Agent 交给模型。OpenCode prompt files 只属于已退役的回滚路径。
 企业微信/钉钉/飞书与多管理员审批未实现。
 
-> 当前代码：v1.1.0/schema v20。生产 QQ 由 DSH 0.2.2-rc.1 与 QQ 插件 0.5.5 承担。OpenCode v2.2.5 已退役。生产应用与 mcbot release 均为 `/opt/antifieldcloud/releases/20261108T080545Z` 与 `/opt/mcbot/releases/20261108T080545Z`，DSH release 为 `/opt/antifield-dsh/releases/20261108T143448Z`。回滚到 v1.0.13 的应用 `/opt/antifieldcloud/releases/20261107T121119Z` 与 mcbot `/opt/mcbot/releases/20261107T121646Z`，并使用 PC 上验证过的 OpenCode 加密档。下文 OpenCode 管线描述该回滚路径。Bot 默认关闭，Webhook 关闭时返回 404；mcbot 对接已启用。
+> 当前代码：v1.1.1/schema v20。生产 QQ 由 DSH 0.2.2-rc.1 与 QQ 插件 0.5.5 承担。OpenCode v2.2.5 已退役。生产应用 release 为 `/opt/antifieldcloud/releases/20261109T143755Z`，mcbot 为 `/opt/mcbot/releases/20261110T022539Z`，DSH release 为 `/opt/antifield-dsh/releases/20261108T143448Z`。回滚到 v1.1.0 的应用与 mcbot 均为 `20261108T080545Z`。下文 OpenCode 管线描述更早的回滚路径。Bot 默认关闭，Webhook 关闭时返回 404；mcbot 对接已启用。
 > 安全边界：QQ AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台 Ed25519 签名/时间戳鉴权；
 > 除自助命令（`/help`、`/memory`、`/role` 仅私聊；`/reset`、`/forget confirm` 全用户）外，斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；
 > 发布必须 TOTP + `PUBLISH` 二次确认，且仅文本；通知/命令/Chat 输出不包含内部路径或 URL；私聊角色/记忆正文不通过 API/UI 暴露，群聊角色正文仅管理员在 Web 编辑；

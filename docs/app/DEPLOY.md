@@ -2,7 +2,7 @@
 
 > v1.1.1 的 Workbench release 为 `20261109T143755Z`，mcbot 为 `20261110T022539Z`。回滚到 v1.1.0 使用各自的 `20261108T080545Z` release，Workbench 保留 schema 20 现行库。部署与备份证据见 [验收记录](ACCEPTANCE.md)。
 
-> **v1.1.0 已部署（2026-11-08）**。Workbench 与 mcbot release 为 `20261108T080545Z`，DSH release 为 `20261108T143448Z`。Workbench schema 20，mcbot 契约 v2。OpenCode 2.2.5 已从 Pi 退役。安装、验收与回滚见 [Agent Harness 切换手册](./DSH-MIGRATION.md)。
+> **v1.1.0 部署记录（2026-11-08，历史）**。Workbench 与 mcbot release 为 `20261108T080545Z`，DSH release 为 `20261108T143448Z`。Workbench schema 20，mcbot 契约 v2。OpenCode 2.2.5 已从 Pi 退役。安装、验收与回滚见 [Agent Harness 切换手册](./DSH-MIGRATION.md)。
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -404,7 +404,7 @@ sudo -u opencode /var/lib/opencode/.opencode/bin/opencode --version   # 期望 v
 ### 3.3 Node.js 运行时安全更新（v26.13.0）
 
 生产应用使用 `/usr/local/bin/node`（systemd `ExecStart`）；npm/npx 仍指向 nvm（仅构建/部署工具）。
-当前生产为 **v26.13.0**（2026-11-07，官方 linux-arm64，SHA-256 校验通过）。相对 v26.12.1 只切换 Lithium LTS 标记，没有其它运行时改动。npm 仍是 nvm 12.2.0。`/usr/local/bin/node` 与 `/usr/local/lib/nodejs/node-v26.13.0-linux-arm64` 保留；`node.v26.12.1`、`node.v26.11.1` 和 `node-v26.12.1-linux-arm64` 已删除。Node 升级当时应用与 mcbot `/healthz` 为 1.0.13。当前应用与 mcbot `/healthz` 为 v1.1.0，schema 20，契约 v2。
+当前生产为 **v26.13.0**（2026-11-07，官方 linux-arm64，SHA-256 校验通过）。相对 v26.12.1 只切换 Lithium LTS 标记，没有其它运行时改动。npm 仍是 nvm 12.2.0。`/usr/local/bin/node` 与 `/usr/local/lib/nodejs/node-v26.13.0-linux-arm64` 保留；`node.v26.12.1`、`node.v26.11.1` 和 `node-v26.12.1-linux-arm64` 已删除。Node 升级当时应用与 mcbot `/healthz` 为 1.0.13。当前应用与 mcbot `/healthz` 为 v1.1.1，schema 20，契约 v2。
 
 下面是 2026-10-22 从 v26.11.1 升到 **v26.12.1** 的记录。未改动应用版本/schema。
 
