@@ -6,7 +6,7 @@
 
 **当前版本 v1.1.1（2026-11-09 已部署）**。schema 20、mcbot 契约 v2，Web、QQ 与 mcbot Agent 继续使用 DeepSeek Harness。生产同 schema 回滚基线为 v1.1.0。OpenCode **v2.2.5** 仅用于恢复历史版本 v1.0.13（`1743323`）。
 
-生产 Workbench release 为 `20261109T143755Z`，mcbot 为 `20261109T142913Z`，DSH 为 `20261108T143448Z`。部署前快照 `db-predeploy-20261109T143804671Z.sqlite` 已校验 schema 20。应用与世界恢复演练 `20261109T144022Z` 通过。Workbench 同 schema 回滚保留现行库及 WAL。
+生产 Workbench release 为 `20261109T143755Z`，mcbot 为 `20261110T022539Z`，DSH 为 `20261108T143448Z`。部署前快照 `db-predeploy-20261109T143804671Z.sqlite` 已校验 schema 20。应用与世界恢复演练 `20261110T022941Z` 通过。Workbench 同 schema 回滚保留现行库及 WAL。
 
 **v1.0.7 基线（2026-11-04 已部署，commit `b17102b`）**：schema v19 为 `alert_events.dedupe_key`；mcbot 快照下发 `lastSuccessAt`；mcbot 进程不在或轮询过期走 `service_down`；寻路兜底进入自主重决策（不新增 MCP 工具，不挖掘/不放置/不跑酷）。OpenCode **v2.2.5** 已在树莓派运行，回滚备份 timestamp `20261104T062115Z`。v1.0.7 app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19）、mcbot `/opt/mcbot/releases/20261104T092858Z`。npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 

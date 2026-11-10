@@ -3,7 +3,7 @@
 面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台：统一登录与单一入口，整合云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、mcbot Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、DeepSeek Harness AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
 > 状态：v1.1.1 已部署，schema **v20**，mcbot 契约 v2。Web、QQ 与 mcbot Agent 使用 DeepSeek Harness。OpenCode **v2.2.5** 已从 Pi 退役，离线档供历史回滚。验收与发布门禁见 [ACCEPTANCE](docs/app/ACCEPTANCE.md)。
-> v1.1.1 本地门禁与生产构建通过。服务端及运维夹具 640 项，前端 283 项，mcbot 179 项。应用与世界隔离恢复演练为 `20261109T144022Z`。
+> v1.1.1 本地门禁与生产构建通过。服务端及运维夹具 640 项，前端 283 项，mcbot 181 项。应用与世界隔离恢复演练为 `20261110T022941Z`。
 > 命名：2026-10-27 起项目更名为 **AntifieldComplexx**（原 AntifieldCloud）；GitHub 仓库为 [antifield26/AntifieldComplexx](https://github.com/antifield26/AntifieldComplexx)，旧仓库地址由 GitHub 自动重定向。生产运行时标识符（服务用户、systemd 单元、数据路径、Windows 计划任务）保持不变，详见 [AGENTS.md](AGENTS.md) §0.1。
 > 部署与运维见 [docs/app/DEPLOY.md](docs/app/DEPLOY.md)，备份/恢复见 [docs/app/BACKUP.md](docs/app/BACKUP.md)，契约见 [docs/app/API.md](docs/app/API.md)，路线与验收记录见 [docs/app/ROADMAP.md](docs/app/ROADMAP.md) 与 [docs/app/ACCEPTANCE.md](docs/app/ACCEPTANCE.md)。
 
@@ -64,7 +64,7 @@
 
 ### mcbot Minecraft Bot（v0.8.0 引入；v1.0.5 常驻/生存/目标；v1.0.6 统一寻路；v1.0.7 兜底重决策；v1.0.8 契约 v2；v1.0.9 事件缺口；v1.0.10 活动范围；v1.0.11 本地反射；v1.0.12 世界记忆；v1.0.13 记忆坐标；v1.1.0 DSH 工具）
 
-- 独立附属服务 `mcbot`（本版 **v1.1.1**；最低 v0.6.0，契约 v2，仅监听 `127.0.0.1:3010`）；应用通过服务端轮询 `GET /status` 与 `GET /events/recent?limit=200`（默认 5s）获取状态与最近事件，**浏览器不直连 mcbot**。生产进程为 v1.1.1（`/opt/mcbot/releases/20261109T142913Z`）。回滚到 v1.1.0 使用 `/opt/mcbot/releases/20261108T080545Z`。发言仅契约 v2，使用控制 Token；契约 v1 仍可读状态并执行既有控制。同一启动周期内的事件序号空洞出现在 `eventGap`，面板仍显示当前状态。
+- 独立附属服务 `mcbot`（本版 **v1.1.1**；最低 v0.6.0，契约 v2，仅监听 `127.0.0.1:3010`）；应用通过服务端轮询 `GET /status` 与 `GET /events/recent?limit=200`（默认 5s）获取状态与最近事件，**浏览器不直连 mcbot**。生产进程为 v1.1.1（`/opt/mcbot/releases/20261110T022539Z`）。回滚到 v1.1.0 使用 `/opt/mcbot/releases/20261108T080545Z`。发言仅契约 v2，使用控制 Token；契约 v1 仍可读状态并执行既有控制。同一启动周期内的事件序号空洞出现在 `eventGap`，面板仍显示当前状态。
 - v1.0.5：在线模式 `auto/always/off` 持久化、空闲自动进食/换装、自动补货默认开启、安全区清怪任务、多步目标（task/deposit/home）与失败分类；目标重启后保持 paused，不自动执行。
 - v1.0.6：确定性 A*（只读现有地形，支持 1 格抬高/2 格下落/台阶半砖）、受控路点执行、AI 路点建议（OpenCode 可用时默认启用）、安全传送兜底与 `navigation` 状态；不挖掘/不放置/不跑酷。
 - v1.0.7：寻路兜底（安全传送或停止）进入自主会话既有重决策，30 秒去重、每会话最多 6 次；提示只含固定中文事实，不带坐标。面板过期文案用 `lastSuccessAt`，没有成功轮询时显示“尚无成功轮询”。

@@ -1,6 +1,6 @@
 # 部署手册（Raspberry Pi 5 / Debian 13，v1.1.1）
 
-> v1.1.1 的 Workbench release 为 `20261109T143755Z`，mcbot 为 `20261109T142913Z`。回滚到 v1.1.0 使用各自的 `20261108T080545Z` release，Workbench 保留 schema 20 现行库。部署与备份证据见 [验收记录](ACCEPTANCE.md)。
+> v1.1.1 的 Workbench release 为 `20261109T143755Z`，mcbot 为 `20261110T022539Z`。回滚到 v1.1.0 使用各自的 `20261108T080545Z` release，Workbench 保留 schema 20 现行库。部署与备份证据见 [验收记录](ACCEPTANCE.md)。
 
 > **v1.1.0 已部署（2026-11-08）**。Workbench 与 mcbot release 为 `20261108T080545Z`，DSH release 为 `20261108T143448Z`。Workbench schema 20，mcbot 契约 v2。OpenCode 2.2.5 已从 Pi 退役。安装、验收与回滚见 [Agent Harness 切换手册](./DSH-MIGRATION.md)。
 
