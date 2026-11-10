@@ -644,7 +644,7 @@ export class TaskManager implements TaskController {
 
   private async ensureAtAnchor (active: ActiveTask): Promise<void> {
     const { config, movement } = this.deps
-    requireBot(this.context(active))
+    const bot = requireBot(this.context(active))
     if (active.name === 'fishing') {
       if (config.taskAnchorTeleport) {
         await movement.teleportTo(config.fishStand.x, config.fishStand.y, config.fishStand.z)
@@ -654,8 +654,17 @@ export class TaskManager implements TaskController {
       return
     }
     if (active.name === 'woodcutting') {
-      const centerX = (config.treeFarm.minX + config.treeFarm.maxX) / 2
-      const centerZ = (config.treeFarm.minZ + config.treeFarm.maxZ) / 2
+      const farm = config.treeFarm
+      const position = bot.entity.position
+      if (active.goalExecutionId &&
+        position.x >= farm.minX && position.x < farm.maxX + 1 &&
+        position.z >= farm.minZ && position.z < farm.maxZ + 1 &&
+        Math.abs(position.y - farm.logMinY) <= 1) {
+        await movement.waitForChunks()
+        return
+      }
+      const centerX = (farm.minX + farm.maxX) / 2
+      const centerZ = (farm.minZ + farm.maxZ) / 2
       if (config.taskAnchorTeleport) {
         await movement.teleportNearPoint(centerX, config.treeFarm.logMinY, centerZ, 5)
       } else {
@@ -665,7 +674,6 @@ export class TaskManager implements TaskController {
     }
     if (active.name === 'mining' || active.name === 'forest' || active.name === 'sleep' || active.name === 'patrol' ||
       active.name === 'guard' || active.name === 'escort' || active.name === 'explore') {
-      const bot = requireBot(this.context(active))
       if (bot.entity && Math.hypot(
         bot.entity.position.x - config.home.x,
         bot.entity.position.y - config.home.y,
@@ -678,7 +686,6 @@ export class TaskManager implements TaskController {
       }
       return
     }
-    const bot = requireBot(this.context(active))
     if (bot.entity) {
       const nearChest = Math.hypot(bot.entity.position.x - config.chest.x, bot.entity.position.z - config.chest.z) <= 5
       if (nearChest) return

@@ -87,7 +87,9 @@ function freshAxe (bot: Bot): ReturnType<Bot['inventory']['items']>[number] | nu
 
 async function moveNear (ctx: TaskContext, position: Vec3): Promise<void> {
   if (ctx.signal.aborted) throw new TaskStopError()
-  await ctx.movement.goNearPoint(position.x + 0.5, position.y, position.z + 0.5, 2, 12000, true)
+  const target = position.offset(0.5, 0, 0.5)
+  if (requireBot(ctx).entity.position.distanceTo(target) <= 2) return
+  await ctx.movement.goNearPoint(target.x, target.y, target.z, 2, 12000, true)
 }
 
 async function digReachable (ctx: TaskContext, bot: Bot, position: Vec3): Promise<boolean> {
@@ -160,7 +162,11 @@ async function chopTree (ctx: TaskContext, bot: Bot, tree: OakTree): Promise<num
   // Bottom-up keeps later logs reachable from the ground.
   for (const log of tree.logs) {
     if (isExpired(ctx)) throw new TaskStopError('任务时间到了')
-    if (await digReachable(ctx, bot, log)) chopped += 1
+    if (ctx.progress.logsChopped >= ctx.config.treeMaxLogs) break
+    if (await digReachable(ctx, bot, log)) {
+      chopped += 1
+      ctx.updateProgress({ logsChopped: ctx.progress.logsChopped + 1 })
+    }
     if (chopped > 0 && chopped % 4 === 0) await ctx.defend()
   }
   return chopped
@@ -169,7 +175,6 @@ async function chopTree (ctx: TaskContext, bot: Bot, tree: OakTree): Promise<num
 export async function runWoodcutting (ctx: TaskContext): Promise<void> {
   const bot = requireBot(ctx)
   let lastDeposit = Date.now()
-  let totalChopped = 0
 
   while (!isExpired(ctx)) {
     const trees = scanOakTrees(bot, ctx.config)
@@ -188,16 +193,14 @@ export async function runWoodcutting (ctx: TaskContext): Promise<void> {
         continue
       }
       choppedThisPass = true
-      totalChopped += chopped
-      ctx.updateProgress({
-        logsChopped: ctx.progress.logsChopped + chopped,
-        treesChopped: ctx.progress.treesChopped + 1
-      })
-      const planted = await plantSapling(ctx, bot, tree.base)
-      if (planted) {
-        ctx.updateProgress({ saplingsPlanted: ctx.progress.saplingsPlanted + 1 })
-      } else {
-        ctx.logger.warn('woodcutting: sapling not planted', { base: `${tree.base.x},${tree.base.y},${tree.base.z}` })
+      if (chopped === tree.logs.length) {
+        ctx.updateProgress({ treesChopped: ctx.progress.treesChopped + 1 })
+        const planted = await plantSapling(ctx, bot, tree.base)
+        if (planted) {
+          ctx.updateProgress({ saplingsPlanted: ctx.progress.saplingsPlanted + 1 })
+        } else {
+          ctx.logger.warn('woodcutting: sapling not planted', { base: `${tree.base.x},${tree.base.y},${tree.base.z}` })
+        }
       }
       await sleep(250, ctx.signal)
       if (emptySlots(bot) < 4 || Date.now() - lastDeposit >= ctx.config.treeDepositEveryMs) {

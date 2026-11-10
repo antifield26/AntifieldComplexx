@@ -15,8 +15,8 @@ import type { ChatSender } from '../../src/minecraft/chat.ts'
 import type { MovementManager } from '../../src/minecraft/movement.ts'
 import { TaskManager } from '../../src/tasks/manager.ts'
 import { TaskStore } from '../../src/tasks/store.ts'
-import { scanOakTrees } from '../../src/tasks/woodcutting.ts'
-import type { TaskController } from '../../src/tasks/types.ts'
+import { runWoodcutting, scanOakTrees } from '../../src/tasks/woodcutting.ts'
+import type { TaskContext, TaskController } from '../../src/tasks/types.ts'
 import { makeConfig, makeState, baseEnv } from '../helpers.ts'
 import { loadConfig } from '../../src/config.ts'
 
@@ -84,6 +84,47 @@ test('woodcutting scan finds oak trunks only inside the farm', () => {
   assert.deepEqual(trees.map(tree => tree.base.x), [4, 2])
   assert.deepEqual(trees.map(tree => tree.logs.length).sort(), [2, 3])
   assert.deepEqual(trees.map(tree => tree.base.y).sort(), [64, 64])
+})
+
+test('砍树逐根确认产出，达到上限后不再走向剩余原木', async () => {
+  const config = makeConfig({
+    treeMaxLogs: 1,
+    treeFarm: {
+      minX: 0, maxX: 1, minZ: 0, maxZ: 1,
+      groundY: 63, logMinY: 64, maxY: 68,
+      logType: 'oak_log', saplingType: 'oak_sapling'
+    }
+  })
+  const logs = new Set([64, 65])
+  let moves = 0
+  const axe = { name: 'iron_axe', type: 1, maxDurability: 200, durabilityUsed: 0 }
+  const bot = {
+    entity: { position: new Vec3(0.5, 64, 1.5) },
+    heldItem: axe,
+    inventory: { items: () => [axe], emptySlotCount: () => 10 },
+    blockAt (position: Vec3) {
+      const name = position.x === 0 && position.z === 0 && logs.has(position.y) ? 'oak_log' : 'air'
+      return { name, position }
+    },
+    lookAt: async () => {},
+    dig: async (block: { position: Vec3 }) => { logs.delete(block.position.y) }
+  } as unknown as Bot
+  const progress = { ...makeState(config).task.progress }
+  await runWoodcutting({
+    config,
+    logger,
+    getBot: () => bot,
+    movement: { goNearPoint: async () => { moves++ } } as unknown as MovementManager,
+    signal: new AbortController().signal,
+    deadline: Date.now() + 5000,
+    progress,
+    updateProgress: (patch) => { Object.assign(progress, patch) },
+    defend: async () => 'none'
+  } as TaskContext)
+  assert.equal(progress.logsChopped, 1)
+  assert.equal(progress.treesChopped, 0)
+  assert.deepEqual([...logs], [65])
+  assert.equal(moves, 0)
 })
 
 test('defender filters targets and respects safe zone/forbidden mobs', () => {
