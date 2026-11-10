@@ -73,7 +73,9 @@ export function scanOakTrees (bot: Bot, config: Config): OakTree[] {
       }
     }
   }
-  return trees.sort((a, b) => a.base.distanceTo(b.base))
+  const origin = bot.entity?.position
+  if (!origin) return trees
+  return trees.sort((a, b) => a.base.distanceTo(origin) - b.base.distanceTo(origin))
 }
 
 function freshAxe (bot: Bot): ReturnType<Bot['inventory']['items']>[number] | null {

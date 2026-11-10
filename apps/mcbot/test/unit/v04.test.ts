@@ -76,10 +76,12 @@ test('woodcutting scan finds oak trunks only inside the farm', () => {
   // A log outside the farm must not be scanned.
   for (let y = 64; y <= 66; y++) blocks.set(key(9, y, 9), { name: 'oak_log' })
   const bot = {
+    entity: { position: new Vec3(4, 64, 3) },
     blockAt: (position: Vec3) => blocks.get(key(position.x, position.y, position.z)) ?? { name: 'air' }
   } as unknown as Bot
   const trees = scanOakTrees(bot, config)
   assert.equal(trees.length, 2)
+  assert.deepEqual(trees.map(tree => tree.base.x), [4, 2])
   assert.deepEqual(trees.map(tree => tree.logs.length).sort(), [2, 3])
   assert.deepEqual(trees.map(tree => tree.base.y).sort(), [64, 64])
 })
