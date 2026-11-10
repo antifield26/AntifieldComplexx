@@ -142,6 +142,40 @@ test('v1.0.11 没有铁剑时仍近战，不撤退', async () => {
   assert.equal(progress.mobsKilled, 1)
 })
 
+test('已装备护甲和副手盾牌时，准备防御不绕去补给箱', async () => {
+  const config = makeConfig()
+  const sword = { name: 'iron_sword', type: 1 }
+  const slots = Array.from<{ name: string } | null>({ length: 46 }).fill(null)
+  slots[5] = { name: 'iron_helmet' }
+  slots[6] = { name: 'iron_chestplate' }
+  slots[7] = { name: 'iron_leggings' }
+  slots[8] = { name: 'iron_boots' }
+  slots[45] = { name: 'shield' }
+  const bot = {
+    entity: { id: 9, position: new Vec3(0, 64, 0) },
+    heldItem: sword,
+    inventory: { items: () => [sword], slots }
+  } as unknown as Bot
+  let supplyChecks = 0
+  const movement = {
+    waitForChunks: async () => {
+      supplyChecks++
+      throw new Error('夹具不提供补给箱')
+    }
+  } as unknown as MovementManager
+  const defender = new Defender({
+    config,
+    logger,
+    movement,
+    audit: { append: () => {} } as unknown as AuditLogger,
+    getBot: () => bot
+  })
+  await defender.prepare({
+    config, logger, movement, getBot: () => bot, signal: new AbortController().signal
+  } as TaskContext)
+  assert.equal(supplyChecks, 0)
+})
+
 test('v1.0.11 规划器可以沿梯子向上', () => {
   const world = new FakeWorld()
   floor(world, 0, 0, 63)

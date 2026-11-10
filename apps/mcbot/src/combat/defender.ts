@@ -58,6 +58,7 @@ const ARMOR = [
   { name: 'iron_leggings', slot: 'legs' as const },
   { name: 'iron_boots', slot: 'feet' as const }
 ]
+const OFF_HAND_SLOT = 45
 
 export interface DefenderDeps {
   config: Config
@@ -83,11 +84,12 @@ export class Defender implements TaskDefender {
   async prepare (ctx: TaskContext): Promise<void> {
     const bot = this.deps.getBot()
     if (!bot?.entity) return
-    const missing = [
-      ...(['iron_sword', 'shield', ...ARMOR.map(item => item.name)]
-        .filter(name => !findItem(bot, name))
-        .map(name => ({ name, count: 1 })))
-    ]
+    // 背包 items() 不含已装备的护甲和副手。
+    const equipped = [OFF_HAND_SLOT, ...ARMOR.map(item => this.slotFor(item.slot))]
+      .map(slot => bot.inventory.slots[slot]?.name)
+    const missing = ['iron_sword', 'shield', ...ARMOR.map(item => item.name)]
+      .filter(name => !equipped.includes(name) && !findItem(bot, name))
+      .map(name => ({ name, count: 1 }))
     if (missing.length === 0) {
       await this.equipGear(bot)
       return
