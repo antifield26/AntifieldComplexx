@@ -4,16 +4,16 @@
 
 > 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区、主机监控与备份灾备）。
 
-## v1.2.0 工作区（尚未部署）
+## v1.2.0（2026-11-11 已部署）
 
-- **版本**：应用版本 **v1.2.0**。工作区 schema **v21**。生产仍是 v1.1.1 / schema 20。未发布 Tag。
+- **版本**：应用版本 **v1.2.0**。schema **v21**。未发布 Tag。Workbench `20261111T104738Z`，mcbot `20261111T105117Z`。
 - **范围**：设备登记、Ed25519 请求签名、Bearer 会话、心跳、列表、改名与吊销。`PUBLIC_APP_SHELL` 默认 true，公网页面与 Cookie 登录保持可用。关闭后，应用公网主机只返回说明页「请使用客户端」和分享页；loopback 仍提供完整界面与 Cookie 登录。生产尚未关闭该开关。
 - **客户端**：界面源码在 `apps/client`。Windows 壳使用 Tauri，登录后用设备密钥签名请求。构建产物仍输出到 `apps/workbench/web/dist`。本机已生成 NSIS 安装包；这次构建没有写入接口源，安装后的请求会失败关闭。`tauri android build --target aarch64 --apk --ci` 的退出码是 1，本机不能创建 jniLibs 符号链接。arm64 发布包由已编译的 `libclient_lib.so` 经 `gradlew :app:assembleArm64Release` 生成，并用本机 Android debug 密钥签名，大小 11798561 字节。该包没有写入接口源。没有在手机上安装。这两份安装包是版本号改为 1.2.0 之前生成的，包内版本仍是 1.1.1。版本号变更后没有重新打包。
-- **边界**：mcbot 仍是独立进程。健康检查、公开分享、QQ Webhook 与 AI 反代保持可用。客户端与 Access 策略尚未切换。
-- **回滚**：部署本迁移后，回到 v1.1.1 必须同时恢复迁移前 schema 20 数据库快照、旧 release、Access 策略与公网界面。只恢复公网界面时，把 `PUBLIC_APP_SHELL` 设为 true 并重启，不改 schema。
+- **边界**：mcbot 仍是独立进程。健康检查、公开分享、QQ Webhook 与 AI 反代保持可用。Cloudflare Access 策略未改。
+- **回滚**：回到 v1.1.1 必须同时恢复迁移前 schema 20 数据库快照 `db-predeploy-20261111T104848131Z.sqlite`、旧 release、Access 策略与公网界面。只恢复公网界面时，把 `PUBLIC_APP_SHELL` 设为 true 并重启，不改 schema。
 - **测试**：2026-11-11 全量 `npm run check` 为服务端 **647**（646 pass、1 skip）+ web **307** + mcbot **181**。客户端 `cargo test` 8 通过。命名检查与文档声明检查通过。
 
-## v1.1.1 当前状态
+## v1.1.1（2026-11-10）
 
 - **版本**：**v1.1.1**；schema **v20**；mcbot **v1.1.1**（契约 v2）；DeepSeek Harness **0.2.2-rc.1**；QQ 插件 **0.5.5**。OpenCode **v2.2.5** 已从 Pi 退役，只作历史回滚运行时。
 - **范围**：采集、存箱与回家按动作结果推进，支持暂停、取消和按步骤恢复。防御准备识别已装备的护甲和盾牌。树场选择最近的原木，成功砍伐后立即计数。分享下载在发送前原子预占名额。分片拼接逐片校验 SHA-256。age 密钥包收录 mcbot 目标库、任务状态和世界记忆。同 schema 回滚保留数据库及 WAL。

@@ -266,9 +266,9 @@ if (-not $SkipPublic) {
     "CSP/nosniff/referrer/HSTS OK"
   }
   Check "公网首页与 PWA" {
-    $home = Get-HttpBody "$AppUrl/" -ExtraArgs $accessArgs
-    if ($home -match "请使用客户端") {
-      if ($home -match 'id="root"') { throw "说明页仍包含管理界面根节点" }
+    $page = Get-HttpBody "$AppUrl/" -ExtraArgs $accessArgs
+    if ($page -match "请使用客户端") {
+      if ($page -match 'id="root"') { throw "说明页仍包含管理界面根节点" }
       foreach ($path in @("/manifest.webmanifest", "/sw.js", "/offline.html")) {
         $code = Get-HttpStatus "$AppUrl$path" -ExtraArgs $accessArgs
         if ($code -ne "404") { throw "$path HTTP $code（说明页模式下应为 404）" }

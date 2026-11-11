@@ -4,7 +4,8 @@
 
 - 同一账号可登记最多 10 台 Windows 或 Android 客户端。设备用 Ed25519 签名 Bearer 请求。前台每 30 秒心跳，90 秒内算在线。浏览器仍用 Cookie 与 CSRF。
 - `PUBLIC_APP_SHELL` 默认开启。关闭后，应用公网主机只返回「请使用客户端」和分享页；`127.0.0.1`、`localhost` 与 `::1` 仍提供完整界面。健康检查、公开分享、QQ Webhook 与 AI 反代保持可用。
-- 工作区 schema 21。本版尚未部署，未发布 Tag。部署前保存并核验当时生产库快照；迁移后的演练按 schema 21。客户端与 schema 21 绑定。退回 v1.1.1 必须恢复该快照、旧 release、当时的 Access 策略与公网界面。
+- schema 21 已于 2026-11-11 部署。未发布 Tag。迁移前快照 `db-predeploy-20261111T104848131Z.sqlite`（schema 20，sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）。迁移后的演练按 schema 21，当前演练仍是 `20261110T022941Z`。客户端与 schema 21 绑定。退回 v1.1.1 必须恢复该快照、旧 release、当时的 Access 策略与公网界面。
+- 冒烟脚本读取公网首页时使用 `$page`，避免占用 PowerShell 只读变量 `$HOME`。
 - 已有的 Windows 安装包和 arm64 APK 是版本号改为 1.2.0 之前生成的，包内版本仍是 1.1.1，且没有写入接口源。`tauri android build` 在本机的退出码是 1。没有在手机上安装。
 
 ## [v1.1.1] - 2026-11-10

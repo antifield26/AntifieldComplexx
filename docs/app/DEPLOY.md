@@ -1,8 +1,8 @@
 # 部署手册（Raspberry Pi 5 / Debian 13，v1.2.0）
 
-> 工作区 v1.2.0 尚未部署。客户端与 schema 21 绑定。部署前保存并核验当时生产库快照；迁移后的演练按 schema 21。退回 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略与公网界面（`PUBLIC_APP_SHELL=true`）。只恢复公网界面时改回该开关并重启，不改 schema。当前生产演练 `20261110T022941Z` 是 schema 20，不能代替这次演练。
+> v1.2.0 已于 2026-11-11 部署。客户端与 schema 21 绑定。迁移前快照 `db-predeploy-20261111T104848131Z.sqlite`（schema 20，sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）。迁移后的演练按 schema 21。退回 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略与公网界面（`PUBLIC_APP_SHELL=true`）。只恢复公网界面时改回该开关并重启，不改 schema。当前生产演练 `20261110T022941Z` 是 schema 20，不能代替 schema 21 演练。
 
-> 生产仍是 v1.1.1。Workbench release 为 `20261109T143755Z`，mcbot 为 `20261110T022539Z`。回滚到 v1.1.0 使用各自的 `20261108T080545Z` release，Workbench 保留 schema 20 现行库。部署与备份证据见 [验收记录](ACCEPTANCE.md)。
+> Workbench release 为 `20261111T104738Z`，mcbot 为 `20261111T105117Z`。退回 v1.1.1 使用 Workbench `20261109T143755Z` 与 mcbot `20261110T022539Z`，并恢复上面的快照。回滚到 v1.1.0 使用各自的 `20261108T080545Z` release。部署与备份证据见 [验收记录](ACCEPTANCE.md)。
 
 > **v1.1.0 部署记录（2026-11-08，历史）**。Workbench 与 mcbot release 为 `20261108T080545Z`，DSH release 为 `20261108T143448Z`。Workbench schema 20，mcbot 契约 v2。OpenCode 2.2.5 已从 Pi 退役。安装、验收与回滚见 [Agent Harness 切换手册](./DSH-MIGRATION.md)。
 
@@ -19,7 +19,7 @@
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
-- 当前 schema **v21**（工作区，尚未部署）：设备登记、会话绑定与请求签名。生产 v1.1.1 仍是 schema 20。部署前保存并核验当时生产库快照；迁移后的演练按 schema 21。客户端与 schema 21 绑定。回到 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略与公网界面。schema 20 增加外部告警 Webhook 和 QQ 入队状态。
+- 当前 schema **v21**（2026-11-11 已部署）：设备登记、会话绑定与请求签名。迁移前生产库是 schema 20，快照为 `db-predeploy-20261111T104848131Z.sqlite`。迁移后的演练按 schema 21。客户端与 schema 21 绑定。回到 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略与公网界面。schema 20 增加外部告警 Webhook 和 QQ 入队状态。
 - `PUBLIC_APP_SHELL` 默认 `true`，公网继续提供完整界面。设为 `false` 并重启后，应用公网主机只返回说明页「请使用客户端」和分享页；`127.0.0.1`、`localhost` 与 `::1` 仍提供完整界面。单独回滚该开关：改回 `true` 并重启，不改 schema。Cloudflare Access 对 `/api/*` 的 bypass 在控制台单独调整。
 
 ## v1.0.13 发布记录
@@ -407,7 +407,7 @@ sudo -u opencode /var/lib/opencode/.opencode/bin/opencode --version   # 期望 v
 ### 3.3 Node.js 运行时安全更新（v26.13.0）
 
 生产应用使用 `/usr/local/bin/node`（systemd `ExecStart`）；npm/npx 仍指向 nvm（仅构建/部署工具）。
-当前生产为 **v26.13.0**（2026-11-07，官方 linux-arm64，SHA-256 校验通过）。相对 v26.12.1 只切换 Lithium LTS 标记，没有其它运行时改动。npm 仍是 nvm 12.2.0。`/usr/local/bin/node` 与 `/usr/local/lib/nodejs/node-v26.13.0-linux-arm64` 保留；`node.v26.12.1`、`node.v26.11.1` 和 `node-v26.12.1-linux-arm64` 已删除。Node 升级当时应用与 mcbot `/healthz` 为 1.0.13。当前应用与 mcbot `/healthz` 为 v1.1.1，schema 20，契约 v2。
+当前生产为 **v26.13.0**（2026-11-07，官方 linux-arm64，SHA-256 校验通过）。相对 v26.12.1 只切换 Lithium LTS 标记，没有其它运行时改动。npm 仍是 nvm 12.2.0。`/usr/local/bin/node` 与 `/usr/local/lib/nodejs/node-v26.13.0-linux-arm64` 保留；`node.v26.12.1`、`node.v26.11.1` 和 `node-v26.12.1-linux-arm64` 已删除。Node 升级当时应用与 mcbot `/healthz` 为 1.0.13。当前应用与 mcbot `/healthz` 为 v1.2.0，schema 21，契约 v2。
 
 下面是 2026-10-22 从 v26.11.1 升到 **v26.12.1** 的记录。未改动应用版本/schema。
 
