@@ -111,8 +111,8 @@ Bot 出站为 Pi 直连；PC 无代理隧道脚本/计划任务，生产 env 不
 | 模块 | 职责 |
 |---|---|
 | `server/src/config.ts` | 读取 env 文件/环境变量、数值与安全组合校验 |
-| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema **v20**；v19 `dedupe_key`，v20 `external_alert_deliveries`）、事务；迁移 13 删除非 QQ Bot 及级联数据；迁移 14 结构化记忆两表；迁移 16 群聊角色卡；迁移 17 `audit_write_failures`；迁移 18 将 `bot_*` 更名为 `chatbot_*`，并把 `lofii.event_cursor` 改为 `mcbot.event_cursor`（均不可逆） |
-| `auth/` | scrypt、TOTP、恢复码、挑战、会话、CSRF、限流、审计（字段截断 + 失败诊断 `getAuditDiagnostics`） |
+| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema **v21**；v19 `dedupe_key`，v20 `external_alert_deliveries`，v21 `devices`/`device_nonces`/会话 `device_id`）、事务；迁移 13 删除非 QQ Bot 及级联数据；迁移 14 结构化记忆两表；迁移 16 群聊角色卡；迁移 17 `audit_write_failures`；迁移 18 将 `bot_*` 更名为 `chatbot_*`，并把 `lofii.event_cursor` 改为 `mcbot.event_cursor`（均不可逆） |
+| `auth/` | scrypt、TOTP、恢复码、挑战、会话、设备登记与 Ed25519 请求签名、CSRF、限流、审计（字段截断 + 失败诊断 `getAuditDiagnostics`） |
 | `files/` | 目录树、上传落库、配额、搜索、回收站、文本预览、MIME 安全分类、`origin` 可见性、物理孤儿回收 |
 | `uploads/` | 分片上传会话/块索引、配额预留、断点状态、原子拼接、过期/终态清理 |
 | `mc/` | SLP 查询、RCON 客户端、状态/metrics、白名单增删与复核 |
@@ -140,7 +140,9 @@ SQLite（WAL）核心表（schema v20）：
 
 - `users`：单管理员；scrypt 哈希 + salt；TOTP secret；`totp_last_step` 防重放；恢复码哈希 JSON。
 - `auth_challenges`：密码通过后的 5 分钟一次性挑战（只存 token 哈希）。
-- `sessions`：会话 token 哈希、CSRF 哈希、7 天过期、IP/UA、last_seen。
+- `sessions`：会话 token 哈希、CSRF 哈希、7 天过期、IP/UA、last_seen。浏览器会话的 `device_id` 为空；客户端会话指向 `devices.id`。
+- `devices`：同一账号的 Windows / Android 客户端。保存显示名、平台、Ed25519 公钥、应用版本、最近心跳与吊销时间。公钥唯一。吊销后保留行，阻止同一密钥再次登记。同一账号最多 10 台未吊销设备。
+- `device_nonces`：设备 id 与 nonce 联合主键，保存过期时间。签名校验通过后写入；重复写入视为重放。过期行在下一次写入前清理。
 - `files`：`id / parent_id / name / kind(file|dir) / size / mime / sha256 / storage_key / created_at / updated_at / deleted_at / deleted_parent_id / origin`；`origin ∈ user|note|system`，唯一索引为 `(COALESCE(parent_id,''), name COLLATE NOCASE, origin) WHERE deleted_at IS NULL`；`files(id)` 自引用。
 - `audit_log`：动作、目标、IP；保留 90 天；写入时 actor≤64、target≤256、detail≤4 KiB。
 - `login_attempts`：登录成功/失败记录。
@@ -155,7 +157,7 @@ SQLite（WAL）核心表（schema v20）：
 - `alert_events`、`alert_state`：告警历史/去重冷却；`alert_events` 保留 90 天。schema v20 增加 `external_alert_deliveries`（主键 `event_id`+`channel`，通道为 webhook/qq，状态 pending/done/dead/skipped），重启后补投未完成的外部投递；历史事件不补发。
 - `metrics_samples`：60s 主机指标样本（`ts/ts_epoch/cpu/mem/temp/disk/load`），按 `ts_epoch` 索引，30 天保留。
 - `chatbots`：平台/名称/启用/公开配置 + `secret_ciphertext/secret_iv/secret_tag/key_version`（AES-256-GCM）；`last_error/last_checked_at`。
-  当前 schema v20；`chatbots` 仅 QQ Bot，`chatbot_memory_items`/`chatbot_memory_state` 为结构化记忆权威，`chatbot_group_roles` 保存群聊共享角色卡，`audit_write_failures` 保存审计失败诊断，`alert_events.dedupe_key` 可空并有部分唯一索引，`external_alert_deliveries` 记录外部告警的 Webhook 与 QQ 入队。
+  工作区 schema v21。`chatbots` 仅 QQ Bot，`chatbot_memory_items`/`chatbot_memory_state` 为结构化记忆权威，`chatbot_group_roles` 保存群聊共享角色卡，`audit_write_failures` 保存审计失败诊断，`alert_events.dedupe_key` 可空并有部分唯一索引，`external_alert_deliveries` 记录外部告警的 Webhook 与 QQ 入队。
 - `chatbot_targets`：每 Bot 的频道/用户/群组目标，`(chatbot_id, external_id)` 唯一；`allow_commands` 默认 0、`allow_notifications` 默认 1、`allow_chat` 默认 0；
   `quiet_start_minute`/`quiet_end_minute`（0–1439，可空）。`chat_trigger` 列保留但 API/逻辑不读写。
 - `chatbot_deliveries`：通知/回复/发布/测试投递队列，状态 `queued|sending|sent|failed|dead`；`dedupe_key` 唯一（通知按告警事件去重）；`next_attempt_at` 承载静默延后。
@@ -171,7 +173,7 @@ SQLite（WAL）核心表（schema v20）：
   不通过 API/UI 暴露正文，按 AI 会话保留期清理；`/forget confirm` 与管理删除会同时清 DB 行与镜像。
 - `chatbot_inbound_targets`：`(chatbot_id, target_external_id, user_id)` 主键，记录最近入站目标/用户/类型/`is_direct`/`last_seen_at`；不存消息正文，每 Bot 最多 500 条、按事件保留期清理。
 - v0.7.3 上下文文档不在 SQLite：`ChatbotContextStore` 在 `CHATBOT_CONTEXT_DIR` 下按哈希作用域写 `role.md`/`memory.md`（派生数据，不进入备份；`/reset`/`/forget`/删除清理，维护任务回收超期孤儿）；OpenCode 仅按会话 permissions 读取当前作用域两份文档。
-- mcbot 对接不新增表/列：告警游标写入既有 `meta` 表的 `mcbot.event_cursor` 键（JSON `{bootId,lastEventId,lastTs}`；v1.0.0 迁移自 `lofii.event_cursor`）；mcbot 事件/聊天缓存只在服务端内存，不落库；mcbot 告警事件复用 `alert_events`（`status='event'`），不写 `alert_state`。当前 schema v20，这些事件带可空 `dedupe_key`。外部告警投递写在 `external_alert_deliveries`，不写入 `alert_state`。
+- mcbot 对接不新增表/列：告警游标写入既有 `meta` 表的 `mcbot.event_cursor` 键（JSON `{bootId,lastEventId,lastTs}`；v1.0.0 迁移自 `lofii.event_cursor`）；mcbot 事件/聊天缓存只在服务端内存，不落库；mcbot 告警事件复用 `alert_events`（`status='event'`），不写 `alert_state`。schema v19 起这些事件带可空 `dedupe_key`。外部告警投递写在 `external_alert_deliveries`，不写入 `alert_state`。
 
 世界备份/拉取/演练状态不在 SQLite：由 root/PC 脚本写 `/var/lib/antifieldcloud/{world-backup,world-pull,drill}-status.json`（0644，应用只读解析）。
 
@@ -184,9 +186,9 @@ SQLite（WAL）核心表（schema v20）：
 ## 5. 认证流程
 
 1. `POST /api/auth/password`：限流 → scrypt 校验 → 生成 5 分钟挑战（DB 存哈希）→ 返回 challenge；用户名超过 64 字符直接 400。
-2. `POST /api/auth/totp`：校验 TOTP（±1 步，且 step > 上次使用）或恢复码 → 创建会话与 CSRF token → 在 app 主机设 Cookie。
+2. `POST /api/auth/totp`：校验 TOTP（±1 步，且 step > 上次使用）或恢复码 → 创建会话与 CSRF token → 在 app 主机设 Cookie。请求带合法 `device` 时，在同一事务里登记或复用设备，并把 `device_id` 写入会话；响应额外返回会话原文。浏览器登录不返回会话原文。
 3. 会话 Cookie：app 主机 host-only `af_session`（HttpOnly）+ `af_csrf`（可读），HTTPS 下 `Secure; SameSite=Lax`，不设 `Domain`；loopback HTTP 例外。AI 主机通过 app 签发的 60s 一次性 ticket（`GET /api/auth/ai-ticket` → `GET /__af/sso/<ticket>`）获得自己的 host-only `af_session`，不共享父域 Cookie；登录/退出响应会清理旧父域 Cookie。
-4. 写操作：`X-CSRF-Token` 与 DB 内 CSRF 哈希比对；若带 Origin，还必须在 app/loopback 白名单（ai 源不再作为 app 写请求受信 Origin）。
+4. 写操作：`X-CSRF-Token` 与 DB 内 CSRF 哈希比对；若带 Origin，还必须在 app/loopback 白名单（ai 源不再作为 app 写请求受信 Origin）。`Authorization: Bearer` 必须同时通过设备签名；通过后不再要求 CSRF。认证头形状不合法时不回退 Cookie。
 5. 改密/重置 TOTP 使其它会话失效；恢复码一次性；再认证要求“当前密码 + TOTP”。
 6. 限流：每 IP 5 次失败/15 分钟、全局 60 次/小时（loopback 不占全局桶）、TOTP 全局 120 次/小时；再认证独立限流并恒定延迟。
 7. 信任模型：`trustProxy:false`；仅 socket 为 loopback 时采信 `CF-Connecting-IP`/`X-Forwarded-Proto`，
@@ -254,7 +256,7 @@ SQLite（WAL）核心表（schema v20）：
 - nftables 默认拒绝入站；22 仅直连/校园网段（新建连接限速 20/min），25565 仅同网段，25575 仅 loopback，DHCP 仅 eth0/wlan0；
   出站不限制。改动前确认当前 SSH 来源在允许网段内。SSH 为仅公钥（`00-` drop-in），旧回滚备份归档在 `/var/backups/antifieldcloud/`。
 - Bot 部署：`bootstrap-env.sh` 生成/复用 `CHATBOT_SECRET_KEY` 并纳管 `CHATBOT_AI_*`、Chat/记忆键、连通性键、回答/图片键、`CHATBOT_MEMORY_*`；
-  `CHATBOT_AI_VISION_ENABLED` 默认 true；`CHATBOT_ENABLED` 默认 false。当前 schema v20；从 v1.0.8 退回 v1.0.7 必须先恢复 schema 19 迁移前 DB 快照；生产 QQ 图片由 DSH QQ Agent 交给支持 image 的模型；平台仅 QQ 官方 Bot。
+  `CHATBOT_AI_VISION_ENABLED` 默认 true；`CHATBOT_ENABLED` 默认 false。工作区 schema v21，生产仍是 schema 20；从 v1.0.8 退回 v1.0.7 必须先恢复 schema 19 迁移前 DB 快照；生产 QQ 图片由 DSH QQ Agent 交给支持 image 的模型；平台仅 QQ 官方 Bot。
   Cloudflare Access 需对 Bot Webhook/health/公开分享路径 bypass（边缘配置，不在仓库内）；`smoke.ps1` 可选用 Access service token。
 - mcbot 部署（v0.8.0 引入，v0.8.1 安全加固；默认关闭）：mcbot v1.1.1（最低 v0.6.0，契约 v2）作为独立服务仅监听 `127.0.0.1:3010`（不经 Cloudflare/nftables 对外）；应用 env 由 `bootstrap-env.sh` 纳管 `MCBOT_*`，Token 由 root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 同步（`--check` 只比较；同目录临时文件 + `mv` 原子替换）；启用顺序为 mcbot 就绪 → 同步 Token → `MCBOT_ENABLED=true` → 重启应用；关闭对接设 `MCBOT_ENABLED=false` 并重启，不单独改 schema；`smoke.ps1 -ExpectedMcbotVersion 1.1.1 -ExpectedMcbotContractVersion 2`（最低 0.6.0）/`-SkipMcbot` 覆盖只读检查。生产 release `/opt/mcbot/releases/20261110T022539Z`（v1.1.1）。回滚到 v1.1.0 使用 `/opt/mcbot/releases/20261108T080545Z`。再退到 v1.0.13 为 `/opt/mcbot/releases/20261107T121646Z`。v0.8.1 曾于 2026-10-27 部署（release `20261027T113055Z`/commit `5405a8d`，当时 mcbot v0.6.1 release `20261027T111640Z`/commit `a0a28da`）。
 - fail2ban：dbfile 持久化封禁；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后以 `systemd-run --collect --on-active=3` 异步重启 fail2ban，从数据库恢复 set；手工 `systemctl reload nftables` 不触发 `ExecStartPost`，仍需 `systemctl restart fail2ban`。

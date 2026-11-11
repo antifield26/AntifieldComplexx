@@ -51,12 +51,12 @@ test('v6 库升级到 v18：创建 chatbot/AI/Chat/角色卡表，并补齐触�
     createDatabaseAt(path, 6)
     const upgraded = openDatabase({ path })
     try {
-      assert.equal(SUPPORTED_SCHEMA_VERSION, 20)
+      assert.equal(SUPPORTED_SCHEMA_VERSION, 21)
       const dedupe = upgraded
         .prepare("SELECT name FROM pragma_table_info('alert_events') WHERE name = 'dedupe_key'")
         .get() as { name: string } | undefined
       assert.equal(dedupe?.name, 'dedupe_key')
-      assert.equal(chatbotVersion(upgraded), '20')
+      assert.equal(chatbotVersion(upgraded), '21')
       const tables = tableNames(upgraded)
       for (const table of [
         'chatbots',
@@ -74,6 +74,9 @@ test('v6 库升级到 v18：创建 chatbot/AI/Chat/角色卡表，并补齐触�
       }
       assert.ok(!tables.includes('bots'))
       assert.ok(!tables.includes('bot_targets'))
+      assert.ok(tables.includes('devices'))
+      assert.ok(tables.includes('device_nonces'))
+      assert.ok(tableColumns(upgraded, 'sessions').includes('device_id'))
       assert.ok(tableColumns(upgraded, 'chatbot_ai_sessions').includes('mode'))
       const targetColumns = tableColumns(upgraded, 'chatbot_targets')
       for (const column of ['quiet_start_minute', 'quiet_end_minute', 'allow_chat', 'qq_number', 'chat_trigger', 'chatbot_id']) {
@@ -141,7 +144,7 @@ test('v12 库升级到 v18：删除非 QQ chatbot 及其级联数据，保留 QQ
     })
     const upgraded = openDatabase({ path })
     try {
-      assert.equal(chatbotVersion(upgraded), '20')
+      assert.equal(chatbotVersion(upgraded), '21')
       const chatbots = upgraded.prepare('SELECT id FROM chatbots ORDER BY id').all() as unknown as { id: string }[]
       assert.deepEqual(chatbots.map((row) => row.id), ['bot-qq'])
       const count = (table: string, chatbotId: string): number => {
@@ -174,7 +177,7 @@ test('v11 库升级到 v18：追加触发策略与事件诊断列，旧行按默
     })
     const upgraded = openDatabase({ path })
     try {
-      assert.equal(chatbotVersion(upgraded), '20')
+      assert.equal(chatbotVersion(upgraded), '21')
       const target = upgraded.prepare("SELECT chat_trigger FROM chatbot_targets WHERE id = 'target-v11'").get() as { chat_trigger: string }
       assert.equal(target.chat_trigger, 'mention')
       const event = upgraded
@@ -242,7 +245,7 @@ test('v13 库升级到 v18：创建结构化记忆表并保留旧滚动摘要', 
     })
     const upgraded = openDatabase({ path })
     try {
-      assert.equal(chatbotVersion(upgraded), '20')
+      assert.equal(chatbotVersion(upgraded), '21')
       const tables = tableNames(upgraded)
       assert.ok(tables.includes('chatbot_memory_items'))
       assert.ok(tables.includes('chatbot_memory_state'))
@@ -289,7 +292,7 @@ test('v17 库升级到 v18：chatbot 表/列/meta 键全量重命名且数据保
     })
     const upgraded = openDatabase({ path })
     try {
-      assert.equal(chatbotVersion(upgraded), '20')
+      assert.equal(chatbotVersion(upgraded), '21')
       const tables = tableNames(upgraded)
       assert.ok(tables.includes('chatbots'))
       assert.ok(!tables.includes('bots'))

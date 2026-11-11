@@ -63,6 +63,7 @@ export function loggerOptions(config: Config): FastifyServerOptions['logger'] {
     redact: {
       paths: [
         'req.headers.authorization',
+        'req.headers["x-device-signature"]',
         'req.headers.cookie',
         'res.headers["set-cookie"]',
         'req.body.password',

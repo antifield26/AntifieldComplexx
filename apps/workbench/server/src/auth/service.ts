@@ -20,7 +20,9 @@ import { isoAfterSeconds, nowIso } from '../util/time.ts'
 import { audit } from './audit.ts'
 import { SlidingWindowLimiter } from './limiter.ts'
 import { dummyPasswordHash, hashPassword, validatePassword, verifyPassword } from './password.ts'
+import { assertDeviceEnrollment, registerDevice } from './devices.ts'
 import { createSession, deleteAllSessions, deleteOtherSessions, deleteSession, findSession, updateSessionCsrf } from './sessions.ts'
+import { transaction } from '../db.ts'
 import { verifyTotp, verifyTotpForReauth } from './totp.ts'
 import {
   findUserByUsername,
@@ -73,6 +75,13 @@ export interface TotpInput {
   recoveryCode?: string
   ip: string
   userAgent: string | null
+  /** 客户端登记。浏览器登录不传，响应也不回会话原文。 */
+  device?: {
+    name: unknown
+    platform: unknown
+    publicKey: unknown
+    appVersion: unknown
+  }
 }
 
 export interface ReauthInput {
@@ -95,6 +104,12 @@ export interface LoginResult {
   csrfToken: string
   sessionToken: string
   expiresAt: string
+  /** 仅设备登记时返回。浏览器登录不包含会话原文。 */
+  device?: {
+    id: string
+    name: string
+    platform: 'windows' | 'android'
+  }
 }
 
 /** 判断来源 IP 是否为 loopback（本机开发/运维，免占全局限流桶）。 */
@@ -188,6 +203,7 @@ export class AuthService {
       | undefined
     if (!row) throw challengeExpired()
     if (row.challenge_used || Date.parse(row.challenge_expires_at) <= Date.now()) throw challengeExpired()
+    const enrollment = input.device ? assertDeviceEnrollment(input.device) : null
 
     let usedRecovery = false
     if (input.recoveryCode) {
@@ -217,21 +233,34 @@ export class AuthService {
     this.db.prepare('UPDATE auth_challenges SET used = 1 WHERE token_hash = ?').run(sha256Hex(input.challenge))
     this.db.prepare('DELETE FROM auth_challenges WHERE user_id = ? AND used = 1').run(row.id)
     const csrfToken = randomToken(24)
-    const session = createSession(
-      this.db,
-      row.id,
-      csrfToken,
-      this.config.sessionTtlDays,
-      input.ip,
-      input.userAgent,
-    )
+    const created = transaction(this.db, () => {
+      const device = enrollment ? registerDevice(this.db, row.id, enrollment) : null
+      const session = createSession(
+        this.db,
+        row.id,
+        csrfToken,
+        this.config.sessionTtlDays,
+        input.ip,
+        input.userAgent,
+        device?.id ?? null,
+      )
+      return { device, session }
+    })
     this.recordAttempt(input.ip, true)
-    audit(this.db, row.username, 'login', usedRecovery ? 'recovery_code' : 'totp', null, input.ip)
+    audit(
+      this.db,
+      row.username,
+      'login',
+      usedRecovery ? 'recovery_code' : 'totp',
+      created.device ? { deviceId: created.device.id, platform: created.device.platform } : null,
+      input.ip,
+    )
     return {
       user: { username: row.username },
       csrfToken,
-      sessionToken: session.token,
-      expiresAt: session.expiresAt,
+      sessionToken: created.session.token,
+      expiresAt: created.session.expiresAt,
+      ...(created.device ? { device: created.device } : {}),
     }
   }
 

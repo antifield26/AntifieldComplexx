@@ -75,7 +75,7 @@ jobs:
       - name: Install
         run: npm ci
 
-      # 覆盖率报告门禁：阈值在 scripts/run-tests.mjs 与 web/vitest.config.ts 中集中定义。
+      # 覆盖率报告门禁：阈值在 scripts/run-tests.mjs 与 apps/client/vitest.config.ts 中集中定义。
       - name: Coverage (server)
         run: npm run test:coverage
 

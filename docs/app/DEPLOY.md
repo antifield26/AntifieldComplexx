@@ -17,7 +17,7 @@
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
-- 当前 schema **v20**（生产）：新增外部告警 Webhook 和 QQ 入队状态。迁移前保存并核验 schema 19 快照。生产版本见下方记录。
+- 当前 schema **v21**（工作区，尚未部署）：设备登记、会话绑定与请求签名。生产 v1.1.1 仍是 schema 20。部署本迁移前保存并核验 schema 20 快照；回到 v1.1.1 必须同时恢复该快照与旧 release。schema 20 增加外部告警 Webhook 和 QQ 入队状态。
 
 ## v1.0.13 发布记录
 

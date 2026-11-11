@@ -16,6 +16,7 @@ export function authOf(request: FastifyRequest): AuthContext {
 
 export function csrfGuard(config: Config) {
   return async function verifyRequestCsrf(request: FastifyRequest): Promise<void> {
+    if (request.deviceSigned) return
     const context = authOf(request)
     if (!verifyCsrf(request, config, context.session)) throw csrfFailed()
   }

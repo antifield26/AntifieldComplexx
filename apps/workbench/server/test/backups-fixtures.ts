@@ -293,6 +293,7 @@ export async function createBackupApp(fx: BackupsFixture): Promise<BackupTestApp
     last_seen_at: '2026-01-01T00:00:00.000Z',
     ip: '127.0.0.1',
     user_agent: 'test',
+    device_id: null,
   }
   const app = Fastify({ logger: false, exposeHeadRoutes: true })
   await app.register(cookie)

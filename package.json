@@ -3,7 +3,7 @@
   "version": "1.1.1",
   "private": true,
   "license": "MIT",
-  "description": "AntifieldComplexx monorepo（apps/workbench + apps/mcbot）",
+  "description": "AntifieldComplexx monorepo（apps/workbench + apps/client + apps/mcbot）",
   "type": "module",
   "engines": {
     "node": ">=26"
@@ -17,7 +17,7 @@
     "build": "npm run build -w @antifieldcomplexx/workbench",
     "start": "npm run start -w @antifieldcomplexx/workbench",
     "typecheck": "npm run typecheck -w @antifieldcomplexx/workbench",
-    "lint": "eslint apps/workbench/server apps/workbench/web scripts --max-warnings=0",
+    "lint": "eslint apps/workbench/server apps/client/src apps/client/vite.config.ts apps/client/vitest.config.ts scripts --max-warnings=0",
     "test": "npm run test -w @antifieldcomplexx/workbench",
     "test:coverage": "npm run test:coverage -w @antifieldcomplexx/workbench",
     "test:web": "npm run test:web -w @antifieldcomplexx/workbench",

@@ -80,6 +80,18 @@ function createV4Database(path: string): void {
         delivered_at TEXT,
         delivery_error TEXT
       );
+      -- schema 4 的真实库已有会话表。夹具补上，供 v21 追加 device_id。
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        csrf_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        ip TEXT,
+        user_agent TEXT
+      );
     `)
   } finally {
     old.close()
@@ -96,6 +108,8 @@ test('v4 旧库升级到 v5：origin 默认 user、唯一索引含 origin、shar
       const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
       assert.equal(version.value, String(SUPPORTED_SCHEMA_VERSION))
       assert.ok(columnsOf(db, 'alert_events').includes('dedupe_key'))
+      assert.ok(columnsOf(db, 'sessions').includes('device_id'))
+      assert.ok(columnsOf(db, 'devices').includes('public_key'))
 
       // files 追加 origin，历史行默认 user；索引已重建为含 origin 的三列索引。
       assert.ok(columnsOf(db, 'files').includes('origin'))

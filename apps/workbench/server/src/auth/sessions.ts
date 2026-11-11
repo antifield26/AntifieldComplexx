@@ -17,15 +17,16 @@ export function createSession(
   ttlDays: number,
   ip: string | null,
   userAgent: string | null,
+  deviceId: string | null = null,
 ): CreatedSession {
   const token = randomToken(32)
   const sessionId = newId()
   const now = nowIso()
   const expiresAt = isoAfterDays(ttlDays)
   db.prepare(
-    `INSERT INTO sessions (id, user_id, token_hash, csrf_hash, created_at, expires_at, last_seen_at, ip, user_agent)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(sessionId, userId, sha256Hex(token), sha256Hex(csrfToken), now, expiresAt, now, ip, userAgent)
+    `INSERT INTO sessions (id, user_id, token_hash, csrf_hash, created_at, expires_at, last_seen_at, ip, user_agent, device_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(sessionId, userId, sha256Hex(token), sha256Hex(csrfToken), now, expiresAt, now, ip, userAgent, deviceId)
   return { token, sessionId, expiresAt }
 }
 

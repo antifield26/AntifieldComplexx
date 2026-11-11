@@ -8,6 +8,8 @@
 
 生产 Workbench release 为 `20261109T143755Z`，mcbot 为 `20261110T022539Z`，DSH 为 `20261108T143448Z`。部署前快照 `db-predeploy-20261109T143804671Z.sqlite` 已校验 schema 20。应用与世界恢复演练 `20261110T022941Z` 通过。Workbench 同 schema 回滚保留现行库及 WAL。
 
+工作区代码 schema **v21**（设备登记与请求签名，尚未部署）。生产仍是 schema 20。部署本迁移后回到 v1.1.1，必须恢复迁移前数据库快照。
+
 **v1.0.7 基线（2026-11-04 已部署，commit `b17102b`）**：schema v19 为 `alert_events.dedupe_key`；mcbot 快照下发 `lastSuccessAt`；mcbot 进程不在或轮询过期走 `service_down`；寻路兜底进入自主重决策（不新增 MCP 工具，不挖掘/不放置/不跑酷）。OpenCode **v2.2.5** 已在树莓派运行，回滚备份 timestamp `20261104T062115Z`。v1.0.7 app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19）、mcbot `/opt/mcbot/releases/20261104T092858Z`。npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
 权威文档：
@@ -38,7 +40,7 @@
 
 - Node >= 26；服务端为原生 TypeScript，`node server/src/main.ts` 直接运行，**不要引入编译/打包服务端步骤**。
 - 相对导入必须带 `.ts` 后缀；禁止 enum/namespace/参数属性等非可擦除语法（`erasableSyntaxOnly` 已开启）。
-- 前端由 Vite 构建，产物 `web/dist`；服务端只托管静态产物，不参与前端编译。
+- 前端源码在 `apps/client`，由 Vite 构建；产物仍是 `apps/workbench/web/dist`。服务端只托管该产物，不参与前端编译。
 - 依赖：服务端运行时依赖放 `dependencies`；React/Vite/ESLint 等仅构建期依赖放 `devDependencies`（Pi 上 `npm ci --omit=dev` 不安装）。
 - 类型工具链（TS7 并排）：`npx tsc` 来自 `@typescript/native`（TypeScript 7.0.2）；`typescript` 包是 `@typescript/typescript6@6.0.2` 别名，仅供 typescript-eslint（8.x 尚不支持 TS7 API）。结论为暂不升级、保留双 alias；不要删除/合并这两个 alias，直到 typescript-eslint 支持 TS7.1 API。
 - 不使用 Docker；Pi 上用 systemd 原生命令运行。
@@ -54,7 +56,7 @@ npm run typecheck      # server + web 两个 tsc 项目
 npm run lint           # ESLint，--max-warnings=0
 npm test               # node --test（server/test/**/*.test.ts 与 scripts/test/**/*.test.mjs）
 npm run test:coverage  # 服务端 + 运维脚本测试 + 覆盖率门禁（CI coverage job）
-npm run test:web       # Vitest + jsdom（web/src/**/*.test.ts(x)）
+npm run test:web       # Vitest + jsdom（apps/client/src/**/*.test.ts(x)）
 npm run test:web:coverage # 前端测试 + 覆盖率门禁
 npm run check          # app + mcbot + 命名门禁，提交前必须全绿
 npm run check:mcbot    # mcbot typecheck + unit tests
@@ -63,7 +65,7 @@ npm run check:docs     # mcbot 文档声明/代码实现一致性检查
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-本地门禁（v1.1.1）：2026-11-09 全量 `npm run check` 为服务端 **640**（639 pass、1 skip）+ web **283** + mcbot **179**；`check-naming`、`check:docs` 通过。2026-11-10 原木计数修复后的 mcbot 单测为 **181** pass。上一版本基线（v1.1.0）：服务端 **633**（632 pass、1 skip）+ web **283** + mcbot **174**。v1.0.13：app **625**（624 pass、1 skip）+ web **283** + mcbot **173**。v1.0.12：app **625**（624 pass、1 skip）+ web **283** + mcbot **168**。v1.0.10：app **625**（624 pass、1 skip）+ web **283** + mcbot **154**。演练为 `20261110T022941Z`（schema 20）。上一版本演练为 `20261108T143038Z`。
+本地门禁（v1.1.1）：2026-11-09 全量 `npm run check` 为服务端 **640**（639 pass、1 skip）+ web **283** + mcbot **179**；`check-naming`、`check:docs` 通过。2026-11-10 原木计数修复后的 mcbot 单测为 **181** pass。工作区 schema 21（2026-11-11，尚未部署）：服务端 **643**（642 pass、1 skip）+ web **301** + mcbot **181**。上一版本基线（v1.1.0）：服务端 **633**（632 pass、1 skip）+ web **283** + mcbot **174**。v1.0.13：app **625**（624 pass、1 skip）+ web **283** + mcbot **173**。v1.0.12：app **625**（624 pass、1 skip）+ web **283** + mcbot **168**。v1.0.10：app **625**（624 pass、1 skip）+ web **283** + mcbot **154**。演练为 `20261110T022941Z`（schema 20）。上一版本演练为 `20261108T143038Z`。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 
@@ -74,8 +76,8 @@ apps/workbench/server/src/
   main.ts            进程入口：配置、DB、Fastify、信号退出、启动指标采样
   config.ts          环境变量解析与校验（非法值/不安全组合失败即退出）
   logger.ts          Fastify/pino 日志与脱敏
-  db.ts              SQLite 打开、迁移（工作区 schema v20）、事务辅助
-  auth/              scrypt、TOTP、会话、CSRF、限流、恢复码、审计（字段截断 + 失败诊断）、Bot 发布 TOTP 再认证
+  db.ts              SQLite 打开、迁移（工作区 schema v21）、事务辅助
+  auth/              scrypt、TOTP、会话、设备登记与请求签名、CSRF、限流、恢复码、审计（字段截断 + 失败诊断）、Bot 发布 TOTP 再认证
   files/             存储、上传、配额、搜索、预览、回收站、files.origin 可见性、物理孤儿回收
   uploads/           分片上传会话/块索引、配额预留、拼接、过期与终态清理
   mc/                SLP、RCON、白名单
@@ -106,7 +108,7 @@ apps/workbench/server/src/
   http/              路由注册、错误处理、静态资源、安全头、requestMeta 信任模型、Cloudflare Access 说明；
                      chatbots.ts 管理 API、bot-webhook.ts 公开入口、mcbot.ts 只读/控制路由
   util/              通用工具（时间、路径、响应、只读状态文件解析 + 64 KiB 上限）
-web/src/             React 页面与组件（只依赖 docs/app/API.md 的契约；/chatbots 管理页；/minecraft 双标签与 mcbot 面板；加密/异地状态卡）
+apps/client/         React 界面与 Tauri 壳（源码只依赖 docs/app/API.md；产物写到 apps/workbench/web/dist）
 scripts/             provision/backup CLI、世界备份 backup-world.mjs、恢复演练 drill.ps1/drill-verify.mjs、
                      world-pull.ps1、backup-pull.ps1、backup-offsite.mjs/.ps1、部署/冒烟 PowerShell、
                      bootstrap-env.sh、backup-secrets.sh、sync-mcbot-tokens.sh（root 同步 mcbot Token）、
@@ -118,7 +120,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 `apps/mcbot/src/autonomy/`：v1.1.0 起生产由 DSH 插件经私有 Unix socket 调用 13 个工具；配置该 socket 后 `/autonomy/mcp` 返回 404。v1.0.2 至 v1.0.13 的 OpenCode 原生 MCP 循环、环境快照、只读容器、进食/装备、事件驱动重决策、策略/预算/急停与审计仍在代码中，供回滚路径使用。世界记忆与聊天记忆分开，分类固定，提示词只带索引。
 
-写作用域约定：服务端改动在 `server/`，前端在 `web/`，脚本/部署在 `scripts/`、`deploy/`，文档在 `docs/` 与根 README/AGENTS/CHANGELOG；跨域改动先在本文件或任务中说明。
+写作用域约定：服务端改动在 `apps/workbench/server/`，前端在 `apps/client/`，脚本/部署在 `scripts/`、`deploy/`，文档在 `docs/` 与根 README/AGENTS/CHANGELOG；跨域改动先在本文件或任务中说明。
 
 ## 5. 安全红线（不可违反）
 
@@ -126,7 +128,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
    `scripts/backup-world.mjs` 是唯一例外：以 root 由 `antifieldcloud-world.timer` 调用，只执行固定的
    `save-off` / `save-all flush` / `save-on`（`save-on` 放在 finally），应用 API 不可触达该能力。
 2. 文件访问只经 DB id，不接受客户端路径；文件内容不可变；禁止覆盖上传。
-3. 所有非 GET `/api` 校验 CSRF；Cookie `HttpOnly + Secure + SameSite=Lax`（仅 loopback HTTP 例外）。
+3. 所有非 GET `/api` 校验 CSRF；Cookie `HttpOnly + Secure + SameSite=Lax`（仅 loopback HTTP 例外）。已通过设备签名的 Bearer 请求不再要求 CSRF。`Authorization` 存在但不是合法 Bearer 时不回退 Cookie。
 4. 密码/TOTP/OpenCode 密码与任何平台/Bot 凭据、age 私钥不得进仓库、日志、错误响应、前端 bundle。
 5. 预览仅白名单类型内联；SVG/HTML/XML 强制下载；文本预览上限 1 MiB。
 6. 代理只允许固定 loopback 上游（`OPENCODE_URL` 启动校验，非 loopback 拒绝启动），客户端 `Authorization` 必须被覆盖；HTTP/WS 均校验 `Origin`。
@@ -147,7 +149,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 ## 6. 数据库与数据
 
-- schema 迁移集中在 `server/src/db.ts` 的 `MIGRATIONS`，启动时按 `meta.schema_version` 顺序执行；迁移只追加，工作区 schema **v20**（v19 增加 `alert_events.dedupe_key`；v20 增加 `external_alert_deliveries`，记录独立 Webhook 和 QQ 入队状态）。
+- schema 迁移集中在 `server/src/db.ts` 的 `MIGRATIONS`，启动时按 `meta.schema_version` 顺序执行；迁移只追加，工作区 schema **v21**（v19 增加 `alert_events.dedupe_key`；v20 增加 `external_alert_deliveries`，记录独立 Webhook 和 QQ 入队状态；v21 增加 `devices`、`device_nonces` 与会话 `device_id`）。
   备份加密/异地副本通过归档名后缀、sidecar 与 `manifest_json` 识别，不修改列/表；群共享记忆归属迁移复用现有 `chatbot_memory_items` 行（一次性 meta 标记 `chatbot_group_memory_owner_migrated_v1`）。
   数据库 schema 高于程序支持版本时拒绝启动。
 - 时间统一存 ISO 8601 UTC 字符串；展示用 `Asia/Shanghai`。

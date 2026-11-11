@@ -54,15 +54,24 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
     const code = typeof body.code === 'string' ? body.code : undefined
     const recoveryCode = typeof body.recoveryCode === 'string' ? body.recoveryCode : undefined
     if (!code && !recoveryCode) throw badRequest('请输入验证码或恢复码', 'invalid_request')
+    if (body.device !== undefined && (!body.device || typeof body.device !== 'object' || Array.isArray(body.device))) {
+      throw badRequest('设备登记不合法', 'invalid_device')
+    }
+    const device = body.device as { name: unknown; platform: unknown; publicKey: unknown; appVersion: unknown } | undefined
     const result = await auth.completeTotpLogin({
       challenge,
       ...(code ? { code } : {}),
       ...(recoveryCode ? { recoveryCode } : {}),
       ip: clientIp(request),
       userAgent: userAgent(request),
+      ...(device ? { device } : {}),
     })
     setAuthCookies(reply, request, config, result.sessionToken, result.csrfToken, result.expiresAt)
-    return { user: result.user, csrfToken: result.csrfToken }
+    return {
+      user: result.user,
+      csrfToken: result.csrfToken,
+      ...(result.device ? { sessionToken: result.sessionToken, expiresAt: result.expiresAt, device: result.device } : {}),
+    }
   })
 
   app.post('/api/auth/logout', { preHandler: [requireAuth, csrf] }, async (request, reply) => {

@@ -26,6 +26,7 @@ const TEST_SESSION: SessionRow = {
   last_seen_at: '2026-01-01T00:00:00.000Z',
   ip: '127.0.0.1',
   user_agent: 'test',
+  device_id: null,
 }
 
 export interface Phase2Fixture {

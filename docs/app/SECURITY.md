@@ -74,6 +74,7 @@
 - TOTP：RFC 6238 SHA-1/6 位/30 秒，±1 步，记录 `totp_last_step` 防重放；恢复码 10 个，一次性，SHA-256 存储。
 - 挑战 5 分钟一次性；会话 7 天；Cookie 属性按协议严格设置；密码最少 12 字符；改密注销其它会话。
 - Cookie 作用域：app 主机 host-only `af_session`/`af_csrf`（不设 `Domain`，HttpOnly/Secure/SameSite=Lax）；ai 主机通过 app 签发的 60 秒一次性 ticket（`/api/auth/ai-ticket` → `/__af/sso/<ticket>`）获得自己的 host-only `af_session`，不使用父域共享 Cookie；app 写请求与公开 unlock 的受信 Origin 只保留 appOrigin（+ loopback 开发例外）。登录/退出响应及每次 `/api/auth/me` 都会清理旧父域 Cookie。
+- 设备会话：客户端登记 Ed25519 公钥。后续请求带 `Authorization: Bearer` 与设备头，签名覆盖方法、路径、查询、原始请求体、时间戳和 nonce。签名通过后不再要求 CSRF。`Authorization` 形状不合法时不回退到 Cookie。签名、会话 token 与私钥不写入日志或审计。同一账号最多 10 台未吊销设备；吊销后保留公钥行。在线只看 90 秒内的显式心跳。带签名的请求体上限 9 MiB。跨源只放行 `http://tauri.localhost`、`https://tauri.localhost` 与 `tauri://localhost`，不反射其它 Origin，响应不带凭据。
 - 限流：登录每 IP 5 次/15 分钟、全局 60 次/小时（loopback 不占全局桶）；TOTP 全局 120 次/小时；
   再认证每 IP 5 次/15 分钟 + 全局 30 次/小时 + TOTP 共享桶；失败审计与恒定延迟。
 - 未认证用户名 ≤64 字符（超长直接 400）；审计写入 actor≤64、target≤256、detail≤4 KiB，读取时再次截断。

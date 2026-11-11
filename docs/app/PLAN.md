@@ -4,6 +4,15 @@
 
 > 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区、主机监控与备份灾备）。
 
+## v1.2.0 进行中
+
+- **版本**：应用版本仍是 **v1.1.1**。工作区 schema **v21**。生产未部署本迁移。
+- **范围**：设备登记、Ed25519 请求签名、Bearer 会话、心跳、列表、改名与吊销。公网页面与 Cookie 登录保持不变。
+- **客户端**：界面源码在 `apps/client`。Windows 壳使用 Tauri，登录后用设备密钥签名请求。构建产物仍输出到 `apps/workbench/web/dist`。本机已生成 NSIS 安装包；这次构建没有写入接口源，安装后的请求会失败关闭。Android 安装包尚未构建。
+- **边界**：mcbot 仍是独立进程。健康检查、公开分享、QQ Webhook 与 AI 反代保持可用。客户端与 Access 策略尚未切换。
+- **回滚**：部署本迁移后，回到 v1.1.1 必须同时恢复迁移前 schema 20 数据库快照与旧 release。
+- **测试**：2026-11-11 全量 `npm run check` 为服务端 **643**（642 pass、1 skip）+ web **301** + mcbot **181**。客户端 `cargo test` 4 通过。命名检查与文档声明检查通过。
+
 ## v1.1.1 当前状态
 
 - **版本**：**v1.1.1**；schema **v20**；mcbot **v1.1.1**（契约 v2）；DeepSeek Harness **0.2.2-rc.1**；QQ 插件 **0.5.5**。OpenCode **v2.2.5** 已从 Pi 退役，只作历史回滚运行时。

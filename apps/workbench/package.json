@@ -10,15 +10,15 @@
   },
   "scripts": {
     "dev": "node --watch server/src/main.ts",
-    "dev:web": "vite --config web/vite.config.ts",
-    "build": "vite build --config web/vite.config.ts",
+    "dev:web": "npm run dev -w @antifieldcomplexx/client",
+    "build": "npm run build -w @antifieldcomplexx/client",
     "start": "node server/src/main.ts",
-    "typecheck": "tsc -p server/tsconfig.json && tsc -p web/tsconfig.json",
+    "typecheck": "tsc -p server/tsconfig.json && npm run typecheck -w @antifieldcomplexx/client",
     "test": "node ../../scripts/run-tests.mjs --app-dir .",
     "test:coverage": "node ../../scripts/run-tests.mjs --app-dir . --coverage",
-    "test:web": "vitest run --config web/vitest.config.ts",
-    "test:web:coverage": "vitest run --config web/vitest.config.ts --coverage",
-    "test:web:watch": "vitest --config web/vitest.config.ts"
+    "test:web": "npm run test -w @antifieldcomplexx/client",
+    "test:web:coverage": "npm run test:coverage -w @antifieldcomplexx/client",
+    "test:web:watch": "npm run test:watch -w @antifieldcomplexx/client"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.3",

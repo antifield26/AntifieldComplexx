@@ -3,6 +3,7 @@
 面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台：统一登录与单一入口，整合云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、mcbot Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、DeepSeek Harness AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
 > 状态：v1.1.1 已部署，schema **v20**，mcbot 契约 v2。Web、QQ 与 mcbot Agent 使用 DeepSeek Harness。OpenCode **v2.2.5** 已从 Pi 退役，离线档供历史回滚。验收与发布门禁见 [ACCEPTANCE](docs/app/ACCEPTANCE.md)。
+> 工作区 schema **v21**（设备认证，尚未部署）。生产 v1.1.1 仍是 schema 20。
 > v1.1.1 本地门禁与生产构建通过。服务端及运维夹具 640 项，前端 283 项，mcbot 181 项。应用与世界隔离恢复演练为 `20261110T022941Z`。
 > 命名：2026-10-27 起项目更名为 **AntifieldComplexx**（原 AntifieldCloud）；GitHub 仓库为 [antifield26/AntifieldComplexx](https://github.com/antifield26/AntifieldComplexx)，旧仓库地址由 GitHub 自动重定向。生产运行时标识符（服务用户、systemd 单元、数据路径、Windows 计划任务）保持不变，详见 [AGENTS.md](AGENTS.md) §0.1。
 > 部署与运维见 [docs/app/DEPLOY.md](docs/app/DEPLOY.md)，备份/恢复见 [docs/app/BACKUP.md](docs/app/BACKUP.md)，契约见 [docs/app/API.md](docs/app/API.md)，路线与验收记录见 [docs/app/ROADMAP.md](docs/app/ROADMAP.md) 与 [docs/app/ACCEPTANCE.md](docs/app/ACCEPTANCE.md)。
@@ -161,7 +162,7 @@ Pi 上同步/校验 mcbot Token（root，本版 mcbot v1.1.1，最低 v0.6.0）�
 
 ```text
 server/    Fastify 服务端（src + test：认证/文件/分片/笔记/分享/告警/备份/指标/Bot/mcbot 对接）
-web/       React 前端（Vite 根目录，含 PWA public/、/chatbots 管理页与 /minecraft 的 mcbot 面板）
+apps/client/  React 界面与 Tauri 壳。Vite 产物仍写到 apps/workbench/web/dist
 scripts/   provisioning、备份 CLI、世界备份（backup-world.mjs）、恢复演练（drill.ps1/drill-verify.mjs）、
            Windows 拉取与部署/冒烟脚本、bootstrap-env.sh、sync-mcbot-tokens.sh、check-version.mjs；
            scripts/test 为运维脚本单元测试

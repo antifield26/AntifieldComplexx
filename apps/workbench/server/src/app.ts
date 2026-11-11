@@ -4,6 +4,7 @@
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import type { DatabaseSync } from 'node:sqlite'
 import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
@@ -27,9 +28,12 @@ import { MetricsService } from './metrics/service.ts'
 import { createMetricsSampler } from './metrics/sampler.ts'
 import { purgeAudit, audit } from './auth/audit.ts'
 import { readSessionToken } from './auth/cookies.ts'
+import { DeviceAuthenticator } from './auth/device-auth.ts'
+import { DEVICE_BODY_LIMIT } from './auth/device-sign.ts'
 import { registerErrorHandler } from './http/errors.ts'
 import { requireAuth } from './http/guards.ts'
 import { registerAuthRoutes } from './http/routes/auth.ts'
+import { registerDeviceRoutes } from './http/routes/devices.ts'
 import { registerFileRoutes } from './http/routes/files.ts'
 import { registerMcRoutes } from './http/routes/mc.ts'
 import { registerDashboardRoutes } from './http/routes/dashboard.ts'
@@ -47,7 +51,9 @@ import { registerBotWebhookRoutes } from './http/routes/chatbot-webhook.ts'
 import { registerBotAiToolRoutes } from './http/routes/chatbot-ai-tool.ts'
 import { McbotService } from './mcbot/service.ts'
 import { registerLofiiRoutes } from './http/routes/mcbot.ts'
-import { wantsHtml } from './http/util.ts'
+import { applyClientCors, isClientOrigin } from './http/client-cors.ts'
+import { clientIp, wantsHtml } from './http/util.ts'
+import { deviceBodyTooLarge } from './util/errors.ts'
 
 export interface AppContext {
   app: FastifyInstance
@@ -75,6 +81,29 @@ export interface AppContext {
   /** listen 成功后启动 mcbot 状态/事件轮询（未启用时为空操作；重复调用幂等）。 */
   startLofii(): void
   runMaintenance(): void
+}
+
+/** 把已读入的原始请求体重新交给解析器。一次推入完整缓冲，避免按字节拆开。 */
+function replayBuffer(raw: Buffer): Readable {
+  let sent = false
+  return new Readable({
+    read() {
+      if (sent) return
+      sent = true
+      if (raw.byteLength === 0) {
+        this.push(null)
+        return
+      }
+      this.push(raw)
+      this.push(null)
+    },
+  })
+}
+
+function declaredContentLength(header: string | string[] | undefined): number | null {
+  if (typeof header !== 'string' || !/^\d+$/.test(header)) return null
+  const length = Number(header)
+  return Number.isSafeInteger(length) ? length : Number.POSITIVE_INFINITY
 }
 
 const CSP = [
@@ -107,6 +136,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   })
 
   const auth = new AuthService(db, config)
+  const deviceAuth = new DeviceAuthenticator(db)
   // 分享吊销钩子：FileService 先构造，闭包延迟引用后构造的 ShareService（避免循环依赖）。
   let sharesRef: ShareService | null = null
   const files = new FileService(db, config, app.log, {
@@ -345,7 +375,47 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       })
       return reply
     }
-    request.auth = auth.authenticate(readSessionToken(request)) ?? undefined
+    if (isClientOrigin(request.headers.origin)) {
+      applyClientCors(reply, request.headers.origin)
+      if (request.method === 'OPTIONS') {
+        reply.code(204).send()
+        return reply
+      }
+    }
+    const bearer = deviceAuth.readBearer(request.headers.authorization)
+    if (bearer) request.bearerToken = bearer
+    else request.auth = auth.authenticate(readSessionToken(request)) ?? undefined
+  })
+
+  // 带 Bearer 的请求在解析前保留原始字节，供设备签名覆盖。无 Bearer 的请求不缓冲。
+  app.addHook('preParsing', async (request, _reply, payload) => {
+    if (!request.bearerToken) return payload
+    const declared = declaredContentLength(request.headers['content-length'])
+    if (declared !== null && declared > DEVICE_BODY_LIMIT) {
+      payload.destroy()
+      throw deviceBodyTooLarge()
+    }
+    const chunks: Buffer[] = []
+    let total = 0
+    for await (const chunk of payload) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      total += buf.length
+      if (total > DEVICE_BODY_LIMIT) {
+        payload.destroy()
+        throw deviceBodyTooLarge()
+      }
+      chunks.push(buf)
+    }
+    const raw = chunks.length === 0 ? Buffer.alloc(0) : chunks.length === 1 ? chunks[0]! : Buffer.concat(chunks)
+    request.deviceRawBody = raw
+    return replayBuffer(raw)
+  })
+
+  // 签名校验放在解析之后，这样路由里的 CSRF 守卫能看到 deviceSigned。
+  app.addHook('preHandler', async (request) => {
+    if (!request.bearerToken) return
+    request.auth = deviceAuth.authenticate(request, request.bearerToken, clientIp(request))
+    request.deviceSigned = true
   })
 
   app.get('/healthz', async () => {
@@ -365,6 +435,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   })
 
   registerAuthRoutes(app, config, auth)
+  registerDeviceRoutes(app, config, db)
   registerFileRoutes(app, config, files, (id) => shares.revokeForFileTree(id))
   registerMcRoutes(app, config, mc)
   registerDashboardRoutes(app, config, dashboard, db)

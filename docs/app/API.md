@@ -17,7 +17,7 @@
 ```
 
 - 常见状态码：`400 invalid_request`、`401 unauthenticated/invalid_password`、`403 csrf_failed`、`404 not_found`、`410 share_expired/share_revoked/share_exhausted`、`409 conflict/quota_exceeded/archive_encrypted/chunk_conflict/backup_busy/restore_busy/plan_expired/archive_exists`、`413 file_too_large`、`415 unsupported_media_type`、`429 rate_limited`、`500 internal_error`、`502 mcbot_auth_failed/mcbot_upstream_error`、`503 chatbot_disabled/chatbot_key_missing/chatbot_ai_tool_isolation_unavailable/chatbot_ai_context_unavailable/mcbot_disabled/mcbot_control_disabled/mcbot_unavailable/mcbot_task_disabled/mcbot_history_disabled/mcbot_not_found`、`507 insufficient_storage`。`429` 同时带 `Retry-After` 响应头与 `error.details.retryAfterSec`。
-- 认证：登录成功后服务端在 **app 主机**下发 host-only `af_session`（HttpOnly）与 `af_csrf`（可读）Cookie（均不设 `Domain`；`ai` 主机使用独立 host-only 会话 Cookie）。除 `GET/HEAD` 外的所有 `/api` 请求必须带 `X-CSRF-Token: <af_csrf>`，并满足 `Origin` 为 `https://app.example.com` / 本机；`ai` 源不再作为 app 写请求的受信 Origin。例外：公开 Bot Webhook `POST /api/chatbot/webhook/:botId` 不挂会话/CSRF，只按平台签名（及时间戳/去重）鉴权（见 §14）；既有公开分享 `POST /api/public/shares/:token/unlock` 也只校验 Origin 与限流。
+- 认证：登录成功后服务端在 **app 主机**下发 host-only `af_session`（HttpOnly）与 `af_csrf`（可读）Cookie（均不设 `Domain`；`ai` 主机使用独立 host-only 会话 Cookie）。除 `GET/HEAD` 外的所有 `/api` 请求必须带 `X-CSRF-Token: <af_csrf>`，并满足 `Origin` 为 `https://app.example.com` / 本机；`ai` 源不再作为 app 写请求的受信 Origin。例外：公开 Bot Webhook `POST /api/chatbot/webhook/:botId` 不挂会话/CSRF，只按平台签名（及时间戳/去重）鉴权（见 §14）；既有公开分享 `POST /api/public/shares/:token/unlock` 也只校验 Origin 与限流。客户端设备会话使用 `Authorization: Bearer` 与设备签名，签名通过后不再要求 CSRF；`Authorization` 存在但不是合法 Bearer 时不回退 Cookie（见 §2）。
 - AI 主机 SSO：app 登录/已登录后访问 `GET /api/auth/ai-ticket?next=<ai 完整 URL>`，服务端校验 `next` 必须属于配置的 `AI_ORIGIN`，签发 60 秒一次性 ticket 并 302 到 `https://ai.example.com/__af/sso/<ticket>?next=<ai 相对路径>`；代理校验/消费 ticket 后设置 ai 主机 host-only `af_session` 并 302 到目标路径。ticket 一次性、绑定 aiOrigin、不落库。
 - Bot 功能开关：`CHATBOT_ENABLED=false` 或缺少 `CHATBOT_SECRET_KEY` 时，Webhook 一律 `404 not_found`，`/api/chatbots*` 写操作返回 `503 chatbot_disabled`/`chatbot_key_missing`；`GET /api/chatbots/status` 仍可读。
 - mcbot 功能开关（v0.8.0 引入，v0.8.1 安全加固）：`MCBOT_ENABLED=false` 时 `/api/mcbot/status` 仍返回 `enabled:false` 的空壳快照，其余 `/api/mcbot/*` 返回 `503 mcbot_disabled`；`MCBOT_CONTROL_TOKEN` 为空（只读模式）时 `/tasks*`、`/move` **与 `/say`** 均返回 `503 mcbot_control_disabled`（`/status`、`/history` 仍可读）。`MCBOT_URL` 只允许 `http(s)://loopback[:port]` 根地址（拒绝 userinfo/路径/查询/片段）。上游未启用/网络不可达返回 `503 mcbot_unavailable`；鉴权失败/上游异常返回 `502 mcbot_auth_failed`/`mcbot_upstream_error`；上游 5xx 的稳定业务码 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `mcbot_*`。响应与错误文本不包含 mcbot URL/Token。
@@ -33,7 +33,7 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "1.1.1", "schemaVersion": 20, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
+{ "ok": true, "version": "1.1.1", "schemaVersion": 21, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
 ```
 
 - `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
@@ -74,6 +74,90 @@
 ```
 
 失败：`401 invalid_code`、`410 challenge_expired`、`429 rate_limited`。
+
+客户端可在同一请求中登记设备。浏览器不传 `device`，响应也不含 `sessionToken`。
+
+```json
+{
+  "challenge": "opaque-token",
+  "code": "123456",
+  "device": {
+    "name": "书房电脑",
+    "platform": "windows",
+    "publicKey": "<43 字符 base64url 的 Ed25519 公钥>",
+    "appVersion": "1.1.1"
+  }
+}
+```
+
+`platform` 只允许 `windows` 或 `android`。`name` 为 1–32 个字符，去掉首尾空白，拒绝控制字符。`appVersion` 为 `x.y.z`，可带最短 1、最长 16 的预发布后缀。公钥不合法、名称不合法或设备字段不是对象时返回 `400 invalid_device`，且不消耗挑战和 TOTP。
+
+登记成功时仍设置 Cookie，并额外返回：
+
+```json
+{
+  "user": { "username": "antifield" },
+  "csrfToken": "csrf-value",
+  "sessionToken": "opaque-session",
+  "expiresAt": "2026-11-18T00:00:00.000Z",
+  "device": { "id": "opaque-id", "name": "书房电脑", "platform": "windows" }
+}
+```
+
+同一用户再次登记同一把未吊销公钥时复用设备 id，并作废该设备的旧会话。公钥属于其他用户时 `409 device_key_in_use`。已吊销公钥 `401 device_revoked`。未吊销设备达到 10 台时 `409 device_limit`。
+
+### 设备请求签名
+
+带 `Authorization: Bearer <sessionToken>` 的请求必须同时带：
+
+- `X-Device-Id`：登记返回的设备 id
+- `X-Device-Timestamp`：Unix 秒，允许偏差 ±120 秒
+- `X-Device-Nonce`：16–64 位 `[A-Za-z0-9_-]`，在偏差窗口内不可重复
+- `X-Device-Signature`：64 字节 Ed25519 签名的 base64url
+
+待签名字符串为 UTF-8，各段以 `\n` 连接：`v1`、设备 id、时间戳原文、nonce、大写方法、含查询的路径、原始请求体的 SHA-256 十六进制。无请求体时对空字节串取哈希。签名通过后写操作不再要求 CSRF。
+
+`/api` 的跨源预检只接受 `http://tauri.localhost`、`https://tauri.localhost` 与 `tauri://localhost`。其它 Origin 不返回跨源头。预检不要求登录或签名，响应不带凭据。
+
+失败：`401 invalid_authorization`（认证头形状不合法）、`401 device_headers_required`、`401 device_clock_skew`、`401 device_signature_invalid`、`401 device_replay`、`401 device_revoked`、`401 device_mismatch`（会话缺失、用户不一致或会话不属于该设备）、`401 unauthenticated`（设备 id 不存在）。同一 IP 15 分钟内签名失败达到 30 次后返回 `429 rate_limited`。请求体超过 9 MiB 时返回 `413 device_body_too_large`，此时尚未校验签名。
+
+### GET /api/devices
+
+需要会话。返回当前用户未吊销的设备，不含公钥、IP 或 User-Agent：
+
+```json
+{
+  "devices": [
+    {
+      "id": "opaque-id",
+      "name": "书房电脑",
+      "platform": "windows",
+      "appVersion": "1.1.1",
+      "online": true,
+      "lastSeenAt": "2026-11-11T00:00:00.000Z",
+      "current": true
+    }
+  ]
+}
+```
+
+`online` 表示最近 90 秒内有过 `POST /api/devices/heartbeat`。`current` 表示该会话绑定的设备。
+
+### POST /api/devices/heartbeat
+
+需要已绑定设备的会话。浏览器会话返回 `403 device_required`。成功 `200 { "ok": true }`，只更新该设备的 `lastSeenAt`。
+
+### POST /api/devices/:id
+
+```json
+{ "name": "客厅电脑" }
+```
+
+需要会话。成功 `200 { "ok": true }`。设备不存在、不属于当前用户或已吊销时 `404 device_not_found`。名称不合法时 `400 invalid_device`。
+
+### DELETE /api/devices/:id
+
+需要会话。成功 `200 { "ok": true }`：写入吊销时间并删除该设备的全部会话。重复吊销仍成功。不属于当前用户时 `404 device_not_found`。
 
 ### GET /api/auth/ai-ticket?next=\<ai 完整 URL\>
 
@@ -396,7 +480,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "1.1.1", "schemaVersion": 20, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
+- `GET /api/version`（需要会话）：`{ "version": "1.1.1", "schemaVersion": 21, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
   - `schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。旧服务端不下发时前端按关闭/未配置/null 降级。
   - `mcbotEnabled`/`mcbotControlEnabled`（v0.8.0）：mcbot 集成是否启用、控制接口是否可用（`MCBOT_ENABLED=true` 且 `MCBOT_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 mcbot 标签与控制操作。两者都不含 mcbot 地址/Token。
   - schema **17**；`audit.persisted` 表示诊断是否来自 DB 持久化行（DB 不可用时 false，回退内存计数）。

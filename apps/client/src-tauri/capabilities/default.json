@@ -1,0 +1,14 @@
+{
+  "identifier": "default",
+  "description": "主窗口可以登记设备并签名请求",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "allow-prepare-device",
+    "allow-store-session",
+    "allow-clear-session",
+    "allow-clear-device",
+    "allow-sign-request",
+    "allow-has-session"
+  ]
+}

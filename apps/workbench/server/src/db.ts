@@ -744,6 +744,30 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX idx_external_alert_due ON external_alert_deliveries(channel, next_attempt_at, event_id)
     WHERE status = 'pending';
   `,
+  `
+  -- 已登记的 Windows / Android 客户端。吊销后保留公钥，阻止同一密钥再次登记。
+  CREATE TABLE devices (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    platform TEXT NOT NULL CHECK (platform IN ('windows', 'android')),
+    public_key TEXT NOT NULL UNIQUE,
+    app_version TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT,
+    revoked_at TEXT
+  );
+  CREATE INDEX idx_devices_user ON devices(user_id, created_at);
+  CREATE TABLE device_nonces (
+    device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    nonce TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    PRIMARY KEY (device_id, nonce)
+  );
+  CREATE INDEX idx_device_nonces_expires ON device_nonces(expires_at);
+  ALTER TABLE sessions ADD COLUMN device_id TEXT REFERENCES devices(id) ON DELETE CASCADE;
+  CREATE INDEX idx_sessions_device ON sessions(device_id);
+  `,
 ]
 
 export interface OpenOptions {

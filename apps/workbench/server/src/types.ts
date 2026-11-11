@@ -31,6 +31,8 @@ export interface SessionRow {
   last_seen_at: string
   ip: string | null
   user_agent: string | null
+  /** 浏览器会话为空。客户端会话指向 devices.id。 */
+  device_id: string | null
 }
 
 export interface FileRow {
