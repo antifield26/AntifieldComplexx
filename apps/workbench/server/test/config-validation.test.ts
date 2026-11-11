@@ -269,6 +269,21 @@ test('MCBOT_TIMEOUT_MS / MCBOT_POLL_MS 越界拒绝启动，边界值可加载',
   }
 })
 
+test('PUBLIC_APP_SHELL 默认开启，false 关闭，其它值拒绝启动', () => {
+  const dir = tempDataDir()
+  try {
+    assert.equal(loadConfig(baseEnv(dir)).publicAppShell, true)
+    assert.equal(loadConfig({ ...baseEnv(dir), PUBLIC_APP_SHELL: 'false' }).publicAppShell, false)
+    assert.equal(loadConfig({ ...baseEnv(dir), PUBLIC_APP_SHELL: 'off' }).publicAppShell, false)
+    assert.throws(
+      () => loadConfig({ ...baseEnv(dir), PUBLIC_APP_SHELL: 'maybe' }),
+      /PUBLIC_APP_SHELL 非法布尔值/,
+    )
+  } finally {
+    cleanupDir(dir)
+  }
+})
+
 test('MCBOT_ALERTS_ENABLED 非法布尔值拒绝启动', () => {
   const dir = tempDataDir()
   try {

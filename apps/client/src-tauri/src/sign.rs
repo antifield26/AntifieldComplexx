@@ -67,12 +67,38 @@ pub(crate) fn canonical_message(
     path: &str,
     body: &[u8],
 ) -> String {
-    let digest = Sha256::digest(body);
-    format!(
-        "v1\n{device_id}\n{timestamp}\n{nonce}\n{}\n{path}\n{}",
-        method.to_ascii_uppercase(),
-        hex_encode(&digest)
+    canonical_message_hashed(
+        device_id,
+        timestamp,
+        nonce,
+        method,
+        path,
+        &hex_encode(&Sha256::digest(body)),
     )
+}
+
+pub(crate) fn canonical_message_hashed(
+    device_id: &str,
+    timestamp: &str,
+    nonce: &str,
+    method: &str,
+    path: &str,
+    body_hash: &str,
+) -> String {
+    format!(
+        "v1\n{device_id}\n{timestamp}\n{nonce}\n{}\n{path}\n{body_hash}",
+        method.to_ascii_uppercase()
+    )
+}
+
+fn resolve_body_hash(body: &[u8], provided: Option<&str>) -> Result<String, SignError> {
+    let Some(hash) = provided else {
+        return Ok(hex_encode(&Sha256::digest(body)));
+    };
+    if hash.len() != 64 || !hash.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err(SignError::BadInput);
+    }
+    Ok(hash.to_owned())
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -189,6 +215,7 @@ pub(crate) fn sign_request(
     method: &str,
     path: &str,
     body: &str,
+    body_sha256: Option<&str>,
 ) -> Result<Option<SignedRequest>, SignError> {
     let Some(session) = store.get(ACCOUNT_SESSION)? else {
         return Ok(None);
@@ -213,7 +240,12 @@ pub(crate) fn sign_request(
     let mut nonce_raw = [0u8; 18];
     OsRng.fill_bytes(&mut nonce_raw);
     let nonce = URL_SAFE_NO_PAD.encode(nonce_raw);
-    let message = canonical_message(&device_id, &timestamp, &nonce, method, path, body.as_bytes());
+    let message = if body_sha256.is_some() {
+        let body_hash = resolve_body_hash(body.as_bytes(), body_sha256)?;
+        canonical_message_hashed(&device_id, &timestamp, &nonce, method, path, &body_hash)
+    } else {
+        canonical_message(&device_id, &timestamp, &nonce, method, path, body.as_bytes())
+    };
     let signature = key.sign(message.as_bytes());
     Ok(Some(SignedRequest {
         authorization: session,
@@ -275,18 +307,58 @@ mod tests {
     #[test]
     fn sign_requires_session_and_rejects_origin_in_path() {
         let store = MemoryStore::default();
-        assert!(sign_request(&store, "GET", "/api/auth/me", "").unwrap().is_none());
+        assert!(sign_request(&store, "GET", "/api/auth/me", "", None).unwrap().is_none());
         let prepared = prepare(&store).unwrap();
         store_session(&store, "session-1", "device-1").unwrap();
-        let signed = sign_request(&store, "POST", "/api/devices/heartbeat", "{}")
+        let signed = sign_request(&store, "POST", "/api/devices/heartbeat", "{}", None)
             .unwrap()
             .unwrap();
         assert_eq!(signed.authorization, "session-1");
         assert_eq!(signed.device_id, "device-1");
         assert_eq!(signed.nonce.len(), 24);
-        assert!(sign_request(&store, "GET", "https://app.example.com/api/auth/me", "").is_err());
+        assert!(sign_request(&store, "GET", "https://app.example.com/api/auth/me", "", None).is_err());
         assert!(store_session(&store, " bad", "device-1").is_err());
         clear_device(&store).unwrap();
         assert_ne!(prepare(&store).unwrap().public_key, prepared.public_key);
+    }
+
+    #[test]
+    fn provided_hash_is_signed_and_bad_hash_is_rejected() {
+        let store = MemoryStore::default();
+        prepare(&store).unwrap();
+        store_session(&store, "session-1", "device-1").unwrap();
+        let hash = "0123456789abcdef".repeat(4);
+        assert!(sign_request(&store, "PUT", "/api/uploads/abc/chunks/0", "not-the-bytes", Some("ABCDEF")).is_err());
+        assert!(sign_request(&store, "PUT", "/api/uploads/abc/chunks/0", "not-the-bytes", Some("abc")).is_err());
+        let signed = sign_request(
+            &store,
+            "PUT",
+            "/api/uploads/abc/chunks/0",
+            "not-the-bytes",
+            Some(&hash),
+        )
+        .unwrap()
+        .unwrap();
+        let key = load_key(&store).unwrap().unwrap();
+        let message = canonical_message_hashed(
+            &signed.device_id,
+            &signed.timestamp,
+            &signed.nonce,
+            "PUT",
+            "/api/uploads/abc/chunks/0",
+            &hash,
+        );
+        let raw = URL_SAFE_NO_PAD.decode(signed.signature).unwrap();
+        let signature = ed25519_dalek::Signature::from_slice(&raw).unwrap();
+        key.verifying_key().verify(message.as_bytes(), &signature).unwrap();
+        let wrong = canonical_message_hashed(
+            &signed.device_id,
+            &signed.timestamp,
+            &signed.nonce,
+            "PUT",
+            "/api/uploads/abc/chunks/0",
+            &hex_encode(&Sha256::digest(b"not-the-bytes")),
+        );
+        assert!(key.verifying_key().verify(wrong.as_bytes(), &signature).is_err());
     }
 }

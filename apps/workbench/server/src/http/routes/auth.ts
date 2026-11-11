@@ -140,6 +140,8 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
    * AI 工作区 SSO 入口（app 主机 + 会话）。
    * next 必须是配置 AI_ORIGIN 的完整 URL；签发一次性 ticket 后 302 到
    * `${aiOrigin}/__af/sso/<ticket>?next=<同源相对 path+query>`，绝不重定向到其它 origin。
+   * Accept 含 application/json 时返回 { url }，供客户端打开次级窗口。浏览器导航仍是 302。
+   * 设备签名请求使用 Bearer 会话，不读取 Cookie。
    */
   app.get('/api/auth/ai-ticket', { preHandler: [requireAuth] }, async (request, reply) => {
     const rawNext = asRecord(request.query).next
@@ -158,11 +160,19 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
     ) {
       throw badRequest('next 必须是 AI 工作区同源地址', 'invalid_next')
     }
-    const sessionToken = readSessionToken(request)
+    const sessionToken =
+      request.deviceSigned && typeof request.bearerToken === 'string' && request.bearerToken.length > 0
+        ? request.bearerToken
+        : readSessionToken(request)
     if (!sessionToken) throw unauthorized()
     const ticket = auth.createAiSsoTicket(sessionToken, config.aiOrigin, Date.now(), hashUserAgent(userAgent(request)))
     const nextPath = `${target.pathname}${target.search}`
     const location = `${config.aiOrigin}/__af/sso/${ticket}?next=${encodeURIComponent(nextPath)}`
+    const accept = request.headers.accept
+    const acceptText = Array.isArray(accept) ? accept.join(',') : (accept ?? '')
+    if (acceptText.toLowerCase().includes('application/json')) {
+      return reply.code(200).header('cache-control', 'no-store').send({ url: location })
+    }
     reply.code(302).header('location', location).header('cache-control', 'no-store').send()
   })
 }

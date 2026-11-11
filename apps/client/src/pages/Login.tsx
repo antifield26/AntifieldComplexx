@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CircleAlert, KeyRound, ShieldCheck } from 'lucide-react'
@@ -9,6 +9,8 @@ import { Logo } from '../components/Logo'
 import { Button } from '../components/Button'
 import { FormField } from '../components/FormField'
 import { formatRetryAfter } from '../lib/format'
+import { openNativeAiWorkspaceUrl, resolveNativeAiNext } from '../lib/ai-workspace'
+import { isNativeRuntime } from '../lib/native'
 import { assignExternalUrl, externalLoginRedirect } from '../lib/next-url'
 
 type LoginStep = 'password' | 'totp' | 'recovery'
@@ -51,24 +53,32 @@ export function Login({ next }: LoginPageProps) {
     if (step === 'recovery') recoveryRef.current?.focus()
   }, [step])
 
+  const leave = useCallback((): void => {
+    if (isNativeRuntime()) {
+      void (async () => {
+        const aiNext = await resolveNativeAiNext(next)
+        if (aiNext) await openNativeAiWorkspaceUrl(aiNext).catch(() => undefined)
+        const redirect = externalLoginRedirect(next)
+        navigate(aiNext || redirect ? '/' : (next ?? '/'), { replace: true })
+      })()
+      return
+    }
+    const redirect = externalLoginRedirect(next)
+    if (redirect) {
+      assignExternalUrl(redirect)
+      return
+    }
+    navigate(next ?? '/', { replace: true })
+  }, [next, navigate])
+
   // 已登录时直接离开登录页（外部 AI 工作区经服务端 ai-ticket 换票，其他外部地址整页跳转）
   useEffect(() => {
     if (status !== 'authenticated') return
-    const redirect = externalLoginRedirect(next)
-    if (redirect) {
-      assignExternalUrl(redirect)
-      return
-    }
-    navigate(next ?? '/', { replace: true })
-  }, [status, next, navigate])
+    leave()
+  }, [status, leave])
 
   const goAfterLogin = (): void => {
-    const redirect = externalLoginRedirect(next)
-    if (redirect) {
-      assignExternalUrl(redirect)
-      return
-    }
-    navigate(next ?? '/', { replace: true })
+    leave()
   }
 
   const resetToPassword = (): void => {

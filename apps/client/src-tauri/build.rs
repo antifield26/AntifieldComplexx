@@ -8,6 +8,7 @@ fn main() {
             "clear_device",
             "sign_request",
             "has_session",
+            "open_ai_workspace",
         ]),
     );
     tauri_build::try_build(attributes).expect("生成客户端权限失败");

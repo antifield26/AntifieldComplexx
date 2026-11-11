@@ -74,7 +74,7 @@
 - TOTP：RFC 6238 SHA-1/6 位/30 秒，±1 步，记录 `totp_last_step` 防重放；恢复码 10 个，一次性，SHA-256 存储。
 - 挑战 5 分钟一次性；会话 7 天；Cookie 属性按协议严格设置；密码最少 12 字符；改密注销其它会话。
 - Cookie 作用域：app 主机 host-only `af_session`/`af_csrf`（不设 `Domain`，HttpOnly/Secure/SameSite=Lax）；ai 主机通过 app 签发的 60 秒一次性 ticket（`/api/auth/ai-ticket` → `/__af/sso/<ticket>`）获得自己的 host-only `af_session`，不使用父域共享 Cookie；app 写请求与公开 unlock 的受信 Origin 只保留 appOrigin（+ loopback 开发例外）。登录/退出响应及每次 `/api/auth/me` 都会清理旧父域 Cookie。
-- 设备会话：客户端登记 Ed25519 公钥。后续请求带 `Authorization: Bearer` 与设备头，签名覆盖方法、路径、查询、原始请求体、时间戳和 nonce。签名通过后不再要求 CSRF。`Authorization` 形状不合法时不回退到 Cookie。签名、会话 token 与私钥不写入日志或审计。同一账号最多 10 台未吊销设备；吊销后保留公钥行。在线只看 90 秒内的显式心跳。带签名的请求体上限 9 MiB。跨源只放行 `http://tauri.localhost`、`https://tauri.localhost` 与 `tauri://localhost`，不反射其它 Origin，响应不带凭据。
+- 设备会话：客户端登记 Ed25519 公钥。后续请求带 `Authorization: Bearer` 与设备头，签名覆盖方法、路径、查询、原始请求体、时间戳和 nonce。签名通过后不再要求 CSRF。`Authorization` 形状不合法时不回退到 Cookie。签名、会话 token 与私钥不写入日志或审计。同一账号最多 10 台未吊销设备；吊销后保留公钥行。在线只看 90 秒内的显式心跳。带签名的请求体上限 9 MiB。跨源只放行 `http://tauri.localhost`、`https://tauri.localhost` 与 `tauri://localhost`，不反射其它 Origin，响应不带凭据。客户端与 schema 21 绑定。退回 v1.1.1 必须恢复迁移前快照、旧 release、Access 策略与公网界面。`PUBLIC_APP_SHELL` 默认开启；只恢复公网界面时改回 true 并重启，不改 schema。
 - 限流：登录每 IP 5 次/15 分钟、全局 60 次/小时（loopback 不占全局桶）；TOTP 全局 120 次/小时；
   再认证每 IP 5 次/15 分钟 + 全局 30 次/小时 + TOTP 共享桶；失败审计与恒定延迟。
 - 未认证用户名 ≤64 字符（超长直接 400）；审计写入 actor≤64、target≤256、detail≤4 KiB，读取时再次截断。
@@ -147,7 +147,7 @@
 - 端点 `/autonomy/mcp` 不得经应用/Cloudflare/nftables 暴露；仅 OpenCode 运行时 loopback 调用。
 ### mcbot（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-- **网络/上游**：mcbot 是独立服务（本版 v1.1.1，最低 v0.6.0，契约 v2），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `mcbot_unavailable` 且不暴露底层 message。自 v0.6.1 起上游逐行把行首 `/` 中和为全角 `／`。
+- **网络/上游**：mcbot 是独立服务（本版 v1.2.0，最低 v0.6.0，契约 v2），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `mcbot_unavailable` 且不暴露底层 message。自 v0.6.1 起上游逐行把行首 `/` 中和为全角 `／`。
 - **Token 分离**：读 Token 仅用于 `/status`、`/events/recent`、`/history`；控制 Token 仅用于 `/task/*`、`/move`、`/say`（v0.8.1 起 `/say` 是写操作，只读模式返回 `503 mcbot_control_disabled`）；控制 Token 为空时控制方法直接 `mcbot_control_disabled`（不发请求）。Token 来自独立 env，由 root 的 `scripts/sync-mcbot-tokens.sh` 同步（只读 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，不读取 RCON/OpenCode 密码；写前备份 env、同目录临时文件 + `mv` 原子替换、保持 0640，不回显 Token）。
 - **HTTP 面**：`/api/mcbot/*` 全部 `requireAuth`；写操作额外 `csrfGuard`；控制类共享 20/min/IP、`/say` 10/min/IP 限流；服务端白名单校验任务名（11 种，含 clearing）、移动动作（4 种）、`taskId`（trim 后 1–64、无内部空白/控制字符）、消息（trim 后 1–720、**任意位置禁止 ASCII `/`**、禁止 C0 控制字符/DEL，防上游按 240 字符切行后的命令注入）；`/history` 校验 `kind` 与数组形状，只透传对象行；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `mcbot_*`，其它错误统一映射为固定中文文案，不含上游原文/URL/Token。
 - **审计**：`mcbot.task.start/stop/resume`、`mcbot.move`、`mcbot.control_failed`、`mcbot.autonomy.start/stop`、`mcbot.presence.set`、`mcbot.goal.*` 记录动作与元数据；`mcbot.say` 只记录字符数，**绝不记录聊天正文**；事件/聊天不写审计正文。

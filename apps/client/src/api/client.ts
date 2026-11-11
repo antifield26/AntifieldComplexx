@@ -103,7 +103,7 @@ import type {
 import { chunkCount, isValidResumeRecord, resumeStorageKey, uploadFingerprint, type ResumeRecord } from '../lib/chunked'
 import { readApiOrigin } from '../lib/api-origin'
 import { isNativeRuntime, signNativeRequest } from '../lib/native'
-import { planJsonRequest } from '../lib/request-plan'
+import { planBinaryRequest, planJsonRequest, sha256Hex } from '../lib/request-plan'
 
 const CSRF_COOKIE = 'af_csrf'
 const CSRF_HEADER = 'X-CSRF-Token'
@@ -713,25 +713,33 @@ function clearResumeRecord(key: string): void {
   }
 }
 
-function uploadChunkXhr(
+async function uploadChunkXhr(
   uploadId: string,
   index: number,
   data: Blob,
   callbacks: { signal?: AbortSignal; onProgress?: (loaded: number, total: number) => void; timeoutMs?: number },
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (callbacks.signal?.aborted) {
-      reject(new ApiError(0, 'aborted', '上传已取消'))
-      return
-    }
+  if (callbacks.signal?.aborted) throw new ApiError(0, 'aborted', '上传已取消')
+  const bytes = await data.arrayBuffer()
+  const native = isNativeRuntime()
+  const planned = await planBinaryRequest({
+    path: `/api/uploads/${encodeId(uploadId)}/chunks/${index}`,
+    method: 'PUT',
+    csrfToken: getCsrfToken(),
+    native,
+    dev: import.meta.env.DEV,
+    origin: readApiOrigin(),
+    contentType: 'application/octet-stream',
+    bodySha256: native ? await sha256Hex(bytes) : null,
+    sign: native ? signNativeRequest : null,
+  })
+  await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('PUT', `/api/uploads/${encodeId(uploadId)}/chunks/${index}`)
-    xhr.withCredentials = true
+    xhr.open('PUT', planned.url)
+    xhr.withCredentials = planned.credentials === 'include'
     xhr.responseType = 'text'
     xhr.timeout = callbacks.timeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS
-    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
-    const token = getCsrfToken()
-    if (token) xhr.setRequestHeader(CSRF_HEADER, token)
+    for (const [name, value] of Object.entries(planned.headers)) xhr.setRequestHeader(name, value)
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) callbacks.onProgress?.(event.loaded, event.total)
     }
@@ -754,7 +762,7 @@ function uploadChunkXhr(
     xhr.onabort = () => reject(new ApiError(0, 'aborted', '上传已取消'))
     xhr.ontimeout = () => reject(new ApiError(0, 'timeout', '分片上传超时，请重试'))
     callbacks.signal?.addEventListener('abort', () => xhr.abort(), { once: true })
-    xhr.send(data)
+    xhr.send(bytes)
   })
 }
 
@@ -1095,6 +1103,10 @@ export const api = {
     },
     me(): Promise<MeResult> {
       return get<MeResult>('/api/auth/me', { skipAuthRedirect: true })
+    },
+    /** 客户端换 AI 工作区一次性地址。浏览器导航仍直接打开本路径并跟随 302。 */
+    aiTicket(next: string): Promise<{ url: string }> {
+      return get<{ url: string }>(`/api/auth/ai-ticket?next=${encodeURIComponent(next)}`)
     },
   },
   devices: {

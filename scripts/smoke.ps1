@@ -149,6 +149,11 @@ function Get-HttpHeaders {
   return (& curl.exe -sS -D - -o NUL --max-time 20 @ExtraArgs $Url 2>&1 | Out-String)
 }
 
+function Get-HttpBody {
+  param([string]$Url, [string[]]$ExtraArgs = @())
+  return (& curl.exe -sS --max-time 20 @ExtraArgs $Url 2>&1 | Out-String)
+}
+
 # Cloudflare Access service token（可选）：仅当 Id/Secret 同时提供时附加请求头；
 # 不输出凭据本身，避免 CI/日志泄漏。未配置 Access 时传了也无害（边缘忽略）。
 function Get-AccessCurlArgs {
@@ -260,12 +265,22 @@ if (-not $SkipPublic) {
     }
     "CSP/nosniff/referrer/HSTS OK"
   }
-  Check "PWA manifest/sw/offline" {
-    foreach ($path in @("/manifest.webmanifest", "/sw.js", "/offline.html")) {
-      $code = Get-HttpStatus "$AppUrl$path" -ExtraArgs $accessArgs
-      if ($code -ne "200") { throw "$path HTTP $code" }
+  Check "公网首页与 PWA" {
+    $home = Get-HttpBody "$AppUrl/" -ExtraArgs $accessArgs
+    if ($home -match "请使用客户端") {
+      if ($home -match 'id="root"') { throw "说明页仍包含管理界面根节点" }
+      foreach ($path in @("/manifest.webmanifest", "/sw.js", "/offline.html")) {
+        $code = Get-HttpStatus "$AppUrl$path" -ExtraArgs $accessArgs
+        if ($code -ne "404") { throw "$path HTTP $code（说明页模式下应为 404）" }
+      }
+      "说明页，PWA 404"
+    } else {
+      foreach ($path in @("/manifest.webmanifest", "/sw.js", "/offline.html")) {
+        $code = Get-HttpStatus "$AppUrl$path" -ExtraArgs $accessArgs
+        if ($code -ne "200") { throw "$path HTTP $code" }
+      }
+      "管理界面，manifest+sw+offline 200"
     }
-    "manifest+sw+offline 200"
   }
   Check "公开分享页 404/410" {
     $code = Get-HttpStatus "$AppUrl/s/antifieldcloud-smoke-invalid-token" -ExtraArgs $accessArgs

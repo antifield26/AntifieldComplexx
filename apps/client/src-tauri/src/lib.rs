@@ -1,5 +1,6 @@
 //! Tauri 命令。页面只能拿到公钥、签名头和是否已有会话。
 
+mod ai;
 mod sign;
 mod store;
 
@@ -26,8 +27,19 @@ fn clear_device() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn sign_request(method: String, path: String, body: String) -> Result<Option<SignedRequest>, String> {
-    sign::sign_request(store::global(), &method, &path, &body).map_err(|error| error.public_message())
+fn sign_request(
+    method: String,
+    path: String,
+    body: String,
+    body_sha256: Option<String>,
+) -> Result<Option<SignedRequest>, String> {
+    sign::sign_request(store::global(), &method, &path, &body, body_sha256.as_deref())
+        .map_err(|error| error.public_message())
+}
+
+#[tauri::command]
+fn open_ai_workspace(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    ai::open_ai_workspace(&app, &url).map_err(str::to_owned)
 }
 
 #[tauri::command]
@@ -44,7 +56,8 @@ pub fn run() {
             clear_session,
             clear_device,
             sign_request,
-            has_session
+            has_session,
+            open_ai_workspace
         ])
         .run(tauri::generate_context!())
         .expect("启动客户端失败");

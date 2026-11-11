@@ -285,6 +285,23 @@ test('AI SSO：/api/auth/ai-ticket 鉴权、next 同源校验、302 与一次性
     // ticket 一次性且绑定 UA：同一 UA 直接消费一次成功，再次失败。
     assert.ok(fx.context.auth.consumeAiSsoTicket(ticket, 'https://ai.test', Date.now(), hashUserAgent('sso-test-agent')))
     assert.equal(fx.context.auth.consumeAiSsoTicket(ticket, 'https://ai.test', Date.now(), hashUserAgent('sso-test-agent')), null)
+
+    const json = await fx.context.app.inject({
+      method: 'GET',
+      url: `/api/auth/ai-ticket?next=${encodeURIComponent('https://ai.test/session/abc?x=1')}`,
+      headers: { ...headers, accept: 'application/json' },
+    })
+    assert.equal(json.statusCode, 200, json.body)
+    assert.equal(json.headers['cache-control'], 'no-store')
+    const jsonUrl = String((json.json() as { url?: string }).url ?? '')
+    assert.match(jsonUrl, /^https:\/\/ai\.test\/__af\/sso\/[A-Za-z0-9_-]{20,128}\?next=%2Fsession%2Fabc%3Fx%3D1$/)
+    const jsonTicket = /\/__af\/sso\/([A-Za-z0-9_-]+)/.exec(jsonUrl)?.[1]
+    assert.ok(jsonTicket)
+    assert.ok(fx.context.auth.consumeAiSsoTicket(jsonTicket, 'https://ai.test', Date.now(), hashUserAgent('sso-test-agent')))
+    assert.equal(
+      fx.context.auth.consumeAiSsoTicket(jsonTicket, 'https://ai.test', Date.now(), hashUserAgent('sso-test-agent')),
+      null,
+    )
   } finally {
     await fx.close()
   }

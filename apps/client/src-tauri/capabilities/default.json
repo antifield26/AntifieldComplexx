@@ -9,6 +9,7 @@
     "allow-clear-session",
     "allow-clear-device",
     "allow-sign-request",
-    "allow-has-session"
+    "allow-has-session",
+    "allow-open-ai-workspace"
   ]
 }

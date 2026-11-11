@@ -1,5 +1,6 @@
 /**
  * Fastify 应用装配：插件、Host 分流、认证上下文、安全头、路由、静态资源与 SPA 回退。
+ * PUBLIC_APP_SHELL 关闭时，应用公网主机不提供管理界面，只返回说明页和分享页。
  * 所有安全边界在 app 层显式建立，路由只处理业务。
  */
 import { existsSync } from 'node:fs'
@@ -52,6 +53,7 @@ import { registerBotAiToolRoutes } from './http/routes/chatbot-ai-tool.ts'
 import { McbotService } from './mcbot/service.ts'
 import { registerLofiiRoutes } from './http/routes/mcbot.ts'
 import { applyClientCors, isClientOrigin } from './http/client-cors.ts'
+import { hidesPublicShell, isPublicShellAsset, registerPublicShell, requestPathname, sendClientNotice } from './http/public-shell.ts'
 import { clientIp, wantsHtml } from './http/util.ts'
 import { deviceBodyTooLarge } from './util/errors.ts'
 
@@ -309,6 +311,20 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
 
   const webRoot = config.webDistDir
   const hasWeb = existsSync(join(webRoot, 'index.html'))
+  // 必须早于静态插件：关闭公网界面后，已存在的 index、PWA 与图标也不能再被发出。
+  app.addHook('onRequest', async (request, reply) => {
+    if (request.method !== 'GET' && request.method !== 'HEAD') return
+    if (!hidesPublicShell(config, request.headers.host)) return
+    const path = requestPathname(request.raw.url)
+    if (path === '/healthz' || path.startsWith('/api/') || path.startsWith('/s/')) return
+    if (isPublicShellAsset(path)) {
+      reply.code(404).header('cache-control', 'no-store').send({
+        error: { code: 'not_found', message: '未找到' },
+      })
+      return reply
+    }
+    if (path === '/' || wantsHtml(request)) return sendClientNotice(reply)
+  })
   if (hasWeb) {
     await app.register(fastifyStatic, {
       root: webRoot,
@@ -457,13 +473,25 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   registerLofiiRoutes(app, config, mcbot, db)
 
   registerErrorHandler(app)
+  // 放在错误处理之后，分享页作用域才能继承统一的 JSON 错误响应。
+  await registerPublicShell(app, config, shares, webRoot, hasWeb)
 
-  // SPA 回退：非 /api 的 HTML 请求返回 index.html。
+  // SPA 回退：非 /api 的 HTML 请求返回 index.html。公网界面关闭时改为说明页。
   app.setNotFoundHandler((request, reply) => {
-    const path = request.raw.url ?? ''
+    const path = requestPathname(request.raw.url)
     if (path.startsWith('/api/') || path === '/healthz') {
       reply.code(404).send({ error: { code: 'not_found', message: '接口不存在' } })
       return
+    }
+    if ((request.method === 'GET' || request.method === 'HEAD') && hidesPublicShell(config, request.headers.host)) {
+      if (isPublicShellAsset(path)) {
+        reply.code(404).header('cache-control', 'no-store').send({ error: { code: 'not_found', message: '未找到' } })
+        return
+      }
+      if (path === '/' || wantsHtml(request)) {
+        sendClientNotice(reply)
+        return
+      }
     }
     if ((request.method === 'GET' || request.method === 'HEAD') && wantsHtml(request) && hasWeb) {
       reply.type('text/html; charset=utf-8').sendFile('index.html', webRoot)

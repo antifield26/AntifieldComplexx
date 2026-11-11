@@ -1,6 +1,6 @@
 {
   "name": "@antifieldcomplexx/client",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "private": true,
   "license": "MIT",
   "description": "AntifieldComplexx 客户端界面与 Tauri 壳。依赖只放 devDependencies，生产安装不带走。",

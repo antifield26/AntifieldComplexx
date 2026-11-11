@@ -1,7 +1,7 @@
 {
   "schemaVersion": 21,
   "opencodeVersion": "2.2.5",
-  "mcbotVersion": "1.1.1",
+  "mcbotVersion": "1.2.0",
   "mcbotContractVersion": 2,
   "dshVersion": "0.2.2-rc.1",
   "dshQqPluginVersion": "0.5.5"

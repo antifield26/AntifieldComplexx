@@ -1,4 +1,5 @@
 //! 操作系统密钥库。缺失条目视为空，其它失败不带出系统路径。
+//! Windows 使用系统凭据管理器。Android 在首次读写前接入系统密钥库，接入失败则拒绝访问。
 
 #[cfg(test)]
 use std::collections::HashMap;
@@ -23,12 +24,35 @@ pub trait SecretStore {
 
 pub struct KeyringStore;
 
+/// Android 必须先注册系统密钥库。失败时不创建条目，避免落到内存模拟库。
+#[cfg(target_os = "android")]
+fn ensure_platform_store() -> Result<(), StoreError> {
+    use std::sync::OnceLock;
+    static READY: OnceLock<()> = OnceLock::new();
+    if READY.get().is_some() {
+        return Ok(());
+    }
+    match android_keyring::set_android_keyring_credential_builder() {
+        Ok(()) => {
+            let _ = READY.set(());
+            Ok(())
+        }
+        Err(_) => Err(StoreError::Unavailable),
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn ensure_platform_store() -> Result<(), StoreError> {
+    Ok(())
+}
+
 fn missing(error: &keyring::Error) -> bool {
     matches!(error, keyring::Error::NoEntry)
 }
 
 impl SecretStore for KeyringStore {
     fn get(&self, account: &str) -> Result<Option<String>, StoreError> {
+        ensure_platform_store()?;
         let entry = keyring::Entry::new(SERVICE, account).map_err(|_| StoreError::Unavailable)?;
         match entry.get_password() {
             Ok(value) => Ok(Some(value)),
@@ -38,11 +62,13 @@ impl SecretStore for KeyringStore {
     }
 
     fn put(&self, account: &str, value: &str) -> Result<(), StoreError> {
+        ensure_platform_store()?;
         let entry = keyring::Entry::new(SERVICE, account).map_err(|_| StoreError::Unavailable)?;
         entry.set_password(value).map_err(|_| StoreError::Unavailable)
     }
 
     fn remove(&self, account: &str) -> Result<(), StoreError> {
+        ensure_platform_store()?;
         let entry = keyring::Entry::new(SERVICE, account).map_err(|_| StoreError::Unavailable)?;
         match entry.delete_credential() {
             Ok(()) => Ok(()),
@@ -50,6 +76,13 @@ impl SecretStore for KeyringStore {
             Err(_) => Err(StoreError::Unavailable),
         }
     }
+}
+
+#[cfg(all(test, windows))]
+#[test]
+fn windows_uses_credential_manager() {
+    // 当前 Windows 构建使用系统凭据管理器。
+    let _builder = keyring::windows::default_credential_builder();
 }
 
 pub fn global() -> &'static KeyringStore {

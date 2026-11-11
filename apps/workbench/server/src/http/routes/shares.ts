@@ -27,7 +27,7 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
 }
 
 /** 公开 POST 的来源校验：仅允许 appOrigin，或 loopback 开发环境（ai 主机不再受信）。 */
-function assertAllowedOrigin(request: FastifyRequest, config: Config): void {
+export function assertPublicShareOrigin(request: FastifyRequest, config: Config): void {
   const origin = firstHeader(request.headers.origin)
   if (!origin) throw forbidden('缺少 Origin 请求头', 'origin_rejected')
   if (origin === config.appOrigin) return
@@ -51,7 +51,7 @@ function shareCookiePath(token: string): string {
   return `${COOKIE_PATH_PREFIX}${token}`
 }
 
-function setShareCookie(
+export function setShareCookie(
   reply: FastifyReply,
   request: FastifyRequest,
   token: string,
@@ -138,7 +138,7 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, shares
   })
 
   app.post('/api/public/shares/:token/unlock', async (request, reply) => {
-    assertAllowedOrigin(request, config)
+    assertPublicShareOrigin(request, config)
     const token = tokenParam(request)
     const ip = clientIp(request)
     limit(metadataLimiter, ip)

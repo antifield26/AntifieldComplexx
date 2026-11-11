@@ -14,6 +14,8 @@ export interface Config {
   port: number
   dataDir: string
   webDistDir: string
+  /** 公网是否提供管理界面。关闭后公网只返回说明页和分享页，loopback 仍提供完整界面。 */
+  publicAppShell: boolean
   appOrigin: string
   aiOrigin: string
   /**
@@ -314,6 +316,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: int(merged, 'PORT', 3000, 1, 65535),
     dataDir,
     webDistDir,
+    publicAppShell: bool(merged, 'PUBLIC_APP_SHELL', true),
     appOrigin,
     aiOrigin,
     legacyCookieDomain: resolveLegacyCookieDomain(merged, appOrigin),

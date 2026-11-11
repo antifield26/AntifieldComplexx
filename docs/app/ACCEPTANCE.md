@@ -1,6 +1,14 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.1.1 已部署，发布验收见下文。Workbench schema 20，mcbot 契约 v2，DSH 0.2.2-rc.1。应用与 Bot 的同版本轴回滚基线为 v1.1.0。OpenCode v2.2.5 仅用于历史回滚。
+> 当前版本 v1.2.0 尚未部署。工作区 schema 21，mcbot 契约 v2，DSH 0.2.2-rc.1。生产仍是 v1.1.1 / schema 20，发布验收见下文。客户端与 schema 21 绑定；退回 v1.1.1 必须恢复迁移前快照、旧 release、Access 策略与公网界面。OpenCode v2.2.5 仅用于历史回滚。
+
+### v1.2.0 工作区（尚未部署）
+
+- 范围：同一账号登记 Windows 与 Android 客户端，Ed25519 签名 Bearer，前台心跳。公网界面开关默认开启。关闭后公网只返回「请使用客户端」和分享页，loopback 仍提供完整界面。健康检查、公开分享、QQ Webhook 与 AI 反代保持可用。
+- 本地门禁：2026-11-11 `npm run check` 为服务端 **647**（646 pass、1 skip）+ web **307** + mcbot **181**。
+- 部署前必须保存并核验当时生产库快照。迁移完成后的演练按 schema 21。当前生产演练仍是 `20261110T022941Z`（schema 20），不能当作 schema 21 演练。
+- 客户端与 schema 21 绑定。退回 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略，以及公网界面。只恢复公网界面时把 `PUBLIC_APP_SHELL` 设为 true 并重启，不改 schema。
+- 未发布 Tag，未切换生产，未改 Cloudflare，未在手机上安装。已有安装包是版本号改为 1.2.0 之前生成的，包内版本仍是 1.1.1，且没有写入接口源。`tauri android build` 在本机的退出码是 1。
 
 ### v1.1.1 生产验收（2026-11-09 至 2026-11-10）
 

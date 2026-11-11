@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { MouseEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Activity,
@@ -14,6 +15,9 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { api, toErrorMessage } from '../api/client'
+import { openNativeAiWorkspaceUrl } from '../lib/ai-workspace'
+import { isNativeRuntime } from '../lib/native'
+import { useToast } from '../components/Toast'
 import type { DashboardData, ServiceState, ServicesStatus } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useNow } from '../hooks/useNow'
@@ -74,6 +78,7 @@ const SERVICE_BADGE_TONES: Record<ServiceState, BadgeTone> = {
 /** 工作台：10s 轮询，页面隐藏时暂停；刷新失败保留旧数据并提示。 */
 export function Dashboard() {
   const { meta } = useAppMeta()
+  const toast = useToast()
   const backups = useBackups()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -401,7 +406,19 @@ export function Dashboard() {
           <ul className="quick-links">
             <li>
               {aiUrl ? (
-                <a className="quick-link" href={aiUrl} target="_blank" rel="noopener noreferrer">
+                <a
+                  className="quick-link"
+                  href={aiUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(event: MouseEvent<HTMLAnchorElement>) => {
+                    if (!isNativeRuntime()) return
+                    event.preventDefault()
+                    void openNativeAiWorkspaceUrl(aiUrl).catch((error: unknown) => {
+                      toast.error(toErrorMessage(error, '无法打开工作区'))
+                    })
+                  }}
+                >
                   <span className="quick-icon" aria-hidden="true"><Sparkles size={18} /></span>
                   <span className="quick-text">
                     <strong>AI 工作区</strong>

@@ -23,8 +23,9 @@ export interface NativeBridge {
   storeSession(sessionToken: string, deviceId: string): Promise<void>
   clearSession(): Promise<void>
   clearDevice(): Promise<void>
-  signRequest(method: string, path: string, body: string): Promise<SignedHeaders | null>
+  signRequest(method: string, path: string, body: string, bodySha256?: string): Promise<SignedHeaders | null>
   hasSession(): Promise<boolean>
+  openAiWorkspace(url: string): Promise<void>
 }
 
 let testBridge: NativeBridge | null = null
@@ -44,6 +45,11 @@ export function isNativeRuntime(): boolean {
   return tauriWindow()
 }
 
+/** 真实 Tauri 壳。测试桥接不算，避免测试去加载 Tauri 事件模块。 */
+export function usesTauriShell(): boolean {
+  return tauriWindow()
+}
+
 async function loadTauriBridge(): Promise<NativeBridge> {
   if (tauriBridge) return tauriBridge
   const { invoke } = await import('@tauri-apps/api/core')
@@ -54,8 +60,15 @@ async function loadTauriBridge(): Promise<NativeBridge> {
       invoke<void>('store_session', { sessionToken, deviceId }),
     clearSession: () => invoke<void>('clear_session'),
     clearDevice: () => invoke<void>('clear_device'),
-    signRequest: (method, path, body) => invoke<SignedHeaders | null>('sign_request', { method, path, body }),
+    signRequest: (method, path, body, bodySha256) =>
+      invoke<SignedHeaders | null>('sign_request', {
+        method,
+        path,
+        body,
+        ...(bodySha256 ? { bodySha256 } : {}),
+      }),
     hasSession: () => invoke<boolean>('has_session'),
+    openAiWorkspace: (url) => invoke<void>('open_ai_workspace', { url }),
   }
   return tauriBridge
 }
@@ -84,9 +97,19 @@ export async function clearNativeDevice(): Promise<void> {
   await (await bridge()).clearDevice()
 }
 
-export async function signNativeRequest(method: string, path: string, body: string): Promise<SignedHeaders | null> {
+export async function signNativeRequest(
+  method: string,
+  path: string,
+  body: string,
+  bodySha256?: string,
+): Promise<SignedHeaders | null> {
   if (!isNativeRuntime()) return null
-  return (await bridge()).signRequest(method, path, body)
+  return (await bridge()).signRequest(method, path, body, bodySha256)
+}
+
+export async function openNativeAiWorkspace(url: string): Promise<void> {
+  if (!isNativeRuntime()) throw new Error('当前不是客户端')
+  await (await bridge()).openAiWorkspace(url)
 }
 
 export async function hasNativeSession(): Promise<boolean> {

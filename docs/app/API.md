@@ -18,7 +18,7 @@
 
 - 常见状态码：`400 invalid_request`、`401 unauthenticated/invalid_password`、`403 csrf_failed`、`404 not_found`、`410 share_expired/share_revoked/share_exhausted`、`409 conflict/quota_exceeded/archive_encrypted/chunk_conflict/backup_busy/restore_busy/plan_expired/archive_exists`、`413 file_too_large`、`415 unsupported_media_type`、`429 rate_limited`、`500 internal_error`、`502 mcbot_auth_failed/mcbot_upstream_error`、`503 chatbot_disabled/chatbot_key_missing/chatbot_ai_tool_isolation_unavailable/chatbot_ai_context_unavailable/mcbot_disabled/mcbot_control_disabled/mcbot_unavailable/mcbot_task_disabled/mcbot_history_disabled/mcbot_not_found`、`507 insufficient_storage`。`429` 同时带 `Retry-After` 响应头与 `error.details.retryAfterSec`。
 - 认证：登录成功后服务端在 **app 主机**下发 host-only `af_session`（HttpOnly）与 `af_csrf`（可读）Cookie（均不设 `Domain`；`ai` 主机使用独立 host-only 会话 Cookie）。除 `GET/HEAD` 外的所有 `/api` 请求必须带 `X-CSRF-Token: <af_csrf>`，并满足 `Origin` 为 `https://app.example.com` / 本机；`ai` 源不再作为 app 写请求的受信 Origin。例外：公开 Bot Webhook `POST /api/chatbot/webhook/:botId` 不挂会话/CSRF，只按平台签名（及时间戳/去重）鉴权（见 §14）；既有公开分享 `POST /api/public/shares/:token/unlock` 也只校验 Origin 与限流。客户端设备会话使用 `Authorization: Bearer` 与设备签名，签名通过后不再要求 CSRF；`Authorization` 存在但不是合法 Bearer 时不回退 Cookie（见 §2）。
-- AI 主机 SSO：app 登录/已登录后访问 `GET /api/auth/ai-ticket?next=<ai 完整 URL>`，服务端校验 `next` 必须属于配置的 `AI_ORIGIN`，签发 60 秒一次性 ticket 并 302 到 `https://ai.example.com/__af/sso/<ticket>?next=<ai 相对路径>`；代理校验/消费 ticket 后设置 ai 主机 host-only `af_session` 并 302 到目标路径。ticket 一次性、绑定 aiOrigin、不落库。
+- AI 主机 SSO：app 登录/已登录后访问 `GET /api/auth/ai-ticket?next=<ai 完整 URL>`，服务端校验 `next` 必须属于配置的 `AI_ORIGIN`，签发 60 秒一次性 ticket 并 302 到 `https://ai.example.com/__af/sso/<ticket>?next=<ai 相对路径>`；代理校验/消费 ticket 后设置 ai 主机 host-only `af_session` 并 302 到目标路径。ticket 一次性、绑定 aiOrigin、不落库。请求头 `Accept` 包含 `application/json` 时改为 `200 { "url": "<同一地址>" }`，不跳转。
 - Bot 功能开关：`CHATBOT_ENABLED=false` 或缺少 `CHATBOT_SECRET_KEY` 时，Webhook 一律 `404 not_found`，`/api/chatbots*` 写操作返回 `503 chatbot_disabled`/`chatbot_key_missing`；`GET /api/chatbots/status` 仍可读。
 - mcbot 功能开关（v0.8.0 引入，v0.8.1 安全加固）：`MCBOT_ENABLED=false` 时 `/api/mcbot/status` 仍返回 `enabled:false` 的空壳快照，其余 `/api/mcbot/*` 返回 `503 mcbot_disabled`；`MCBOT_CONTROL_TOKEN` 为空（只读模式）时 `/tasks*`、`/move` **与 `/say`** 均返回 `503 mcbot_control_disabled`（`/status`、`/history` 仍可读）。`MCBOT_URL` 只允许 `http(s)://loopback[:port]` 根地址（拒绝 userinfo/路径/查询/片段）。上游未启用/网络不可达返回 `503 mcbot_unavailable`；鉴权失败/上游异常返回 `502 mcbot_auth_failed`/`mcbot_upstream_error`；上游 5xx 的稳定业务码 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `mcbot_*`。响应与错误文本不包含 mcbot URL/Token。
 - 安全响应头：`Cache-Control: no-store`（静态 hash 资源除外）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、CSP（见 docs/app/SECURITY.md）。
@@ -33,7 +33,7 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "1.1.1", "schemaVersion": 21, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
+{ "ok": true, "version": "1.2.0", "schemaVersion": 21, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
 ```
 
 - `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
@@ -162,7 +162,7 @@
 ### GET /api/auth/ai-ticket?next=\<ai 完整 URL\>
 
 需要 app 主机会话。`next` 必须与配置的 `AI_ORIGIN` 完全同源（`https://ai.example.com/...`），否则 `400 invalid_request`。
-成功返回 `302` 到 `https://ai.example.com/__af/sso/<ticket>?next=<ai 相对路径>`；ticket 一次性、60 秒有效、绑定 aiOrigin，用于给 ai 主机设置 host-only `af_session`。未登录 `401 unauthenticated`。
+成功返回 `302` 到 `https://ai.example.com/__af/sso/<ticket>?next=<ai 相对路径>`；ticket 一次性、60 秒有效、绑定 aiOrigin，用于给 ai 主机设置 host-only `af_session`。未登录 `401 unauthenticated`。请求头 `Accept` 包含 `application/json` 时改为 `200 { "url": "<同一地址>" }`，`cache-control` 仍为 `no-store`。浏览器导航保持 `302`。
 
 ### POST /api/auth/logout
 
@@ -480,13 +480,15 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "1.1.1", "schemaVersion": 21, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
+- `GET /api/version`（需要会话）：`{ "version": "1.2.0", "schemaVersion": 21, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
   - `schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。旧服务端不下发时前端按关闭/未配置/null 降级。
   - `mcbotEnabled`/`mcbotControlEnabled`（v0.8.0）：mcbot 集成是否启用、控制接口是否可用（`MCBOT_ENABLED=true` 且 `MCBOT_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 mcbot 标签与控制操作。两者都不含 mcbot 地址/Token。
   - schema **17**；`audit.persisted` 表示诊断是否来自 DB 持久化行（DB 不可用时 false，回退内存计数）。
   - `backupRestoreEnabled` 与 `deploy/env.example` 默认一致（默认 `false`；Web 文件级恢复需显式开启）。
 - `GET /api/storage`（需要会话；轻量端点，供文件页取配额，避免触发 Dashboard 的 MC/opencode/systemctl 聚合）：`{ "quotaBytes": 10737418240, "usedBytes": 1234, "trashBytes": 0, "fileCount": 3, "freeBytes": 1 }`。字段与 `/api/dashboard.storage` 一致；`usedBytes` 含笔记附件与回收站，`fileCount` 只统计普通文件（`origin='user'`）。
-- 静态资源：`/`、`/files`、`/trash`、`/knowledge`、`/shares`、`/minecraft`、`/settings`、`/s/:token` 等 SPA 路径返回 `index.html`；`/assets/*` 长缓存；`/sw.js` 带 `Service-Worker-Allowed: /`；`/manifest.webmanifest` 为 `application/manifest+json`。
+- 静态资源：`PUBLIC_APP_SHELL` 默认 `true`。开关开启时，以及 Host 为 `127.0.0.1`、`localhost` 或 `::1` 时，`/`、`/files`、`/trash`、`/knowledge`、`/shares`、`/minecraft`、`/settings`、`/s/:token` 等 SPA 路径返回 `index.html`；`/assets/*` 长缓存；`/sw.js` 带 `Service-Worker-Allowed: /`；`/manifest.webmanifest` 为 `application/manifest+json`。
+- `PUBLIC_APP_SHELL=false` 且 Host 等于 `APP_ORIGIN` 的主机名时，`GET/HEAD /` 以及 `Accept` 含 `text/html` 的页面返回说明页，标题为「请使用客户端」。响应为 `text/html; charset=utf-8`，`cache-control: no-store`，`x-robots-tag: noindex, nofollow`。`/assets/`、`/icons/`、`/sw.js`、`/manifest.webmanifest`、`/offline.html`、`/index.html`、`/favicon.svg` 返回 `404 not_found`。`/healthz`、`/api/*` 与 AI 主机保持原有行为。不带 `text/html` 的其它路径仍返回 JSON 404。
+- 同一条件下，`GET /s/:token` 在 `Accept` 含 `text/html` 时由服务端渲染分享页。token 必须匹配 `^[A-Za-z0-9_-]{20,128}$`。无效链接返回 404 HTML，正文为「分享链接不存在」；过期、吊销或用尽返回 410 HTML。密码分享提交 `POST /s/:token/unlock`，正文为 `application/x-www-form-urlencoded` 的 `password`，并校验 Origin。成功返回 `303` 到 `/s/:token`，同时设置两枚 `af_share`：Path `/api/public/shares/<token>` 与 Path `/s/<token>`。不带 `text/html` 的 `GET /s/:token` 仍返回 JSON 404。开关开启时，HTML 请求继续返回 `index.html`，该解锁路由返回 JSON 404。
 - `ai.example.com/*`：不是本应用 API，全部经会话校验后反代到 opencode；未登录 HTML 302，API 401。
 
 ## 8. 知识库（笔记/书签）
@@ -527,7 +529,7 @@ RCON 不可用：`502 rcon_unavailable`。
 - `GET /api/public/shares/:token/items/:itemId/content`（密码分享需 `af_share` Cookie）返回单文件流，`content-disposition: attachment`。支持 `Range`、`HEAD`、`ETag`。条目必须属于分享，否则返回 `404 share_item_not_found`。文件已删除返回 `410 share_gone`。
 - `GET /api/public/shares/:token/content`：仅单文件分享可用；多文件分享返回 409 `share_bundle`，客户端改用 `items/:itemId/content`。
 - 两个内容端点在校验后、发送正文前按会话预占一个下载名额。抢占失败返回 `410 share_exhausted`。同会话的多文件和 Range 共用名额。`HEAD`、`304` 和 `416` 跳过预占。全部在途响应中断时归还名额，服务异常退出时保留预占，原会话可继续下载。
-- 公开页 `/s/:token` 带 `X-Robots-Tag: noindex, nofollow`。
+- 公开页 `/s/:token` 带 `X-Robots-Tag: noindex, nofollow`。`PUBLIC_APP_SHELL=false` 且 Host 为应用公网主机时，浏览器打开的分享页由服务端渲染，见 §7。JSON 公开接口保持不变。
 
 ## 10. 告警
 
@@ -830,7 +832,7 @@ ChatbotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|proje
 
 ## 15. mcbot Bot 对接（v0.8.0 引入；v1.0.2 自主模式；v1.0.3 环境/动作工具；v1.0.5 在线模式/目标/自动生存；v1.0.6 寻路状态；v1.0.7 成功时间与兜底原因；v1.0.9 事件缺口；v1.0.10 活动范围；v1.0.11 反射、v1.0.12 世界记忆与 v1.0.13 记忆坐标不新增应用字段；默认关闭）
 
-mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。目标上游为 mcbot **v1.1.1**（契约 v2，兼容已声明契约 v1 的旧版本）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，v1.0.9 增加可空 `eventGap`，v1.0.10 至 v1.1.1 不新增应用字段，旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
+mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。目标上游为 mcbot **v1.2.0**（契约 v2，兼容已声明契约 v1 的旧版本）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，v1.0.9 增加可空 `eventGap`，v1.0.10 至 v1.2.0 不新增应用字段，旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
 
 ### 通用语义
 

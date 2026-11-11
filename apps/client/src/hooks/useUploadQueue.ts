@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { abandonChunkedUpload, isApiError, toErrorMessage, uploadFileChunked, uploadFiles } from '../api/client'
 import type { FileItem } from '../api/types'
 import { DEFAULT_CHUNK_MAX_BYTES, DEFAULT_CHUNK_SIZE_BYTES, shouldUseChunked } from '../lib/chunked'
+import { isNativeRuntime } from '../lib/native'
 
 export type UploadTaskStatus = 'waiting' | 'uploading' | 'success' | 'error' | 'cancelled'
 
@@ -91,9 +92,14 @@ export function useUploadQueue(options: UseUploadQueueOptions = {}): UploadQueue
     void (async () => {
       patchTask(task.id, { status: 'uploading', progress: 0, error: null })
       try {
+        const chunkedEnabled = optionsRef.current.chunkedUploadEnabled === true
         const chunked = shouldUseChunked(task.file.size, {
-          enabled: optionsRef.current.chunkedUploadEnabled === true,
-          thresholdBytes: optionsRef.current.chunkThresholdBytes ?? optionsRef.current.maxFileBytes,
+          enabled: chunkedEnabled,
+          // 客户端没有 Cookie。开启分片后，正数大小的文件都走可续传的签名分片。
+          thresholdBytes:
+            chunkedEnabled && isNativeRuntime()
+              ? 0
+              : (optionsRef.current.chunkThresholdBytes ?? optionsRef.current.maxFileBytes),
           maxBytes: optionsRef.current.chunkMaxFileBytes ?? DEFAULT_CHUNK_MAX_BYTES,
         })
         const onProgress = (loaded: number, total: number): void => {

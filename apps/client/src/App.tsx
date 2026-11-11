@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { Link, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { AppMetaProvider } from './meta/MetaContext'
 import { ToastProvider } from './components/Toast'
@@ -10,6 +10,8 @@ import { Login } from './pages/Login'
 import { Dashboard } from './pages/Dashboard'
 import { PublicShare } from './pages/PublicShare'
 import { usePageTitle } from './hooks/usePageTitle'
+import { openNativeAiWorkspaceUrl, resolveNativeAiNext } from './lib/ai-workspace'
+import { isNativeRuntime } from './lib/native'
 import { assignExternalUrl, externalLoginRedirect, sanitizeNext } from './lib/next-url'
 
 const Files = lazy(() => import('./pages/Files').then(({ Files }) => ({ default: Files })))
@@ -36,14 +38,28 @@ function ProtectedRoute() {
 /** 登录路由：已登录时按 next 跳转（外部 AI 工作区经 ai-ticket 换票，其他外部地址整页跳转）。 */
 function LoginRoute() {
   const { status } = useAuth()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const next = sanitizeNext(searchParams.get('next'))
   const externalRedirect = externalLoginRedirect(next)
 
   useEffect(() => {
     if (status !== 'authenticated' || !externalRedirect) return
-    assignExternalUrl(externalRedirect)
-  }, [status, externalRedirect])
+    if (!isNativeRuntime()) {
+      assignExternalUrl(externalRedirect)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const aiNext = await resolveNativeAiNext(next)
+      if (cancelled) return
+      if (aiNext) await openNativeAiWorkspaceUrl(aiNext).catch(() => undefined)
+      if (!cancelled) navigate('/', { replace: true })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [status, externalRedirect, next, navigate])
 
   if (status === 'loading') return <AppLoading />
   if (status === 'authenticated') {

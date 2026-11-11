@@ -35,6 +35,7 @@ describe('客户端登录', () => {
     clearDevice: vi.fn(),
     signRequest: vi.fn(),
     hasSession: vi.fn(),
+    openAiWorkspace: vi.fn(),
   }
 
   beforeEach(() => {
@@ -44,6 +45,7 @@ describe('客户端登录', () => {
     vi.mocked(bridge.clearDevice).mockReset()
     vi.mocked(bridge.signRequest).mockReset()
     vi.mocked(bridge.hasSession).mockReset()
+    vi.mocked(bridge.openAiWorkspace).mockReset()
     vi.mocked(bridge.hasSession).mockResolvedValue(false)
     vi.mocked(bridge.prepareDevice).mockResolvedValue({
       publicKey: 'a'.repeat(43),
@@ -105,7 +107,7 @@ describe('客户端登录', () => {
     const init = loginCall?.[1]
     const body = JSON.parse(String(init?.body)) as { device: { publicKey: string; appVersion: string; name: string } }
     expect(body.device.publicKey).toBe('a'.repeat(43))
-    expect(body.device.appVersion).toBe('1.1.1')
+    expect(body.device.appVersion).toBe('1.2.0')
     expect(body.device.name).toBe('这台 Windows')
     expect(init?.credentials).toBe('omit')
     expect(bridge.storeSession).toHaveBeenCalledWith('session-1', 'device-1')

@@ -1,6 +1,8 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.1.1）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.0）
 
-> v1.1.1 的 Workbench release 为 `20261109T143755Z`，mcbot 为 `20261110T022539Z`。回滚到 v1.1.0 使用各自的 `20261108T080545Z` release，Workbench 保留 schema 20 现行库。部署与备份证据见 [验收记录](ACCEPTANCE.md)。
+> 工作区 v1.2.0 尚未部署。客户端与 schema 21 绑定。部署前保存并核验当时生产库快照；迁移后的演练按 schema 21。退回 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略与公网界面（`PUBLIC_APP_SHELL=true`）。只恢复公网界面时改回该开关并重启，不改 schema。当前生产演练 `20261110T022941Z` 是 schema 20，不能代替这次演练。
+
+> 生产仍是 v1.1.1。Workbench release 为 `20261109T143755Z`，mcbot 为 `20261110T022539Z`。回滚到 v1.1.0 使用各自的 `20261108T080545Z` release，Workbench 保留 schema 20 现行库。部署与备份证据见 [验收记录](ACCEPTANCE.md)。
 
 > **v1.1.0 部署记录（2026-11-08，历史）**。Workbench 与 mcbot release 为 `20261108T080545Z`，DSH release 为 `20261108T143448Z`。Workbench schema 20，mcbot 契约 v2。OpenCode 2.2.5 已从 Pi 退役。安装、验收与回滚见 [Agent Harness 切换手册](./DSH-MIGRATION.md)。
 
@@ -17,7 +19,8 @@
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
-- 当前 schema **v21**（工作区，尚未部署）：设备登记、会话绑定与请求签名。生产 v1.1.1 仍是 schema 20。部署本迁移前保存并核验 schema 20 快照；回到 v1.1.1 必须同时恢复该快照与旧 release。schema 20 增加外部告警 Webhook 和 QQ 入队状态。
+- 当前 schema **v21**（工作区，尚未部署）：设备登记、会话绑定与请求签名。生产 v1.1.1 仍是 schema 20。部署前保存并核验当时生产库快照；迁移后的演练按 schema 21。客户端与 schema 21 绑定。回到 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略与公网界面。schema 20 增加外部告警 Webhook 和 QQ 入队状态。
+- `PUBLIC_APP_SHELL` 默认 `true`，公网继续提供完整界面。设为 `false` 并重启后，应用公网主机只返回说明页「请使用客户端」和分享页；`127.0.0.1`、`localhost` 与 `::1` 仍提供完整界面。单独回滚该开关：改回 `true` 并重启，不改 schema。Cloudflare Access 对 `/api/*` 的 bypass 在控制台单独调整。
 
 ## v1.0.13 发布记录
 
@@ -759,7 +762,7 @@ curl -H 'Host: app.example.com' -fsS http://127.0.0.1:3000/healthz
 配置 Cloudflare Access 后，可在同一命令追加 `-AccessClientId/-AccessClientSecret`：脚本会给公网请求附加
 `CF-Access-Client-Id`/`CF-Access-Client-Secret` 头，并额外检查“带 token 到达应用但未登录 → 401”；两者必须同时提供，凭据不打印。
 
-`smoke.ps1` 覆盖：公网健康/302/401、CSP/nosniff/referrer/HSTS、PWA（manifest/sw/offline）、公开分享页 404/410、
+`smoke.ps1` 覆盖：公网健康/302/401、CSP/nosniff/referrer/HSTS、首页（仍是管理界面时检查 PWA manifest/sw/offline 为 200；首页为「请使用客户端」时这些路径为 404，且正文不含 `id="root"`）、公开分享页 404/410、
 指标/告警/分享等 API 401、Pi 服务与 `/healthz` 版本（`-ExpectedVersion`）、内存 cgroup、nftables 规则/25575 阻断/25565 可达、
 备份 pending 与 48h 状态、密钥包状态、世界备份/世界拉取/演练状态文件、已安装脚本 SHA-256 与仓库一致、
 本地世界/应用归档 `.sha256` 旁文件；所有 SSH 检查带重试与硬超时。`-SkipPublic`/`-SkipLocalBackup`/`-SkipScriptHash`

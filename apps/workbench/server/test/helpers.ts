@@ -26,6 +26,7 @@ export function testConfig(dataDir: string, overrides: Partial<Config> = {}): Co
     port: 0,
     dataDir,
     webDistDir: join(dataDir, 'web'),
+    publicAppShell: true,
     appOrigin: 'https://app.test',
     aiOrigin: 'https://ai.test',
     legacyCookieDomain: '.test',
