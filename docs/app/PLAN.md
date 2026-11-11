@@ -8,8 +8,8 @@
 
 - **版本**：应用版本 **v1.2.0**。schema **v21**。未发布 Tag。Workbench `20261111T104738Z`，mcbot `20261111T105117Z`。
 - **范围**：设备登记、Ed25519 请求签名、Bearer 会话、心跳、列表、改名与吊销。`PUBLIC_APP_SHELL` 默认 true，公网页面与 Cookie 登录保持可用。关闭后，应用公网主机只返回说明页「请使用客户端」和分享页；loopback 仍提供完整界面与 Cookie 登录。生产尚未关闭该开关。
-- **客户端**：界面源码在 `apps/client`。Windows 壳使用 Tauri，登录后用设备密钥签名请求。构建产物仍输出到 `apps/workbench/web/dist`。本机已生成 NSIS 安装包；这次构建没有写入接口源，安装后的请求会失败关闭。`tauri android build --target aarch64 --apk --ci` 的退出码是 1，本机不能创建 jniLibs 符号链接。arm64 发布包由已编译的 `libclient_lib.so` 经 `gradlew :app:assembleArm64Release` 生成，并用本机 Android debug 密钥签名，大小 11798561 字节。该包没有写入接口源。没有在手机上安装。这两份安装包是版本号改为 1.2.0 之前生成的，包内版本仍是 1.1.1。版本号变更后没有重新打包。
-- **边界**：mcbot 仍是独立进程。健康检查、公开分享、QQ Webhook 与 AI 反代保持可用。Cloudflare Access 策略未改。
+- **客户端**：界面源码在 `apps/client`。Windows 与 Android 共用 Tauri 壳，登录后用设备密钥签名请求。构建产物仍输出到 `apps/workbench/web/dist`。本机 Windows 1.2.0 已按当前用户安装，图标为原有 AC 标记，接口源只写在本机构建，不进仓库。`tauri android build --target aarch64 --apk --ci` 在本机仍因不能创建 jniLibs 符号链接而退出码 1。arm64 包由已编译的 `libclient_lib.so` 经 `gradlew :app:assembleArm64Release` 生成，并用本机 Android debug 密钥签名后侧载。包名 `app.antifieldcomplexx.client`，versionName 1.2.0，versionCode 1002000，启动器图标为原有 AC 标记。Windows 与 Android 登录验收通过。
+- **边界**：mcbot 仍是独立进程。健康检查、公开分享、QQ Webhook 与 AI 反代保持可用。生产页面仍经 Cloudflare Access。`/api` 到达应用，认证仍是密码、TOTP 与设备签名。Windows 计划任务于 `2026-11-11T11:40:23.6416579Z` 重装为 1.2.0，异地副本任务未安装。未发布 Tag。schema 21 演练仍待下一次应用归档。
 - **回滚**：回到 v1.1.1 必须同时恢复迁移前 schema 20 数据库快照 `db-predeploy-20261111T104848131Z.sqlite`、旧 release、Access 策略与公网界面。只恢复公网界面时，把 `PUBLIC_APP_SHELL` 设为 true 并重启，不改 schema。
 - **测试**：2026-11-11 全量 `npm run check` 为服务端 **647**（646 pass、1 skip）+ web **307** + mcbot **181**。客户端 `cargo test` 8 通过。命名检查与文档声明检查通过。
 

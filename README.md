@@ -65,7 +65,7 @@
 
 ### mcbot Minecraft Bot（v0.8.0 引入；v1.0.5 常驻/生存/目标；v1.0.6 统一寻路；v1.0.7 兜底重决策；v1.0.8 契约 v2；v1.0.9 事件缺口；v1.0.10 活动范围；v1.0.11 本地反射；v1.0.12 世界记忆；v1.0.13 记忆坐标；v1.1.0 DSH 工具）
 
-- 独立附属服务 `mcbot`（本版 **v1.2.0**；最低 v0.6.0，契约 v2，仅监听 `127.0.0.1:3010`）；应用通过服务端轮询 `GET /status` 与 `GET /events/recent?limit=200`（默认 5s）获取状态与最近事件，**浏览器不直连 mcbot**。生产进程仍为 v1.1.1（`/opt/mcbot/releases/20261110T022539Z`）。回滚到 v1.1.0 使用 `/opt/mcbot/releases/20261108T080545Z`。发言仅契约 v2，使用控制 Token；契约 v1 仍可读状态并执行既有控制。同一启动周期内的事件序号空洞出现在 `eventGap`，面板仍显示当前状态。
+- 独立附属服务 `mcbot`（本版 **v1.2.0**；最低 v0.6.0，契约 v2，仅监听 `127.0.0.1:3010`）；应用通过服务端轮询 `GET /status` 与 `GET /events/recent?limit=200`（默认 5s）获取状态与最近事件，**浏览器不直连 mcbot**。生产进程为 v1.2.0（`/opt/mcbot/releases/20261111T105117Z`）。回滚到 v1.1.1 使用 `/opt/mcbot/releases/20261110T022539Z`。回滚到 v1.1.0 使用 `/opt/mcbot/releases/20261108T080545Z`。发言仅契约 v2，使用控制 Token；契约 v1 仍可读状态并执行既有控制。同一启动周期内的事件序号空洞出现在 `eventGap`，面板仍显示当前状态。
 - v1.0.5：在线模式 `auto/always/off` 持久化、空闲自动进食/换装、自动补货默认开启、安全区清怪任务、多步目标（task/deposit/home）与失败分类；目标重启后保持 paused，不自动执行。
 - v1.0.6：确定性 A*（只读现有地形，支持 1 格抬高/2 格下落/台阶半砖）、受控路点执行、AI 路点建议（OpenCode 可用时默认启用）、安全传送兜底与 `navigation` 状态；不挖掘/不放置/不跑酷。
 - v1.0.7：寻路兜底（安全传送或停止）进入自主会话既有重决策，30 秒去重、每会话最多 6 次；提示只含固定中文事实，不带坐标。面板过期文案用 `lastSuccessAt`，没有成功轮询时显示“尚无成功轮询”。
@@ -196,7 +196,7 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 ## 已知限制
 
 - SSH 密码登录已关闭（仅公钥，`00-` drop-in；旧回滚备份已归档）；`antifield` 的 `NOPASSWD ALL` sudo 属既有残留（用户选择保留）；`fail2ban` 已启用 `sshd` jail（nftables 后端，24h ban），dbfile 持久化与 nftables 启动后恢复 drop-in 已安装。
-- RCON 仍监听所有接口（Paper 无 bind 配置），仅由 nftables 限制为 loopback；Cloudflare Access 主应用 + 4 个 bypass + service token 已配置并验证，`ai` 主机另有 Access 应用（Owner allow + Smoke service token），Free 套餐无自定义 WAF 规则集，保留应用侧限流；service token 只保存在 PC gitignored `.local/cf-access.env`，应定期轮换。
+- RCON 仍监听所有接口（Paper 无 bind 配置），仅由 nftables 限制为 loopback；Cloudflare Access 主应用仍保护页面；`/api` 到达应用，并由密码、TOTP 与设备签名认证。健康检查、公开分享、Webhook bypass 与 service token 已配置，`ai` 主机另有 Access 应用（Owner allow + Smoke service token），Free 套餐无自定义 WAF 规则集，保留应用侧限流；service token 只保存在 PC gitignored `.local/cf-access.env`，应定期轮换。
 - Cloudflare 终止 TLS，可见明文；单 SD 卡、无全盘加密。
 - 限流状态在内存中，应用重启清零；`http-proxy` 在 Node 26 有弃用警告，Node 27 前需评估替换；scrypt 仍为 N=2^15；单进程单点，`synchronous=NORMAL` 不抗突然断电最后若干毫秒写入。
 - 分享不支持目录打包，多文件分享不提供服务端 zip；下载次数为会话级近似限制；无公开笔记分享。

@@ -4,13 +4,13 @@
 
 ### v1.2.0 生产部署（2026-11-11）
 
-- Workbench release `/opt/antifieldcloud/releases/20261111T104738Z`（commit `125700f`）。`/healthz` 为 version 1.2.0、schema 21。迁移前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261111T104848131Z.sqlite`，当时 schema 20，sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`。上一 release `/opt/antifieldcloud/releases/20261109T143755Z` 保留。跨 schema 回滚必须恢复该快照。
+- Workbench release `/opt/antifieldcloud/releases/20261111T104738Z`（commit `125700f`）。`/healthz` 为 version 1.2.0、schema 21。迁移前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261111T104848131Z.sqlite`，当时 schema 20，sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`。上一 release `/opt/antifieldcloud/releases/20261109T143755Z` 保留。跨 schema 回滚必须恢复该快照。冒烟脚本修正 `8ff506c` 尚未进入该 release。
 - mcbot release `/opt/mcbot/releases/20261111T105117Z`，契约 v2。上一 release `/opt/mcbot/releases/20261110T022539Z` 保留。切换时空闲检查通过。服务以 presence `auto` 启动，当时没有玩家在线，`connected` 为 false。
 - DSH 仍是 `/opt/antifield-dsh/releases/20261108T143448Z`，版本 0.2.2-rc.1，QQ 插件 0.5.5。部署前 QQ 网关 `ready` 为 false，重启 `antifield-dsh-qq` 后恢复。Web 与 mcbot Agent 没有重启。
-- 生产 env 没有 `PUBLIC_APP_SHELL`，默认开启。公网首页仍是管理界面，manifest、sw、offline 为 200。未改 Cloudflare。
+- 生产 env 没有 `PUBLIC_APP_SHELL`，默认开启。带 Access 的部署检查里，公网首页仍是管理界面。未登录的 `/` 与 `/files` 返回 302 到 Access。未登录的 `/api/version` 与 `/api/metrics` 返回应用 401 JSON。密码接口对 Tauri Origin 的预检返回 204，错误口令返回 400 JSON，并回显该 Origin。用户已在控制台放行 `/api`。Windows 与 Android 客户端登录验收通过。应用侧密码、TOTP 与设备签名保持有效。
 - 部署内只读 smoke **26/0/1/2**。带 Access、mcbot 契约、DSH 与本地归档旁文件，并跳过 Windows 任务标记的 smoke **36/0/1/2**。警告是演练 `20261110T022941Z` 仍为 schema 20。两项跳过是整包加密与异地副本未启用。schema 21 演练要等下一次应用归档。
 - Minecraft 单元启动时间是 2026-11-10 23:00:05 CST。本次部署没有重启 Minecraft。
-- Windows 计划任务安装标记仍是 1.1.1。需要在管理员 PowerShell 重装 `install-backup-task.ps1`。未发布 Tag。未在手机上安装。已有 Windows 安装包和 arm64 APK 是版本号改为 1.2.0 之前生成的，包内版本仍是 1.1.1，且没有写入接口源。`tauri android build` 在本机的退出码是 1。
+- Windows 计划任务于 `2026-11-11T11:40:23.6416579Z` 重装为 1.2.0。每日任务与世界拉取任务的脚本 SHA-256 与仓库一致，异地副本任务未安装，主机与备份根未改。未发布 Tag。本机 Windows 客户端 1.2.0 已按当前用户安装，使用原有 AC 图标；接口源只写在本机构建中，不进仓库。Android 包名 `app.antifieldcomplexx.client`，versionName 1.2.0，versionCode 1002000，以 debug 密钥签名后侧载，启动器图标为原有 AC 标记。`tauri android build` 在本机仍因 jniLibs 符号链接退出码 1；arm64 包由已编译的 `libclient_lib.so` 经 `gradlew :app:assembleArm64Release` 生成。
 - 本地门禁：2026-11-11 `npm run check` 为服务端 **647**（646 pass、1 skip）+ web **307** + mcbot **181**。
 
 ### v1.1.1 生产验收（2026-11-09 至 2026-11-10）

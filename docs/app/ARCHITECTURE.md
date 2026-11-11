@@ -29,7 +29,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
  │   ├─ SLP    → 127.0.0.1:25565
  │   ├─ RCON   → 127.0.0.1:25575（只读状态 + 白名单增删）
  │   └─ 主机指标 /proc、/sys、statfs、systemctl is-active（60s 采样）
- ├─ Cloudflare Access（app.* 策略；bypass：/api/chatbot/webhook/*、/healthz、/s/*、/api/public/shares/*）
+ ├─ Cloudflare Access（app.* 页面策略；/api 到达应用；bypass：/healthz、/s/*、/api/public/shares/*、/api/chatbot/webhook/*）
  ├─ antifieldcloud-world.service/.timer（root，周日 12:00，flock，4h 超时，沙箱）
  ├─ antifieldcloud-health.service/.timer（root，60s 写 /run/antifieldcloud/pi-health.json）
  ├─ mcbot.service（独立附属服务，仅 127.0.0.1:3010，契约 v2；不对外、不进入 Cloudflare ingress）

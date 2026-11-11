@@ -309,8 +309,8 @@
 - 每月检查 SSH/fail2ban：`sshd -T` 仍为仅公钥、`fail2ban-client status sshd` 有 jail 统计、`fail2ban-client get sshd bantime=86400`、
   `ls -l /var/lib/fail2ban/fail2ban.sqlite3`（dbfile 持久化）、`systemctl cat nftables.service | grep -A2 fail2ban`（drop-in 生效）；
   封禁 set 与 nftables 规则共存；任何 nftables 变更后执行 `systemctl restart fail2ban` 并复核封禁列表。
-- 每月检查 Cloudflare Access：`app` 策略主体、bypass 路径（`/api/chatbot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*`）
-  是否被后续规则覆盖；service token 是否仍有效且未过期；用未登录浏览器验证公开分享仍可用、平台回调仍 200。
+- 每月检查 Cloudflare Access：`app` 页面仍要求登录，`/api` 到达应用（未登录为应用 401，不是 Access 302），bypass 路径（`/api/chatbot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*`）
+  是否被后续规则覆盖；service token 是否仍有效且未过期；用未登录浏览器验证公开分享仍可用、平台回调仍 200，并用 Tauri Origin 验证密码接口预检不是 Access 拦截。
 - 每季度检查：恢复演练（`scripts/drill.ps1 -ExpectedSchemaVersion 14` 或按 docs/app/BACKUP.md §7 手动执行并记录）、
   `cloudflared tunnel info` 连接与版本、Windows 备份目录 ACL 是否仍仅白名单主体、age 公钥/私钥保管情况、
   世界备份保留 4 份/PC 保留 4 份是否正常、SSH 仅公钥配置是否仍生效（`sshd -T | grep -E 'passwordauthentication|pubkeyauthentication'`）。
@@ -347,7 +347,7 @@
   群共享记忆同名成员 key 不覆盖、无法映射条目保留 `legacy:`、`/forget confirm` 清本人群条目。
 - 外部边界：25575 外部阻断；22/25565 仅允许网段；`sshd -T` 显示 `passwordauthentication no`、`pubkeyauthentication yes`；`fail2ban-client status sshd`
   显示 jail 与封禁统计（nftables 后端、24h ban）；内存 cgroup 含 `memory`；备份 pending/48h 状态与 PC `.sha256` 旁文件（见 `scripts/smoke.ps1`）。
-- Cloudflare Access：bypass 生效时公网 Webhook 可达（200/401 而非 Access 302）、`/healthz` 200、公开分享页正常；主应用仍要求 Access 登录。
+- Cloudflare Access：页面未登录仍进入 Access；`/api` 到达应用后由会话、CSRF 或设备签名认证；bypass 生效时公网 Webhook 可达（200/401 而非 Access 302）、`/healthz` 200、公开分享页正常。
 - 世界备份/拉取/演练状态文件存在且新鲜（smoke 对缺失 WARN、失败/超期 FAIL）；世界备份归档 SHA/旁文件可校验。
 - 仓库 `git grep` 不出现真实密钥；gitleaks CI 通过。
 - **当前验收（本地测试 + 发布门禁）**：

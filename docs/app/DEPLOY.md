@@ -20,7 +20,7 @@
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v21**（2026-11-11 已部署）：设备登记、会话绑定与请求签名。迁移前生产库是 schema 20，快照为 `db-predeploy-20261111T104848131Z.sqlite`。迁移后的演练按 schema 21。客户端与 schema 21 绑定。回到 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略与公网界面。schema 20 增加外部告警 Webhook 和 QQ 入队状态。
-- `PUBLIC_APP_SHELL` 默认 `true`，公网继续提供完整界面。设为 `false` 并重启后，应用公网主机只返回说明页「请使用客户端」和分享页；`127.0.0.1`、`localhost` 与 `::1` 仍提供完整界面。单独回滚该开关：改回 `true` 并重启，不改 schema。Cloudflare Access 对 `/api/*` 的 bypass 在控制台单独调整。
+- `PUBLIC_APP_SHELL` 默认 `true`，公网继续提供完整界面。设为 `false` 并重启后，应用公网主机只返回说明页「请使用客户端」和分享页；`127.0.0.1`、`localhost` 与 `::1` 仍提供完整界面。单独回滚该开关：改回 `true` 并重启，不改 schema。生产页面仍经 Access；`/api` 已在控制台放行到应用，见 §5.2。
 
 ## v1.0.13 发布记录
 
@@ -703,6 +703,7 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 - 4 个独立 **Bypass** 应用（各自 `Bypass Everyone`）：`/healthz`、`/api/chatbot/webhook`、`/s`、`/api/public/shares`。
 - service token 名称 `smoke-readonly`，有效期 1 年；Client ID/Secret 只保存在 PC `.local/cf-access.env`（gitignored），不写仓库；`CF_ACCESS_APP_AI_ID` 也已写入该文件。
 - 已实测：未登录 `/` 302 到 `*.cloudflareaccess.com`；4 个 bypass 路径返回应用状态码而非 302；带 token 访问 `/api/chatbots/status` 为 401；`ai` 未认证 302、service token 401；smoke 33/33（含任务标记）。
+- 2026-11-11 客户端验收：用户在控制台放行应用 `/api`。未登录 `/api/version` 与 `/api/metrics` 返回应用 401 JSON。`POST /api/auth/password` 对 Tauri Origin 的预检为 204，错误口令为 400 JSON 并回显该 Origin。未登录 `/` 与 `/files` 仍 302 到 Access。Windows 与 Android 客户端登录验收通过。service token 不进入安装包。退回 v1.1.1 时连同当时的 Access 策略一起恢复。
 
 手工重建/迁移时按以下步骤：
 
@@ -714,8 +715,8 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
    - 每个应用 Domain 填 `app.<domain>/healthz`（或对应路径），Policy 选 **Bypass + Everyone**；
    - 路径分别为：`/healthz`、`/api/chatbot/webhook`、`/s`、`/api/public/shares`。
    - `/api/chatbot/webhook` 覆盖 QQ 官方 Bot 回调；`/s` 与 `/api/public/shares` 覆盖公开分享；`/healthz` 供 smoke/健康检查。
-   - 如 PWA 冷启动/离线壳在 Access 登录前就需要加载，可再按需 bypass `/assets`、`/manifest.webmanifest`、`/sw.js`、`/offline.html`、`/icons`；
-     不要把 `/api` 整体 bypass。
+   - 如 PWA 冷启动/离线壳在 Access 登录前就需要加载，可再按需 bypass `/assets`、`/manifest.webmanifest`、`/sw.js`、`/offline.html`、`/icons`。
+   - 原生客户端不能完成 Access 浏览器登录。`/api` 必须到达应用；认证仍是密码、TOTP 与设备签名，浏览器写请求另要 CSRF。页面与 `ai` 主机保持 Access。不要把 service token 放进安装包。
 3. 验证（未登录浏览器/命令行）：
    ```bash
    # Webhook：应为应用的 404（CHATBOT_ENABLED=false）或 401（验签失败），不能是 Cloudflare Access 302
