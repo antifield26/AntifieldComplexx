@@ -1,8 +1,8 @@
-# AntifieldComplexx v1.2.0 实施计划（当前状态）
+# AntifieldComplexx v1.2.1 实施计划（当前状态）
 
-## v1.2.1 候选实施状态
+## v1.2.1（2026-11-12 已部署）
 
-双端视觉与基础原生交互、认证文件传输、隔离 AI 容器以及全仓关键通路审计。schema 21、mcbot 契约 v2、DSH 固定版本不变。生产仍为 v1.2.0；CI、安装、生产切换、恢复演练和正式发布须取得实际证据后更新。
+双端视觉与基础原生交互、认证文件传输、隔离 AI 容器以及全仓关键通路审计已交付。schema 21、mcbot 契约 v2、DSH 固定版本不变。Workbench `20261112T115350Z`、mcbot `20261112T115627Z`；完整 Access smoke 37／0／0／2，恢复演练 `20261112T115843Z` 通过。Windows／Android 覆盖升级及用户验收通过。构建、审计残余、备份与同 schema 回滚证据见 ACCEPTANCE、AUDIT。
 
 
 本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`；审计见 `docs/app/AUDIT.md`。

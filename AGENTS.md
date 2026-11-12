@@ -4,11 +4,11 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.2.1（候选实施中，尚未部署）**。生产仍为 v1.2.0（2026-11-11 已部署）。schema 21、mcbot 契约 v2。退回 v1.1.1 必须恢复迁移前快照与 v1.1.1 release。Web、QQ 与 mcbot Agent 继续使用 DeepSeek Harness。OpenCode **v2.2.5** 仅用于恢复历史版本 v1.0.13（`1743323`）。
+**当前版本 v1.2.1（2026-11-12 已部署）**。schema 21、mcbot 契约 v2。同 schema 回到 v1.2.0 仅还原 release 与配置，保留现行数据库及 WAL。退回 v1.1.1 必须恢复迁移前快照与 v1.1.1 release。Web、QQ 与 mcbot Agent 继续使用 DeepSeek Harness。OpenCode **v2.2.5** 仅用于恢复历史版本 v1.0.13（`1743323`）。
 
-生产 Workbench release 为 `20261111T104738Z`，mcbot 为 `20261111T105117Z`，DSH 为 `20261108T143448Z`。迁移前快照 `db-predeploy-20261111T104848131Z.sqlite`（schema 20，sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）。最近演练仍是 `20261110T022941Z`（schema 20）。公网界面开关保持默认开启。
+生产 Workbench release 为 `20261112T115350Z`，mcbot 为 `20261112T115627Z`，DSH 为 `20261108T143448Z`。本次部署前快照 `db-predeploy-20261112T115510214Z.sqlite`（schema 21，sha256 `a04ae77571b118fa6b51b9d08fd4dde42852688ad5109ce28ee66bb0720c9202`）。最近演练 `20261112T115843Z`（schema 21，应用与世界隔离恢复）。公网界面开关保持默认开启。
 
-schema **v21**（设备登记与请求签名）。客户端与 schema 21 绑定。回到 v1.1.1 必须恢复上述快照、v1.1.1 release `/opt/antifieldcloud/releases/20261109T143755Z`、mcbot `/opt/mcbot/releases/20261110T022539Z`、当时的 Access 策略与公网界面。只恢复公网界面时把 `PUBLIC_APP_SHELL` 设为 true 并重启，不改 schema。
+schema **v21**（设备登记与请求签名）。客户端与 schema 21 绑定。回到 v1.1.1 必须恢复 schema 20 快照 `db-predeploy-20261111T104848131Z.sqlite`（sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）、v1.1.1 release `/opt/antifieldcloud/releases/20261109T143755Z`、mcbot `/opt/mcbot/releases/20261110T022539Z`、当时的 Access 策略与公网界面。只恢复公网界面时把 `PUBLIC_APP_SHELL` 设为 true 并重启，不改 schema。
 
 **v1.0.7 基线（2026-11-04 已部署，commit `b17102b`）**：schema v19 为 `alert_events.dedupe_key`；mcbot 快照下发 `lastSuccessAt`；mcbot 进程不在或轮询过期走 `service_down`；寻路兜底进入自主重决策（不新增 MCP 工具，不挖掘/不放置/不跑酷）。OpenCode **v2.2.5** 已在树莓派运行，回滚备份 timestamp `20261104T062115Z`。v1.0.7 app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19）、mcbot `/opt/mcbot/releases/20261104T092858Z`。npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
@@ -68,6 +68,8 @@ node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPT
 本地门禁（v1.2.0，2026-11-11 已部署）：2026-11-11 全量 `npm run check` 为服务端 **647**（646 pass、1 skip）+ web **307** + mcbot **181**。v1.1.1：2026-11-09 全量检查为服务端 **640**（639 pass、1 skip）+ web **283** + mcbot **179**；`check-naming`、`check:docs` 通过。2026-11-10 原木计数修复后的 mcbot 单测为 **181** pass。上一版本基线（v1.1.0）：服务端 **633**（632 pass、1 skip）+ web **283** + mcbot **174**。v1.0.13：app **625**（624 pass、1 skip）+ web **283** + mcbot **173**。v1.0.12：app **625**（624 pass、1 skip）+ web **283** + mcbot **168**。v1.0.10：app **625**（624 pass、1 skip）+ web **283** + mcbot **154**。演练为 `20261110T022941Z`（schema 20）。上一版本演练为 `20261108T143038Z`。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
+
+v1.2.1 本地门禁（2026-11-12）：完整 `npm run check` 为服务端／脚本 **670**（669 pass、1 skip）+ web **343** + mcbot **183**，原生 Rust **22**。运行提交 `0f7be18` 的完整 CI 与双端原生构建全绿；入口 JS 生产 Web 495,101、原生 495,127 字节。Windows／Android 覆盖升级与用户验收通过，完整 Access smoke **37／0／0／2**，演练 `20261112T115843Z`（schema 21）。
 
 ## 4. 目录与模块边界
 
@@ -178,6 +180,8 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 - 每个阶段结束给出「产出摘要 + 未决问题 + 验证证据」。
 
 ## 8. 已知环境事实（不要重复踩坑）
+
+- **v1.2.1（2026-11-12 已部署）**：Workbench `20261112T115350Z`、mcbot `20261112T115627Z`，运行提交 `0f7be18`；schema 21、契约 v2、DSH release 不变。部署前快照 `db-predeploy-20261112T115510214Z.sqlite`（schema 21）。完整 smoke **37／0／0／2**，演练 `20261112T115843Z` 通过。Windows 从正常下载目录运行 CI NSIS，避免工作区低完整性标签导致临时文件写入失败。Android 使用 Linux CI、SDK 36、原有兼容签名；五种密度和自适应 AC 图标由构建脚本同步，原生 WebView 禁用牵动固定导航的容器回弹。双端覆盖升级、功能及视觉经用户验收，Windows 最终重启自动恢复登录。备份任务 installedAt `2026-11-12T11:47:40.101391Z`。回退 v1.2.0 仅恢复 release 与配置，保留数据库及 WAL。
 
 - **v1.2.0（2026-11-11 已部署）**：同一账号登记 Windows 与 Android 客户端，Ed25519 签名 Bearer，前台心跳 30 秒，90 秒内算在线。`PUBLIC_APP_SHELL` 默认 true，生产 env 未写该键。关闭后公网只返回「请使用客户端」和分享页，loopback 仍提供完整界面。schema 21，契约 v2。Workbench `/opt/antifieldcloud/releases/20261111T104738Z`，mcbot `/opt/mcbot/releases/20261111T105117Z`，DSH 仍为 `/opt/antifield-dsh/releases/20261108T143448Z`。迁移前快照 `db-predeploy-20261111T104848131Z.sqlite`（schema 20，sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）。部署内 smoke **26/0/1/2**，Access smoke **36/0/1/2**。警告是演练仍为 schema 20 的 `20261110T022941Z`。退回 v1.1.1 必须恢复该快照、`20261109T143755Z` 与 mcbot `20261110T022539Z`、当时的 Access 策略与公网界面。用户已在 Cloudflare 控制台放行 `/api`：未登录 `/api/version` 与 `/api/metrics` 返回应用 401 JSON，密码接口对 Tauri Origin 的预检返回 204、错误口令返回 400 JSON。未登录页面 `/` 与 `/files` 仍 302 到 Access。Windows 与 Android 客户端登录验收通过。Windows 客户端 1.2.0 按当前用户安装，使用原有 AC 图标，接口源只存在于本机构建。Android `app.antifieldcomplexx.client` versionName 1.2.0、versionCode 1002000，debug 签名侧载，启动器为原有 AC 图标。`tauri android build` 在本机仍因 jniLibs 符号链接退出码 1。Windows 计划任务于 `2026-11-11T11:40:23.6416579Z` 重装为 1.2.0，异地副本任务未安装。已发布 annotated Tag `v1.2.0` 与 GitHub Release，发布页附带 Windows x64 与 Android arm64 安装包。生产 Workbench 仍是 `20261111T104738Z`（commit `125700f`）；冒烟脚本修正 `8ff506c` 尚未进入该 release。
 - **v1.1.1（2026-11-10 已部署）**：采集、存箱与回家按动作结果推进，可暂停、取消和按步骤恢复。防御准备识别已装备的护甲和盾牌。树场选择最近原木，成功砍伐后立即计数。分享下载原子预占名额，分片逐片校验 SHA-256。age 密钥包收录 mcbot 目标库、任务状态和世界记忆。同 schema 回滚保留数据库及 WAL。schema 20，契约 v2，DSH 0.2.2-rc.1，QQ 插件 0.5.5。Workbench `/opt/antifieldcloud/releases/20261109T143755Z`，mcbot `/opt/mcbot/releases/20261110T022539Z`，DSH 仍为 `/opt/antifield-dsh/releases/20261108T143448Z`。部署前快照 `db-predeploy-20261109T143804671Z.sqlite` 已校验 schema 20。演练 `20261110T022941Z` 通过。Access smoke **37/0/0/2**。Windows 计划任务标记为 1.1.1，未另记 installedAt。回滚到 v1.1.0 的 `20261108T080545Z` 并保留现行库及 WAL。Tag `v1.1.1` 指向 `bd2d205`。

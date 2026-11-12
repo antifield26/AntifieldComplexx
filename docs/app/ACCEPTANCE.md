@@ -1,15 +1,19 @@
 # AntifieldComplexx 验收记录
 
-### v1.2.1 候选本地验证（2026-11-12，未部署）
+### v1.2.1 生产部署与双端验收（2026-11-12）
 
-- 本地全量服务端 666 项（665 通过、1 跳过）、前端 343、mcbot 183 通过，完整 npm run check 全绿。生产构建通过，入口及静态预加载 JS 合计 495,127 字节；后续构建仍需重新核对。
-- 本地只读夹具以 1440／900／390 像素检查首页、Bot 与更多页，无横向溢出；截图在本机忽略目录。响应式模拟不替代 DPI／真机验收。
-- 设备认证与 25 MiB 附件接管回归通过；原生 Rust 22 项、Windows／Android aarch64 check 和插件 Kotlin 编译通过。
-- Windows NSIS 已重新构建（3,407,671 字节；实际 SHA-256 记录在本机证据中）；Android 本机 CLI 仍受符号链接权限限制，Linux CI APK、覆盖安装、真实文件及 SSO 尚未验收。
-- 生产仍为 v1.2.0；部署后 smoke、Windows 实拉、schema 21 与世界恢复、Tag／Release 尚未完成。
+- 完整本地 `npm run check` 通过：服务端与脚本 670 项（669 通过、1 跳过）、前端 343、mcbot 183。Rust 22 项，Windows／Android aarch64 check 与插件 Kotlin 编译通过。设备认证、25 MiB 附件接管、原生超过 5 GiB 流式夹具及失败／撤销边界有回归证据。
+- 运行提交 `0f7be18` 的 [完整 CI](https://github.com/antifield26/AntifieldComplexx/actions/runs/43212920192) 及 [Windows／Android 原生构建](https://github.com/antifield26/AntifieldComplexx/actions/runs/43212920540) 全绿，包含覆盖率、依赖、密钥、DSH 和运维门禁。登录入口与静态依赖压缩前合计：Web 495,101 字节、原生 495,127 字节，均低于 500,000；构建门禁在最终静态导入分析后计量。
+- Workbench `/opt/antifieldcloud/releases/20261112T115350Z`，包 SHA-256 `1db1bbae9e132f2175e6cf20d823f9dd75877446737b44b3d295c5a59a25ea9e`。部署前 schema 21 一致性快照 `db-predeploy-20261112T115510214Z.sqlite`，SHA-256 `a04ae77571b118fa6b51b9d08fd4dde42852688ad5109ce28ee66bb0720c9202`。部署内 smoke **26／0／0／2**。
+- mcbot `/opt/mcbot/releases/20261112T115627Z`，健康检查为 1.2.1、契约 v2、空闲。切换时没有运行中的任务；未在真实世界触发 Bot 动作。Minecraft 进程 PID 与启动时间未因本版改变。DSH release 仍为 `20261108T143448Z`；部署前 QQ 网关未就绪，独立重连后恢复三路就绪。
+- Windows 从正常下载目录安装最终 CI NSIS，保留设备密钥与登录数据；核对实际二进制已更新并启动到登录后的首页。用户确认自绘标题栏、拖动／最大化／边缘缩放及常用缩放下的外观验收通过。NSIS 为 3,400,440 字节，SHA-256 `1dc4a7f63a7efda12d34a09c10ffd70f9aea29effd30875e83ca1bd26686548a`。
+- Android 从 Linux CI 的干净源码构建；使用与 1.2.0 相同证书在本机签名，包名 `app.antifieldcomplexx.client`、versionName 1.2.1、versionCode 1002001、minSdk 26、compileSdk／targetSdk 36，保留数据覆盖升级。已签 APK SHA-256 `8f16c7851624777ce56376ff141701304c5756f2f37f8119d7eeb79407f3b2cd`。用户确认首页／四项导航／MC、AI 打开与返回、文件上传／预览／下载通过；AC 图标与固定导航回弹修正版再次验收通过。
+- 只读夹具以 1440／900／390 像素检查首页、Bot 与更多页，无横向溢出，截图保存在本机忽略目录。响应式截图与真机反馈分别记录，不把夹具当成真实设备截图；未声称逐一完成所有系统缩放组合。
+- 企业微信告警通过生产投递箱验证：事件 279 同键重复提交只保留一个事件，Webhook 1 次送达，QQ 通道按 DSH 接管策略跳过。完整 Access smoke 为 **37 通过、0 失败、0 警告、2 跳过**；两项跳过为未启用的整包加密与异地副本。
+- Windows 每日／世界拉取任务于 `2026-11-12T11:47:40.101391Z` 更新为 1.2.1，副本 SHA 与任务参数通过核对。实际拉取 `snapshot-20261112T115806170Z-inc.tar.gz` 与 `secrets-20261112T115807Z.tar.age` 并确认。演练 `20261112T115843Z` 通过：full + 23 个增量、schema 21 完整性／外键及世界 `world-20261108T040001Z.tar.gz` 隔离解包后的 `level.dat`。离线密钥包副本可读出 6 个目标，无运行中目标；尚未产生的状态按清单记录，不虚构内容。
+- 回滚到 v1.2.0：恢复保存的配置和 Workbench `20261111T104738Z`／mcbot `20261111T105117Z` release 指针，保留现行数据库及 WAL。同 schema 新写入保全由隔离夹具验证，本版未在生产切回旧版本。退回 v1.1.1 属跨 schema 维护，必须使用下一节的 schema 20 迁移前快照。
 
-
-> 当前版本 v1.2.1 为候选，尚未部署。生产 v1.2.0 已于 2026-11-11 部署。schema 21，mcbot 契约 v2，DSH 0.2.2-rc.1。客户端与 schema 21 绑定；退回 v1.1.1 必须恢复迁移前快照、旧 release、Access 策略与公网界面。OpenCode v2.2.5 仅用于历史回滚。
+> 当前版本 v1.2.1 已于 2026-11-12 部署，schema 21，mcbot 契约 v2，DSH 0.2.2-rc.1。OpenCode v2.2.5 仅用于历史回滚。审计残余见 AUDIT，未将部分关键通路审计宣称为全部历史文件无遗漏。
 
 ### v1.2.0 生产部署（2026-11-11）
 

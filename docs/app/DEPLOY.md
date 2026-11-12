@@ -1,8 +1,8 @@
 # 部署手册（Raspberry Pi 5 / Debian 13，v1.2.1）
 
-## v1.2.1 候选构建与发布
+## v1.2.1 构建与发布
 
-生产仍为 v1.2.0，当前 schema **v21**。同 schema 回滚仅切 release／配置，保留数据库及 WAL。
+生产 v1.2.1 已于 2026-11-12 部署，当前 schema **v21**。Workbench `20261112T115350Z`，mcbot `20261112T115627Z`。同 schema 回到 v1.2.0：恢复部署前保存的配置及 Workbench `20261111T104738Z`／mcbot `20261111T105117Z` 指针，保留现行数据库及 WAL。本次一致性快照 `db-predeploy-20261112T115510214Z.sqlite`（schema 21，SHA-256 `a04ae77571b118fa6b51b9d08fd4dde42852688ad5109ce28ee66bb0720c9202`）用于数据库损坏恢复，不覆盖升级后的正常写入。
 
 三个公开 HTTPS 源由未提交的 .local/client-build.env 或 CI 环境提供：VITE_API_ORIGIN、VITE_AI_ORIGIN、VITE_ACCESS_ORIGIN。npm run build:client:windows／build:client:android 同时注入 Vite 和 Cargo，缺失或非法即失败。
 
@@ -17,7 +17,7 @@ Android 构建从受版本控制的 `icons/android` 同步五种密度与自适�
 异地副本三件套上传或确认失败时整轮禁止删除；同名冲突用 immutable 拒绝，保全旧链后人工核查。
 
 
-> v1.2.0 已于 2026-11-11 部署。客户端与 schema 21 绑定。迁移前快照 `db-predeploy-20261111T104848131Z.sqlite`（schema 20，sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）。迁移后的演练按 schema 21。退回 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略与公网界面（`PUBLIC_APP_SHELL=true`）。只恢复公网界面时改回该开关并重启，不改 schema。当前生产演练 `20261110T022941Z` 是 schema 20，不能代替 schema 21 演练。
+> v1.2.0 于 2026-11-11 将 schema 迁到 21。客户端与 schema 21 绑定。迁移前快照 `db-predeploy-20261111T104848131Z.sqlite`（schema 20，sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）。当前 schema 21 应用与世界隔离演练为 `20261112T115843Z`。退回 v1.1.1 必须恢复 schema 20 快照、v1.1.1 release、当时的 Access 策略与公网界面（`PUBLIC_APP_SHELL=true`）。只恢复公网界面时改回该开关并重启，不改 schema。
 
 > Workbench release 为 `20261111T104738Z`，mcbot 为 `20261111T105117Z`。退回 v1.1.1 使用 Workbench `20261109T143755Z` 与 mcbot `20261110T022539Z`，并恢复上面的快照。回滚到 v1.1.0 使用各自的 `20261108T080545Z` release。部署与备份证据见 [验收记录](ACCEPTANCE.md)。
 

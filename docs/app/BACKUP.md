@@ -6,6 +6,8 @@
 
 本版不自动启用生产异地副本。发布门禁需要 schema 21 应用及世界归档隔离恢复，schema 20 演练不能替代。
 
+2026-11-12 已更新 Windows 每日／世界拉取任务为 1.2.1 并实拉 `snapshot-20261112T115806170Z-inc.tar.gz`、`secrets-20261112T115807Z.tar.age`。演练 `20261112T115843Z` 验证 full + 23 个增量、schema 21 完整性／外键及世界隔离解包后的 `level.dat`。密钥包离线副本的 6 个目标可读、无运行中目标。明文临时 tar 随校验清理；完整验收见 ACCEPTANCE。
+
 
 > v1.1.1 起，`MCBOT_ENABLED=true` 时，age 密钥包在 `mcbot-state/` 收录目标库 SQLite 一致性快照、手动任务状态及世界记忆。清单逐项记录 SHA-256 和大小，状态为 `included`、`not_created` 或 `read_failed`。目标库必须已初始化。读取或校验失败时密钥包失败。Windows 拉取和 `smoke.ps1 -RequireMcbotState` 检查收录状态。
 
