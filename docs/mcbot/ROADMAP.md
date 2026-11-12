@@ -1,3 +1,8 @@
+## v1.2.1（2026-11-12）
+
+- **范围**：版本轴对齐到 1.2.1。HTTP 契约保持 v2。自主工具仍由 DSH 插件经私有 Unix socket 调用。
+- **状态**：release `/opt/mcbot/releases/20261112T115627Z`。回滚到 v1.2.0 `/opt/mcbot/releases/20261111T105117Z`，保留现行数据库及 WAL。已发布 annotated Tag `v1.2.1`。
+
 ## v1.2.0（2026-11-11）
 
 - **范围**：版本轴对齐到 1.2.0。HTTP 契约保持 v2。自主工具仍由 DSH 插件经私有 Unix socket 调用。

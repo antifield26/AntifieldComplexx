@@ -1,7 +1,7 @@
 # AntifieldComplexx 文档索引
 
-> 当前版本 v1.2.0（2026-11-11 已部署），schema 21 / mcbot 契约 v2 / DeepSeek Harness 0.2.2-rc.1。OpenCode 2.2.5 已从 Pi 退役。路径见 [ACCEPTANCE](app/ACCEPTANCE.md)。
-> 客户端与 schema 21 绑定。部署前保存生产库快照；迁移后的演练按 schema 21。退回 v1.1.1 必须恢复该快照、旧 release、Access 策略与公网界面。
+> 当前版本 v1.2.1（2026-11-12 已部署），schema 21 / mcbot 契约 v2 / DeepSeek Harness 0.2.2-rc.1。OpenCode 2.2.5 已从 Pi 退役。路径见 [ACCEPTANCE](app/ACCEPTANCE.md)。
+> 客户端与 schema 21 绑定。当前演练 `20261112T115843Z`（schema 21）。退回 v1.1.1 必须恢复迁移前快照、旧 release、Access 策略与公网界面。
 > 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区、主机监控与备份灾备。
 
 ## 应用（apps/workbench，Web 端）

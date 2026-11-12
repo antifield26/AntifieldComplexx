@@ -1,6 +1,6 @@
 # 安全说明
 
-## v1.2.1 候选安全边界
+## v1.2.1 安全边界
 
 设备绑定会话不能降级应用 Cookie；nonce 覆盖完整有效秒，严格 HTTP 模式拒绝游戏内自主启动。原生 IPC 同时检查 main 标识及本地来源，文件传输限定固定源／内容端点并拒绝重定向，登出撤销句柄与传输。
 
@@ -154,7 +154,7 @@ AI 仅导航固定 AI／Access 来源，远端无主窗口权限，实际 UA、�
 - 端点 `/autonomy/mcp` 不得经应用/Cloudflare/nftables 暴露；仅 OpenCode 运行时 loopback 调用。
 ### mcbot（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-- **网络/上游**：mcbot 是独立服务（本版 v1.2.0，最低 v0.6.0，契约 v2），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `mcbot_unavailable` 且不暴露底层 message。自 v0.6.1 起上游逐行把行首 `/` 中和为全角 `／`。
+- **网络/上游**：mcbot 是独立服务（本版 v1.2.1，最低 v0.6.0，契约 v2），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `mcbot_unavailable` 且不暴露底层 message。自 v0.6.1 起上游逐行把行首 `/` 中和为全角 `／`。
 - **Token 分离**：读 Token 仅用于 `/status`、`/events/recent`、`/history`；控制 Token 仅用于 `/task/*`、`/move`、`/say`（v0.8.1 起 `/say` 是写操作，只读模式返回 `503 mcbot_control_disabled`）；控制 Token 为空时控制方法直接 `mcbot_control_disabled`（不发请求）。Token 来自独立 env，由 root 的 `scripts/sync-mcbot-tokens.sh` 同步（只读 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，不读取 RCON/OpenCode 密码；写前备份 env、同目录临时文件 + `mv` 原子替换、保持 0640，不回显 Token）。
 - **HTTP 面**：`/api/mcbot/*` 全部 `requireAuth`；写操作额外 `csrfGuard`；控制类共享 20/min/IP、`/say` 10/min/IP 限流；服务端白名单校验任务名（11 种，含 clearing）、移动动作（4 种）、`taskId`（trim 后 1–64、无内部空白/控制字符）、消息（trim 后 1–720、**任意位置禁止 ASCII `/`**、禁止 C0 控制字符/DEL，防上游按 240 字符切行后的命令注入）；`/history` 校验 `kind` 与数组形状，只透传对象行；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `mcbot_*`，其它错误统一映射为固定中文文案，不含上游原文/URL/Token。
 - **审计**：`mcbot.task.start/stop/resume`、`mcbot.move`、`mcbot.control_failed`、`mcbot.autonomy.start/stop`、`mcbot.presence.set`、`mcbot.goal.*` 记录动作与元数据；`mcbot.say` 只记录字符数，**绝不记录聊天正文**；事件/聊天不写审计正文。

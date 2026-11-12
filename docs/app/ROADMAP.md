@@ -2,7 +2,7 @@
 
 ## v1.2.1（2026-11-12 已部署）
 
-首页与 Bot 优先的暗色科技感精修，Windows 自绘标题栏、Android 四项导航，基础原生适配与签名文件传输。并行修复已确认的认证及灾备风险。schema 21、契约 v2 不变。双端覆盖升级及用户功能／视觉验收通过；完整 Access smoke 37／0／0／2，schema 21 与世界隔离演练 `20261112T115843Z` 通过。详细证据与审计残余见 ACCEPTANCE、AUDIT。
+首页与 Bot 优先的暗色科技感精修，Windows 自绘标题栏、Android 四项导航，基础原生适配与签名文件传输。并行修复已确认的认证及灾备风险。schema 21、契约 v2 不变。双端覆盖升级及用户功能／视觉验收通过；完整 Access smoke 37／0／0／2，schema 21 与世界隔离演练 `20261112T115843Z` 通过。已发布 annotated Tag `v1.2.1`，发布页附带 Windows x64 安装包、Android arm64 压缩包与 SHA256SUMS。Tag 指向 `26bcc70`，生产进程仍是 `0f7be18`。详细证据与审计残余见 ACCEPTANCE、AUDIT。
 
 
 ## v1.2.0（2026-11-11 已部署）

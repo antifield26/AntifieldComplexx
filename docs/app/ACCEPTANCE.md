@@ -12,6 +12,7 @@
 - 企业微信告警通过生产投递箱验证：事件 279 同键重复提交只保留一个事件，Webhook 1 次送达，QQ 通道按 DSH 接管策略跳过。完整 Access smoke 为 **37 通过、0 失败、0 警告、2 跳过**；两项跳过为未启用的整包加密与异地副本。
 - Windows 每日／世界拉取任务于 `2026-11-12T11:47:40.101391Z` 更新为 1.2.1，副本 SHA 与任务参数通过核对。实际拉取 `snapshot-20261112T115806170Z-inc.tar.gz` 与 `secrets-20261112T115807Z.tar.age` 并确认。演练 `20261112T115843Z` 通过：full + 23 个增量、schema 21 完整性／外键及世界 `world-20261108T040001Z.tar.gz` 隔离解包后的 `level.dat`。离线密钥包副本可读出 6 个目标，无运行中目标；尚未产生的状态按清单记录，不虚构内容。
 - 回滚到 v1.2.0：恢复保存的配置和 Workbench `20261111T104738Z`／mcbot `20261111T105117Z` release 指针，保留现行数据库及 WAL。同 schema 新写入保全由隔离夹具验证，本版未在生产切回旧版本。退回 v1.1.1 属跨 schema 维护，必须使用下一节的 schema 20 迁移前快照。
+- 已发布 annotated Tag `v1.2.1` 与 GitHub Release。Tag 指向 `26bcc70`，生产进程仍是 `0f7be18`。发布页附带 `AntifieldComplexx_1.2.1_x64-setup.exe`（3,400,440 字节）、`AntifieldComplexx-1.2.1-arm64.zip` 与 `SHA256SUMS`。
 
 > 当前版本 v1.2.1 已于 2026-11-12 部署，schema 21，mcbot 契约 v2，DSH 0.2.2-rc.1。OpenCode v2.2.5 仅用于历史回滚。审计残余见 AUDIT，未将部分关键通路审计宣称为全部历史文件无遗漏。
 

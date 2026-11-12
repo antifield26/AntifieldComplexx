@@ -10,6 +10,7 @@
 - 原生覆盖升级清理遗留静态离线缓存；Android 从版本控制同步完整 AC 图标，关闭牵动固定导航的容器回弹。
 - 增加 Rust、双端原生 CI、版本一致性及登录入口 500 kB 构建门禁。
 - schema 21、契约 v2、DSH 版本不变。生产、双端覆盖升级、完整 Access smoke 与 schema 21／世界隔离恢复验收通过。
+- 已发布 annotated Tag `v1.2.1` 与 GitHub Release。Tag 指向 `26bcc70`，生产进程仍是 `0f7be18`。发布页附带 Windows x64 安装包、Android arm64 压缩包与 SHA256SUMS。
 
 
 ## [v1.2.0] - 2026-11-11
