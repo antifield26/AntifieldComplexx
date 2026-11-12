@@ -1,7 +1,7 @@
 /** 原生发布配置的失败关闭和跨安装包版本门禁夹具；不执行真实构建或网络。 */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { clientBuildArguments, parseClientOrigins } from '../build-client.mjs'
+import { clientBuildArguments, parseClientOrigins, pinAndroidSdk } from '../build-client.mjs'
 import { clientVersionErrors } from '../check-client-version.mjs'
 
 const config = 'VITE_API_ORIGIN=https://app.example.com\nVITE_AI_ORIGIN=https://ai.example.com\nVITE_ACCESS_ORIGIN=https://team.cloudflareaccess.com'
@@ -18,6 +18,16 @@ test('构建目标固定为 NSIS 或 arm64 APK', () => {
   assert.ok(clientBuildArguments('windows').includes('nsis'))
   assert.deepEqual(clientBuildArguments('android'), ['android', 'build', '--target', 'aarch64', '--apk', '--ci'])
   assert.throws(() => clientBuildArguments('anything'))
+})
+
+test('全新 Android 工程固定 SDK 并拒绝模板漂移', () => {
+  const generated = 'android {\n    compileSdk = 37\n    defaultConfig {\n        targetSdk = 37\n    }\n}'
+  const pinned = pinAndroidSdk(generated)
+  assert.ok(pinned.includes('compileSdk = 36'))
+  assert.ok(pinned.includes('targetSdk = 36'))
+  assert.equal(pinAndroidSdk(pinned), pinned)
+  assert.throws(() => pinAndroidSdk('compileSdk = 37'))
+  assert.throws(() => pinAndroidSdk(`${generated}\ncompileSdk = 36`))
 })
 test('任一 Rust、Tauri 或登记版本漂移都会失败', () => {
   const sources = {

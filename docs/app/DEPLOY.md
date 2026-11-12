@@ -6,7 +6,7 @@
 
 三个公开 HTTPS 源由未提交的 .local/client-build.env 或 CI 环境提供：VITE_API_ORIGIN、VITE_AI_ORIGIN、VITE_ACCESS_ORIGIN。npm run build:client:windows／build:client:android 同时注入 Vite 和 Cargo，缺失或非法即失败。
 
-Windows 构建 NSIS；Android Linux CI 使用 Rust 1.99.1、Java 17、SDK 36、NDK 27.0.12077973。保持原包名及兼容签名，私钥不进源码或发布附件。本机 Windows 符号链接失败不能用旧 SO 拼包冒充通过。
+Windows 构建 NSIS；Android Linux CI 使用 Rust 1.99.1、Java 17、SDK 36、NDK 27.0.12077973。`build-client.mjs` 在全新初始化后固定生成工程的 compileSdk 与 targetSdk 为 36，模板不匹配时拒绝构建，避免依赖本机手工修改。保持原包名及兼容签名，私钥不进源码或发布附件。本机 Windows 符号链接失败不能用旧 SO 拼包冒充通过。
 
 切换前验证 schema 21 一致性快照及 release／配置，再部署应用、空闲 Bot 并覆盖升级客户端。验证登录、文件、AI、控制、完整 smoke、Windows 实拉及 schema 21／世界隔离恢复后发布。Minecraft 不因本版重启。
 
