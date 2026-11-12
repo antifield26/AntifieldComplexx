@@ -4,9 +4,9 @@
 
 - 同一账号可登记最多 10 台 Windows 或 Android 客户端。设备用 Ed25519 签名 Bearer 请求。前台每 30 秒心跳，90 秒内算在线。浏览器仍用 Cookie 与 CSRF。
 - `PUBLIC_APP_SHELL` 默认开启。关闭后，应用公网主机只返回「请使用客户端」和分享页；`127.0.0.1`、`localhost` 与 `::1` 仍提供完整界面。健康检查、公开分享、QQ Webhook 与 AI 反代保持可用。
-- schema 21 已于 2026-11-11 部署。未发布 Tag。迁移前快照 `db-predeploy-20261111T104848131Z.sqlite`（schema 20，sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）。迁移后的演练按 schema 21，当前演练仍是 `20261110T022941Z`。客户端与 schema 21 绑定。退回 v1.1.1 必须恢复该快照、旧 release、当时的 Access 策略与公网界面。
+- schema 21 已于 2026-11-11 部署。已发布 annotated Tag `v1.2.0`。迁移前快照 `db-predeploy-20261111T104848131Z.sqlite`（schema 20，sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）。迁移后的演练按 schema 21，当前演练仍是 `20261110T022941Z`。客户端与 schema 21 绑定。退回 v1.1.1 必须恢复该快照、旧 release、当时的 Access 策略与公网界面。
 - 冒烟脚本读取公网首页时使用 `$page`，避免占用 PowerShell 只读变量 `$HOME`。
-- Windows 客户端 1.2.0 已按当前用户安装。Android `app.antifieldcomplexx.client` 1.2.0（versionCode 1002000）已用 debug 密钥签名后侧载。两端使用原有 AC 图标，接口源只存在于本机构建。`tauri android build` 在本机的退出码仍是 1。Windows 计划任务于 `2026-11-11T11:40:23.6416579Z` 重装为 1.2.0。用户已放行应用 `/api`，双端登录验收通过。未发布 Tag。
+- Windows 客户端 1.2.0 已按当前用户安装。Android `app.antifieldcomplexx.client` 1.2.0（versionCode 1002000）已用 debug 密钥签名后侧载。两端使用原有 AC 图标，接口源只存在于本机构建。`tauri android build` 在本机的退出码仍是 1。Windows 计划任务于 `2026-11-11T11:40:23.6416579Z` 重装为 1.2.0。用户已放行应用 `/api`，双端登录验收通过。已发布 annotated Tag `v1.2.0` 与 GitHub Release，发布页附带 Windows x64 与 Android arm64 安装包。
 
 ## [v1.1.1] - 2026-11-10
 
