@@ -175,6 +175,16 @@ async fn background_app(app: tauri::AppHandle, window: tauri::WebviewWindow) -> 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_client_runtime::init())
+        .on_page_load(|webview, payload| {
+            // 固定本地主窗口即使被旧离线页接管，也能移除静态缓存；远端 AI 页面不执行迁移。
+            if payload.event() == tauri::webview::PageLoadEvent::Finished
+                && trusted_main_url(webview.label(), payload.url())
+            {
+                if webview.eval(include_str!("native-bootstrap.js")).is_err() {
+                    eprintln!("客户端静态缓存迁移脚本不可用");
+                }
+            }
+        })
         .on_window_event(|window, event| {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 transfer::revoke_all();

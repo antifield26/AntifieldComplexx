@@ -8,6 +8,8 @@
 
 Windows 构建 NSIS；Android Linux CI 使用 Rust 1.99.1、Java 17、SDK 36、NDK 27.0.12077973。`build-client.mjs` 在全新初始化后固定生成工程的 compileSdk 与 targetSdk 为 36，模板不匹配时拒绝构建，避免依赖本机手工修改。保持原包名及兼容签名，私钥不进源码或发布附件。本机 Windows 符号链接失败不能用旧 SO 拼包冒充通过。
 
+原生主窗口加载时移除本地来源遗留的 Service Worker 与产品静态缓存，再刷新页面；设备密钥和账号数据保留。NSIS 安装包应从用户正常下载目录运行；若工作区继承低完整性标签，应重新下载 CI 原包到下载目录并核对 SHA-256，不修改工作区或系统目录的安全标签。
+
 切换前验证 schema 21 一致性快照及 release／配置，再部署应用、空闲 Bot 并覆盖升级客户端。验证登录、文件、AI、控制、完整 smoke、Windows 实拉及 schema 21／世界隔离恢复后发布。Minecraft 不因本版重启。
 
 异地副本三件套上传或确认失败时整轮禁止删除；同名冲突用 immutable 拒绝，保全旧链后人工核查。
