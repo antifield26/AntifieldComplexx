@@ -3,6 +3,7 @@
 .native-windows .network-banner { top: 32px; }
 .modal-overlay { max-height: 100dvh; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
 .modal-panel { max-height: calc(100dvh - 40px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+html { overscroll-behavior: none; }
 .modal-body { overscroll-behavior: contain; }
 .file-download-feedback { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 900px) { input, textarea, select { scroll-margin-bottom: 110px; } .modal-overlay { padding-top: max(12px, env(safe-area-inset-top)); } }

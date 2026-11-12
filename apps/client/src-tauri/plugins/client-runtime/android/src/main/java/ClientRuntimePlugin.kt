@@ -4,6 +4,7 @@ package app.antifieldcomplexx.runtime
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.view.View
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -42,6 +43,8 @@ class ClientRuntimePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     override fun load(webView: WebView) {
+        // WebView 的整体拉伸会带动 CSS 固定导航；保留内容惯性滚动，关闭原生容器回弹。
+        webView.overScrollMode = View.OVER_SCROLL_NEVER
         mainWebView = WeakReference(webView)
         val host = activity as? AppCompatActivity ?: return
         host.onBackPressedDispatcher.addCallback(host, object : OnBackPressedCallback(true) {

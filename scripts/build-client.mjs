@@ -1,5 +1,5 @@
 /** 客户端可重现构建入口。三个公开服务源同时注入 Vite 与 Cargo；不读取凭据，不提供默认生产地址。 */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL, URL } from 'node:url'
 import { spawnSync } from 'node:child_process'
@@ -45,15 +45,27 @@ export function pinAndroidSdk(source) {
   return source
 }
 
+export function prepareAndroidProject(repoRoot) {
+  const gradle = resolve(repoRoot, 'apps/client/src-tauri/gen/android/app/build.gradle.kts')
+  if (!existsSync(gradle)) throw new Error('请先执行 tauri android init --ci --skip-targets-install')
+  const icons = resolve(repoRoot, 'apps/client/src-tauri/icons/android')
+  const expected = ['values/ic_launcher_background.xml', 'mipmap-anydpi-v26/ic_launcher.xml']
+  for (const density of ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']) {
+    for (const name of ['ic_launcher', 'ic_launcher_round', 'ic_launcher_foreground']) expected.push(`mipmap-${density}/${name}.png`)
+  }
+  if (expected.some((name) => !existsSync(resolve(icons, name)))) throw new Error('受版本控制的 Android 图标不完整')
+  writeFileSync(gradle, pinAndroidSdk(readFileSync(gradle, 'utf8')))
+  // 初始化模板中的占位图标不作为发布资源；每次构建都同步产品的完整密度和自适应图标。
+  cpSync(icons, resolve(repoRoot, 'apps/client/src-tauri/gen/android/app/src/main/res'), { recursive: true })
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     const configPath = resolve(root, process.env.CLIENT_BUILD_CONFIG || '.local/client-build.env')
     const origins = parseClientOrigins(existsSync(configPath) ? readFileSync(configPath, 'utf8') : '', process.env)
     const args = clientBuildArguments(process.argv[2])
     if (process.argv[2] === 'android') {
-      const gradle = resolve(root, 'apps/client/src-tauri/gen/android/app/build.gradle.kts')
-      if (!existsSync(gradle)) throw new Error('请先执行 tauri android init --ci --skip-targets-install')
-      writeFileSync(gradle, pinAndroidSdk(readFileSync(gradle, 'utf8')))
+      prepareAndroidProject(root)
     }
     const npmCli = process.env.npm_execpath || resolve(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')
     if (!existsSync(npmCli)) throw new Error('请通过 npm run build:client:windows 或 build:client:android 执行')
