@@ -3,13 +3,23 @@
   "description": "主窗口可以登记设备并签名请求",
   "windows": ["main"],
   "permissions": [
-    "core:default",
+    "core:event:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
     "allow-prepare-device",
     "allow-store-session",
     "allow-clear-session",
     "allow-clear-device",
     "allow-sign-request",
     "allow-has-session",
-    "allow-open-ai-workspace"
+    "allow-open-ai-workspace",
+    "allow-download-file",
+    "allow-cancel-transfer",
+    "allow-create-preview",
+    "allow-release-preview",
+    "allow-background-app"
   ]
 }

@@ -24,6 +24,12 @@ pub trait SecretStore {
 
 pub struct KeyringStore;
 
+/// 登记、写会话、签名与清理串行，避免密钥和会话归属交错。
+pub(crate) fn operation_lock() -> &'static std::sync::Mutex<()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    &LOCK
+}
+
 /// Android 必须先注册系统密钥库。失败时不创建条目，避免落到内存模拟库。
 #[cfg(target_os = "android")]
 fn ensure_platform_store() -> Result<(), StoreError> {
@@ -64,7 +70,9 @@ impl SecretStore for KeyringStore {
     fn put(&self, account: &str, value: &str) -> Result<(), StoreError> {
         ensure_platform_store()?;
         let entry = keyring::Entry::new(SERVICE, account).map_err(|_| StoreError::Unavailable)?;
-        entry.set_password(value).map_err(|_| StoreError::Unavailable)
+        entry
+            .set_password(value)
+            .map_err(|_| StoreError::Unavailable)
     }
 
     fn remove(&self, account: &str) -> Result<(), StoreError> {

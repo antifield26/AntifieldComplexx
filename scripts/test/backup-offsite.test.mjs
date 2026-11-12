@@ -29,6 +29,11 @@ import {
 const SAMPLE_ARCHIVE = 'snapshot-20261020T040000Z-full.tar.gz.age'
 const SAMPLE_INC = 'snapshot-20261021T040000Z-inc.tar.gz.age'
 
+/** 远端夹具以密文、SHA 与元数据三件套表示已完整上传。 */
+function completeSets(names) {
+  return names.flatMap(name => [name, `${name}.sha256`, `${name}.meta.json`])
+}
+
 test('归档名与时间戳：6/9 位小数秒可解析，7/8 位也兼容', () => {
   assert.equal(parseStamp(SAMPLE_ARCHIVE), Date.UTC(2026, 9, 20, 4, 0, 0, 0))
   assert.equal(parseStamp('snapshot-20261020T040000123Z-full.tar.gz.age'), Date.UTC(2026, 9, 20, 4, 0, 0, 123))
@@ -51,20 +56,20 @@ test('链感知保留：最新 full 及其后 inc + 最近 N 天保留，绝不�
     'snapshot-20260910T040000Z-full.tar.gz.age',
     'snapshot-20260911T040000Z-inc.tar.gz.age',
   ]
-  const plan = planRetention(remote, { keepDays: 5, now })
+  const plan = planRetention(completeSets(remote), { keepDays: 5, now })
   assert.equal(plan.newestFull, 'snapshot-20260910T040000Z-full.tar.gz.age')
   assert.equal(plan.keep.includes('snapshot-20260910T040000Z-full.tar.gz.age'), true)
   assert.equal(plan.keep.includes('snapshot-20260911T040000Z-inc.tar.gz.age'), true)
   assert.equal(plan.remove.includes('snapshot-20260901T040000Z-full.tar.gz.age'), true)
   assert.equal(plan.remove.includes('snapshot-20260902T040000Z-inc.tar.gz.age'), true)
   // 最近 N 天内的旧链条目仍保留
-  const recent = planRetention(remote, { keepDays: 90, now })
+  const recent = planRetention(completeSets(remote), { keepDays: 90, now })
   assert.equal(recent.remove.length, 0)
 })
 
 test('保留计划：远端为空/只有明文/无 full 时不误删', () => {
   assert.deepEqual(planRetention([], { keepDays: 30, now: Date.now() }), { keep: [], remove: [], newestFull: null })
-  const noFull = planRetention([SAMPLE_INC], { keepDays: 1, now: Date.UTC(2026, 10, 1) })
+  const noFull = planRetention(completeSets([SAMPLE_INC]), { keepDays: 1, now: Date.UTC(2026, 10, 1) })
   assert.equal(noFull.newestFull, null)
   assert.equal(noFull.remove.includes(SAMPLE_INC), true)
 })
@@ -75,7 +80,7 @@ test('上传候选：只选未上传的加密归档，明文计入拒绝', () =>
     { name: SAMPLE_INC, encrypted: true, stamp: parseStamp(SAMPLE_INC) },
     { name: 'snapshot-20261019T040000Z-full.tar.gz', encrypted: false, stamp: 1 },
   ]
-  const result = selectUploadCandidates(local, [SAMPLE_ARCHIVE])
+  const result = selectUploadCandidates(local, completeSets([SAMPLE_ARCHIVE]))
   assert.deepEqual(result.candidates.map((item) => item.name), [SAMPLE_INC])
   assert.deepEqual(result.plaintextSkipped, ['snapshot-20261019T040000Z-full.tar.gz'])
 })
@@ -174,11 +179,11 @@ function makeBackupFixture() {
 test('runOffsite：只上传加密归档 + 伴随文件，拒绝明文，状态 ok', async () => {
   const fixture = makeBackupFixture()
   const commands = []
-  let remoteNames = []
+  const remoteNames = []
   const runRclone = async (args) => {
     commands.push(args)
     if (args[0] === 'lsf') return { code: 0, stdout: remoteNames.join('\n'), stderr: '' }
-    if (args[0] === 'copyto') return { code: 0, stdout: '', stderr: '' }
+    if (args[0] === 'copyto') { remoteNames.push(args.at(-1).split('/').at(-1)); return { code: 0, stdout: '', stderr: '' } }
     if (args[0] === 'size') return { code: 0, stdout: JSON.stringify({ bytes: Buffer.byteLength('ciphertext-bytes') }), stderr: '' }
     if (args[0] === 'deletefile') return { code: 0, stdout: '', stderr: '' }
     return { code: 1, stdout: '', stderr: 'unexpected' }
@@ -208,8 +213,7 @@ test('runOffsite：只上传加密归档 + 伴随文件，拒绝明文，状态 
     assert.ok(uploads.some((target) => target.endsWith(`${SAMPLE_ARCHIVE}.sha256`)))
     assert.ok(uploads.some((target) => target.endsWith(`${SAMPLE_ARCHIVE}.meta.json`)))
     assert.ok(!uploads.some((target) => target.endsWith('.tar.gz')), '不得上传明文归档')
-    // 第二次 lsf 返回空（本次未上传的假实现），保留计划为空
-    remoteNames = []
+    assert.equal(remoteNames.length, 3, '远端完整集经过上传后列表确认')
   } finally {
     rmSync(fixture.root, { recursive: true, force: true })
   }
@@ -242,7 +246,7 @@ test('runOffsite：远端旧链条目按保留计划删除，最新 full 永不�
   const fixture = makeBackupFixture()
   const oldFull = 'snapshot-20260901T040000Z-full.tar.gz.age'
   const oldInc = 'snapshot-20260902T040000Z-inc.tar.gz.age'
-  let remoteNames = [oldFull, oldInc, SAMPLE_ARCHIVE]
+  const remoteNames = completeSets([oldFull, oldInc, SAMPLE_ARCHIVE])
   const deleted = []
   const runRclone = async (args) => {
     if (args[0] === 'lsf') return { code: 0, stdout: remoteNames.join('\n'), stderr: '' }
@@ -269,8 +273,8 @@ test('runOffsite：delete 数量超过 maxDelete 时安全失败', async () => {
   const fixture = makeBackupFixture()
   const many = Array.from({ length: 5 }, (_, index) => `snapshot-2026${String(index + 1).padStart(2, '0')}01T040000Z-full.tar.gz.age`)
   const runRclone = async (args) => {
-    if (args[0] === 'lsf') return { code: 0, stdout: many.join('\n'), stderr: '' }
-    if (args[0] === 'copyto') return { code: 0, stdout: '', stderr: '' }
+    if (args[0] === 'lsf') return { code: 0, stdout: completeSets(many).join('\n'), stderr: '' }
+    if (args[0] === 'copyto') { if (!many.includes(SAMPLE_ARCHIVE)) many.push(SAMPLE_ARCHIVE); return { code: 0, stdout: '', stderr: '' } }
     if (args[0] === 'size') return { code: 0, stdout: JSON.stringify({ bytes: Buffer.byteLength('ciphertext-bytes') }), stderr: '' }
     return { code: 0, stdout: '', stderr: '' }
   }
@@ -284,5 +288,124 @@ test('runOffsite：delete 数量超过 maxDelete 时安全失败', async () => {
     assert.match(result.status.error ?? '', /delete_limit_exceeded/)
   } finally {
     rmSync(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('残缺的新 full 不作为删除旧完整链的基线，并继续作为补传候选', () => {
+  const oldFull = 'snapshot-20260901T040000Z-full.tar.gz.age'
+  const oldInc = 'snapshot-20260902T040000Z-inc.tar.gz.age'
+  const remote = [...completeSets([oldFull, oldInc]), SAMPLE_ARCHIVE, `${SAMPLE_ARCHIVE}.sha256`]
+  const plan = planRetention(remote, { keepDays: 1, now: Date.UTC(2026, 10, 1) })
+  assert.equal(plan.newestFull, oldFull)
+  assert.deepEqual(plan.keep, [oldFull, oldInc])
+  assert.deepEqual(plan.remove, [])
+  const candidates = selectUploadCandidates([{ name: SAMPLE_ARCHIVE, encrypted: true, stamp: parseStamp(SAMPLE_ARCHIVE) }], remote)
+  assert.equal(candidates.candidates.length, 1)
+})
+
+test('伴随文件失败时禁止删除，下一轮补齐后才允许淘汰旧链', async (t) => {
+  for (const failedSuffix of ['.sha256', '.meta.json']) {
+    await t.test(failedSuffix, async () => {
+      const fixture = makeBackupFixture()
+      const oldFull = 'snapshot-20260901T040000Z-full.tar.gz.age'
+      const remote = new Set(completeSets([oldFull]))
+      const commands = []
+      let failOnce = true
+      const runRclone = async (args) => {
+        commands.push(args)
+        const name = args.at(-1).split('/').at(-1)
+        if (args[0] === 'lsf') return { code: 0, stdout: [...remote].join('\n'), stderr: '' }
+        if (args[0] === 'copyto') {
+          assert.ok(args.includes('--checksum'))
+          assert.ok(args.includes('--immutable'))
+          if (failOnce && name.endsWith(failedSuffix)) {
+            failOnce = false
+            return { code: 1, stdout: '', stderr: 'fixture_transfer_failed' }
+          }
+          remote.add(name)
+          return { code: 0, stdout: '', stderr: '' }
+        }
+        if (args[0] === 'size') return { code: 0, stdout: JSON.stringify({ bytes: Buffer.byteLength('ciphertext-bytes') }), stderr: '' }
+        if (args[0] === 'deletefile') { remote.delete(name); return { code: 0, stdout: '', stderr: '' } }
+        return { code: 1, stdout: '', stderr: 'unexpected' }
+      }
+      const options = { backupRoot: fixture.root, remote: 'offsite', remotePath: '', remoteLabel: 'fixture', keepDays: 1, maxDelete: 50, dryRun: false, verify: true }
+      const deps = { runRclone, sha256File: async () => 'c'.repeat(64), now: () => Date.UTC(2026, 10, 1), logger: () => {} }
+      try {
+        const first = await runOffsite(options, deps)
+        assert.equal(first.status.ok, false)
+        assert.equal(first.status.error, 'partial_failure_no_retention')
+        assert.equal(commands.filter(args => args[0] === 'deletefile').length, 0)
+        assert.ok(remote.has(oldFull), '保留唯一完整 full')
+        const offset = commands.length
+        const second = await runOffsite(options, deps)
+        assert.equal(second.status.ok, true, JSON.stringify(second.status))
+        assert.equal(second.status.uploaded, 1)
+        assert.equal(commands.slice(offset).filter(args => args[0] === 'copyto').length, 3)
+        assert.ok(completeSets([SAMPLE_ARCHIVE]).every(name => remote.has(name)))
+        assert.equal(remote.has(oldFull), false, '新 full 完整确认后才允许删除旧链')
+        const thirdOffset = commands.length
+        const third = await runOffsite(options, deps)
+        assert.equal(third.status.ok, true)
+        assert.equal(commands.slice(thirdOffset).filter(args => args[0] === 'copyto').length, 0, '完整集已上传后重跑幂等')
+      } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+    })
+  }
+})
+
+test('上传后列表失败或缺少新伴随文件时失败关闭，不执行保留删除', async (t) => {
+  for (const fault of ['list_failed', 'missing_meta']) {
+    await t.test(fault, async () => {
+      const fixture = makeBackupFixture()
+      const oldFull = 'snapshot-20260901T040000Z-full.tar.gz.age'
+      const remote = new Set(completeSets([oldFull]))
+      let lists = 0
+      let deletions = 0
+      const runRclone = async (args) => {
+        const name = args.at(-1).split('/').at(-1)
+        if (args[0] === 'lsf') {
+          lists += 1
+          if (lists === 2 && fault === 'list_failed') return { code: 1, stdout: [...remote].join('\n'), stderr: 'fixture_list_failed' }
+          if (lists === 2) remote.delete(`${SAMPLE_ARCHIVE}.meta.json`)
+          return { code: 0, stdout: [...remote].join('\n'), stderr: '' }
+        }
+        if (args[0] === 'copyto') { remote.add(name); return { code: 0, stdout: '', stderr: '' } }
+        if (args[0] === 'deletefile') deletions += 1
+        return { code: 0, stdout: '', stderr: '' }
+      }
+      try {
+        const result = await runOffsite(
+          { backupRoot: fixture.root, remote: 'offsite', remotePath: '', remoteLabel: 'x', keepDays: 1, maxDelete: 50, dryRun: false, verify: false },
+          { runRclone, sha256File: async () => 'c'.repeat(64), now: () => Date.UTC(2026, 10, 1), logger: () => {} },
+        )
+        assert.equal(result.status.ok, false)
+        assert.equal(result.status.error, fault === 'list_failed' ? 'remote_confirmation_failed' : 'partial_failure_no_retention')
+        assert.equal(deletions, 0)
+        assert.ok(remote.has(oldFull))
+      } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+    })
+  }
+})
+
+test('远端大小查询失败或响应不合法时禁止删除', async (t) => {
+  for (const response of [{ code: 1, stdout: '', stderr: 'fixture_size_failed' }, { code: 0, stdout: '{}', stderr: '' }]) {
+    await t.test(String(response.code), async () => {
+      const fixture = makeBackupFixture()
+      let deletions = 0
+      const runRclone = async (args) => {
+        if (args[0] === 'lsf') return { code: 0, stdout: '', stderr: '' }
+        if (args[0] === 'size') return response
+        if (args[0] === 'deletefile') deletions += 1
+        return { code: 0, stdout: '', stderr: '' }
+      }
+      try {
+        const result = await runOffsite(
+          { backupRoot: fixture.root, remote: 'offsite', remotePath: '', remoteLabel: 'x', keepDays: 1, maxDelete: 50, dryRun: false, verify: true },
+          { runRclone, sha256File: async () => 'c'.repeat(64), logger: () => {} },
+        )
+        assert.equal(result.status.ok, false)
+        assert.equal(deletions, 0)
+      } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+    })
   }
 })

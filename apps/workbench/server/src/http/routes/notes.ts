@@ -24,7 +24,7 @@ import {
   type NoteAttachmentUpload,
 } from '../../notes/service.ts'
 import { AppError, badRequest, insufficientStorage, tooLarge } from '../../util/errors.ts'
-import { asRecord, actorFrom, decodeUploadFilename, parsePositiveInt } from '../util.ts'
+import { asRecord, actorFrom, decodeUploadFilename, parsePositiveInt, requireString } from '../util.ts'
 import { csrfGuard, requireAuth } from '../guards.ts'
 
 /** 上传异常映射：磁盘满 → 507；超限 → 413；其它 → 通用 400（不回显路径/内部 message）。 */
@@ -97,6 +97,12 @@ export function registerNoteRoutes(
   app.get('/api/notes/:id/attachments', { preHandler: [requireAuth] }, async (request) => {
     const params = request.params as { id: string }
     return notes.listAttachments(params.id)
+  })
+
+  app.post('/api/notes/:id/attachments/from-upload', { preHandler: [requireAuth, csrf] }, async (request) => {
+    const params = request.params as { id: string }
+    const uploadId = requireString(asRecord(request.body).uploadId, 'uploadId', 64)
+    return notes.addAttachmentFromUpload(actorFrom(request), params.id, uploadId)
   })
 
   app.post('/api/notes/:id/attachments', { preHandler: [requireAuth, csrf] }, async (request) => {

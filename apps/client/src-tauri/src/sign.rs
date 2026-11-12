@@ -18,7 +18,7 @@ pub struct PreparedDevice {
     pub suggested_name: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedRequest {
     pub authorization: String,
@@ -95,7 +95,11 @@ fn resolve_body_hash(body: &[u8], provided: Option<&str>) -> Result<String, Sign
     let Some(hash) = provided else {
         return Ok(hex_encode(&Sha256::digest(body)));
     };
-    if hash.len() != 64 || !hash.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')) {
+    if hash.len() != 64
+        || !hash
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    {
         return Err(SignError::BadInput);
     }
     Ok(hash.to_owned())
@@ -173,7 +177,11 @@ pub(crate) fn prepare(store: &dyn SecretStore) -> Result<PreparedDevice, SignErr
     })
 }
 
-pub(crate) fn store_session(store: &dyn SecretStore, session_token: &str, device_id: &str) -> Result<(), SignError> {
+pub(crate) fn store_session(
+    store: &dyn SecretStore,
+    session_token: &str,
+    device_id: &str,
+) -> Result<(), SignError> {
     if session_token.is_empty()
         || session_token.len() > 200
         || session_token.trim() != session_token
@@ -185,29 +193,51 @@ pub(crate) fn store_session(store: &dyn SecretStore, session_token: &str, device
     {
         return Err(SignError::BadInput);
     }
-    store.put(ACCOUNT_SESSION, session_token)?;
+    // 替换中途失败时不允许保留与旧设备绑定的有效会话。
+    store.remove(ACCOUNT_SESSION)?;
     store.put(ACCOUNT_DEVICE, device_id)?;
+    store.put(ACCOUNT_SESSION, session_token)?;
     Ok(())
 }
 
 pub(crate) fn clear_session(store: &dyn SecretStore) -> Result<(), SignError> {
-    store.remove(ACCOUNT_SESSION)?;
+    let session = store.remove(ACCOUNT_SESSION);
+    let device = store.remove(ACCOUNT_DEVICE);
+    session?;
+    device?;
     Ok(())
 }
 
 pub(crate) fn clear_device(store: &dyn SecretStore) -> Result<(), SignError> {
-    store.remove(ACCOUNT_KEY)?;
-    store.remove(ACCOUNT_SESSION)?;
-    store.remove(ACCOUNT_DEVICE)?;
+    let session = store.remove(ACCOUNT_SESSION);
+    let key = store.remove(ACCOUNT_KEY);
+    let device = store.remove(ACCOUNT_DEVICE);
+    session?;
+    key?;
+    device?;
     Ok(())
 }
 
 pub(crate) fn has_session(store: &dyn SecretStore) -> Result<bool, SignError> {
-    Ok(store.get(ACCOUNT_SESSION)?.is_some_and(|value| !value.is_empty()))
+    if !store
+        .get(ACCOUNT_SESSION)?
+        .is_some_and(|value| !value.is_empty())
+    {
+        return Ok(false);
+    }
+    Ok(store
+        .get(ACCOUNT_DEVICE)?
+        .is_some_and(|value| !value.is_empty())
+        && load_key(store)?.is_some())
 }
 
 fn valid_path(path: &str) -> bool {
-    path.starts_with('/') && !path.contains("://") && !path.contains('\n') && !path.contains('\r')
+    path.starts_with("/api/")
+        && path.len() <= 8192
+        && !path.contains("://")
+        && !path.contains('\\')
+        && !path.contains('#')
+        && !has_control(path)
 }
 
 pub(crate) fn sign_request(
@@ -217,6 +247,13 @@ pub(crate) fn sign_request(
     body: &str,
     body_sha256: Option<&str>,
 ) -> Result<Option<SignedRequest>, SignError> {
+    if !matches!(
+        method.to_ascii_uppercase().as_str(),
+        "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+    ) || body.len() > 16 * 1024 * 1024
+    {
+        return Err(SignError::BadInput);
+    }
     let Some(session) = store.get(ACCOUNT_SESSION)? else {
         return Ok(None);
     };
@@ -226,9 +263,19 @@ pub(crate) fn sign_request(
     if !valid_path(path) {
         return Err(SignError::BadPath);
     }
+    if session.len() > 200 || session.trim() != session || has_control(&session) {
+        return Err(SignError::Corrupt);
+    }
     let Some(device_id) = store.get(ACCOUNT_DEVICE)? else {
         return Err(SignError::Corrupt);
     };
+    if device_id.is_empty()
+        || device_id.len() > 64
+        || device_id.trim() != device_id
+        || has_control(&device_id)
+    {
+        return Err(SignError::Corrupt);
+    }
     let Some(key) = load_key(store)? else {
         return Err(SignError::Corrupt);
     };
@@ -244,7 +291,14 @@ pub(crate) fn sign_request(
         let body_hash = resolve_body_hash(body.as_bytes(), body_sha256)?;
         canonical_message_hashed(&device_id, &timestamp, &nonce, method, path, &body_hash)
     } else {
-        canonical_message(&device_id, &timestamp, &nonce, method, path, body.as_bytes())
+        canonical_message(
+            &device_id,
+            &timestamp,
+            &nonce,
+            method,
+            path,
+            body.as_bytes(),
+        )
     };
     let signature = key.sign(message.as_bytes());
     Ok(Some(SignedRequest {
@@ -281,10 +335,22 @@ mod tests {
     #[test]
     fn signature_round_trip_uses_canonical_bytes() {
         let key = SigningKey::generate(&mut OsRng);
-        let message = canonical_message("device", "1700000000", "nonce-value-0123456789", "post", "/api/devices/heartbeat", b"{}");
+        let message = canonical_message(
+            "device",
+            "1700000000",
+            "nonce-value-0123456789",
+            "post",
+            "/api/devices/heartbeat",
+            b"{}",
+        );
         let signature = key.sign(message.as_bytes());
-        key.verifying_key().verify(message.as_bytes(), &signature).unwrap();
-        assert_eq!(URL_SAFE_NO_PAD.encode(key.verifying_key().to_bytes()).len(), 43);
+        key.verifying_key()
+            .verify(message.as_bytes(), &signature)
+            .unwrap();
+        assert_eq!(
+            URL_SAFE_NO_PAD.encode(key.verifying_key().to_bytes()).len(),
+            43
+        );
         assert_eq!(URL_SAFE_NO_PAD.encode(signature.to_bytes()).len(), 86);
     }
 
@@ -307,7 +373,9 @@ mod tests {
     #[test]
     fn sign_requires_session_and_rejects_origin_in_path() {
         let store = MemoryStore::default();
-        assert!(sign_request(&store, "GET", "/api/auth/me", "", None).unwrap().is_none());
+        assert!(sign_request(&store, "GET", "/api/auth/me", "", None)
+            .unwrap()
+            .is_none());
         let prepared = prepare(&store).unwrap();
         store_session(&store, "session-1", "device-1").unwrap();
         let signed = sign_request(&store, "POST", "/api/devices/heartbeat", "{}", None)
@@ -316,7 +384,14 @@ mod tests {
         assert_eq!(signed.authorization, "session-1");
         assert_eq!(signed.device_id, "device-1");
         assert_eq!(signed.nonce.len(), 24);
-        assert!(sign_request(&store, "GET", "https://app.example.com/api/auth/me", "", None).is_err());
+        assert!(sign_request(
+            &store,
+            "GET",
+            "https://app.example.com/api/auth/me",
+            "",
+            None
+        )
+        .is_err());
         assert!(store_session(&store, " bad", "device-1").is_err());
         clear_device(&store).unwrap();
         assert_ne!(prepare(&store).unwrap().public_key, prepared.public_key);
@@ -328,8 +403,22 @@ mod tests {
         prepare(&store).unwrap();
         store_session(&store, "session-1", "device-1").unwrap();
         let hash = "0123456789abcdef".repeat(4);
-        assert!(sign_request(&store, "PUT", "/api/uploads/abc/chunks/0", "not-the-bytes", Some("ABCDEF")).is_err());
-        assert!(sign_request(&store, "PUT", "/api/uploads/abc/chunks/0", "not-the-bytes", Some("abc")).is_err());
+        assert!(sign_request(
+            &store,
+            "PUT",
+            "/api/uploads/abc/chunks/0",
+            "not-the-bytes",
+            Some("ABCDEF")
+        )
+        .is_err());
+        assert!(sign_request(
+            &store,
+            "PUT",
+            "/api/uploads/abc/chunks/0",
+            "not-the-bytes",
+            Some("abc")
+        )
+        .is_err());
         let signed = sign_request(
             &store,
             "PUT",
@@ -350,7 +439,9 @@ mod tests {
         );
         let raw = URL_SAFE_NO_PAD.decode(signed.signature).unwrap();
         let signature = ed25519_dalek::Signature::from_slice(&raw).unwrap();
-        key.verifying_key().verify(message.as_bytes(), &signature).unwrap();
+        key.verifying_key()
+            .verify(message.as_bytes(), &signature)
+            .unwrap();
         let wrong = canonical_message_hashed(
             &signed.device_id,
             &signed.timestamp,
@@ -359,6 +450,56 @@ mod tests {
             "/api/uploads/abc/chunks/0",
             &hex_encode(&Sha256::digest(b"not-the-bytes")),
         );
-        assert!(key.verifying_key().verify(wrong.as_bytes(), &signature).is_err());
+        assert!(key
+            .verifying_key()
+            .verify(wrong.as_bytes(), &signature)
+            .is_err());
+    }
+
+    #[test]
+    fn paths_methods_and_partial_sessions_fail_closed() {
+        let store = MemoryStore::default();
+        prepare(&store).unwrap();
+        store_session(&store, "session-1", "device-1").unwrap();
+        for path in [
+            "//evil.example/api/x",
+            "/anything",
+            "/api/files/a#x",
+            "/api/a\\b",
+            "/api/a\u{7f}",
+        ] {
+            assert!(sign_request(&store, "GET", path, "", None).is_err());
+        }
+        assert!(sign_request(&store, "GET\r\nX:X", "/api/auth/me", "", None).is_err());
+        store.remove(ACCOUNT_DEVICE).unwrap();
+        assert!(!has_session(&store).unwrap());
+        assert!(sign_request(&store, "GET", "/api/auth/me", "", None).is_err());
+    }
+
+    #[test]
+    fn session_write_failure_removes_the_previous_session() {
+        struct FailingStore {
+            inner: MemoryStore,
+        }
+        impl SecretStore for FailingStore {
+            fn get(&self, account: &str) -> Result<Option<String>, StoreError> {
+                self.inner.get(account)
+            }
+            fn put(&self, account: &str, value: &str) -> Result<(), StoreError> {
+                if account == ACCOUNT_DEVICE {
+                    Err(StoreError::Unavailable)
+                } else {
+                    self.inner.put(account, value)
+                }
+            }
+            fn remove(&self, account: &str) -> Result<(), StoreError> {
+                self.inner.remove(account)
+            }
+        }
+        let inner = MemoryStore::default();
+        inner.put(ACCOUNT_SESSION, "old-session").unwrap();
+        let store = FailingStore { inner };
+        assert!(store_session(&store, "new-session", "new-device").is_err());
+        assert!(store.get(ACCOUNT_SESSION).unwrap().is_none());
     }
 }

@@ -107,7 +107,7 @@ describe('客户端登录', () => {
     const init = loginCall?.[1]
     const body = JSON.parse(String(init?.body)) as { device: { publicKey: string; appVersion: string; name: string } }
     expect(body.device.publicKey).toBe('a'.repeat(43))
-    expect(body.device.appVersion).toBe('1.2.0')
+    expect(body.device.appVersion).toBe('1.2.1')
     expect(body.device.name).toBe('这台 Windows')
     expect(init?.credentials).toBe('omit')
     expect(bridge.storeSession).toHaveBeenCalledWith('session-1', 'device-1')

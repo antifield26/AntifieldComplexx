@@ -1,5 +1,12 @@
 # 备份与恢复
 
+## v1.2.1 异地完整性与演练
+
+远端密文、SHA-256 与元数据三件套齐备才计入已上传集合和保留基线；残缺集合补传，checksum／immutable 防止覆盖同名冲突。任上传、大小校验或最终远端确认失败时本轮不删除。错误 remote_confirmation_failed／partial_failure_no_retention 保留诊断。
+
+本版不自动启用生产异地副本。发布门禁需要 schema 21 应用及世界归档隔离恢复，schema 20 演练不能替代。
+
+
 > v1.1.1 起，`MCBOT_ENABLED=true` 时，age 密钥包在 `mcbot-state/` 收录目标库 SQLite 一致性快照、手动任务状态及世界记忆。清单逐项记录 SHA-256 和大小，状态为 `included`、`not_created` 或 `read_failed`。目标库必须已初始化。读取或校验失败时密钥包失败。Windows 拉取和 `smoke.ps1 -RequireMcbotState` 检查收录状态。
 
 在 PC 私有临时目录解密密钥包后，仅解出 `mcbot-state/`。先执行 `node scripts/backup-mcbot-state.mjs verify <隔离目录>/mcbot-state` 核对清单与内容，再在该副本上执行 `restore`。恢复检查只输出计数与是否有待恢复任务。启动时在途目标转入暂停，已完成步骤保留。核对目标、任务和记忆后清理临时明文。

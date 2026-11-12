@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 远端仅 HTTPS；原生预览服务只监听 loopback。 -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain>127.0.0.1</domain>
+        <domain>localhost</domain>
+    </domain-config>
+</network-security-config>

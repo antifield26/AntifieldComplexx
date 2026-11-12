@@ -1,8 +1,11 @@
+/** 首页聚合只读状态与常用入口；刷新失败保留缓存，原生 AI 入口交给受限窗口桥接。 */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Activity,
+  AlertTriangle,
+  CheckCircle2,
   ChevronRight,
   Cloud,
   CloudUpload,
@@ -108,14 +111,15 @@ export function Dashboard() {
       else setError(message)
     } finally {
       if (requestId === requestIdRef.current) {
-        if (mode === 'initial') setLoading(false)
-        else setRefreshing(false)
+        setLoading(false)
+        setRefreshing(false)
       }
     }
   }, [])
 
   useEffect(() => {
     void load('initial')
+    return () => { requestIdRef.current += 1 }
   }, [load])
 
   usePolling(() => load('refresh'), 10_000)
@@ -123,7 +127,7 @@ export function Dashboard() {
   if (loading && !data) {
     return (
       <div className="dashboard-page">
-        <PageHeader title="工作台" description="正在加载主机与存储状态…" />
+        <PageHeader title="首页" description="正在同步你的个人空间…" />
         <div className="stats-grid">
           {Array.from({ length: 4 }, (_, index) => (
             <Stat key={index} label="加载中" value="" loading />
@@ -141,7 +145,7 @@ export function Dashboard() {
   if (error && !data) {
     return (
       <div className="dashboard-page">
-        <PageHeader title="工作台" description="主机、存储、Minecraft 与备份状态一览" />
+        <PageHeader title="首页" description="文件、AI 与 Minecraft，一处连接" />
         <Card title="工作台数据加载失败" error={error} onRetry={() => void load('initial')} />
       </div>
     )
@@ -166,12 +170,25 @@ export function Dashboard() {
     host.tempC === null ? 'text-dim' : host.tempC >= 85 ? 'text-danger' : host.tempC >= 75 ? 'text-warning' : undefined
   // 域名优先取服务端下发的 aiOrigin，其次 opencode.url；均缺失时不渲染可点击链接
   const aiUrl = meta.aiOrigin || dsh?.webUrl || opencode.url || ''
+  const aiUnavailable = dshWeb === false || (dshWeb === undefined && !opencode.reachable)
+  const concerns: Array<{ label: string; to: string }> = []
+  if (!minecraft.online) concerns.push({ label: 'Minecraft 离线', to: '/minecraft' })
+  const stoppedServices = Object.entries(services).filter(([key, state]) => key !== 'minecraft' && state === 'inactive')
+  if (stoppedServices.length > 0) concerns.push({ label: `${stoppedServices.length} 项服务已停止`, to: '#service-status' })
+  const unknownServices = Object.values(services).filter((state) => state === 'unknown')
+  if (unknownServices.length > 0) concerns.push({ label: `${unknownServices.length} 项服务状态待确认`, to: '#service-status' })
+  if (aiUnavailable && services.dsh_web !== 'inactive' && services.opencode !== 'inactive') concerns.push({ label: 'AI 工作区尚未就绪', to: '#service-status' })
+  if (backupStale || backupError) concerns.push({ label: '备份需要处理', to: '/settings#backup' })
+  else if (pendingBackups > 0) concerns.push({ label: `${pendingBackups} 个备份待确认`, to: '/settings#backup' })
+  else if (!backup?.lastPullAt) concerns.push({ label: '备份尚无拉取记录', to: '/settings#backup' })
+  if (storagePercent >= 90) concerns.push({ label: '文件空间紧张', to: '/files' })
+  if (rootPercent >= 90 || memPercent >= 90 || host.cpuPercent >= 90 || (host.tempC !== null && host.tempC >= 75)) concerns.push({ label: '主机资源需要留意', to: '#host-status' })
 
   return (
     <div className="dashboard-page">
       <PageHeader
-        title="工作台"
-        description={data ? `主机 ${host.hostname} · 数据生成于 ${formatDateTime(data.generatedAt)}` : undefined}
+        title="首页"
+        description={`你的个人空间 · 更新于 ${formatDateTime(data.generatedAt)}`}
         actions={
           <div className="dashboard-actions">
             <DashboardClock />
@@ -195,7 +212,33 @@ export function Dashboard() {
         </div>
       ) : null}
 
-      <div className="stats-grid">
+      <section className="dashboard-launchpad" aria-label="常用入口">
+        <div className="dashboard-launchpad-heading"><span className="section-eyebrow">连接你的日常</span><span>文件 · 智能 · 世界</span></div>
+        <div className="dashboard-launchpad-grid">
+          {aiUrl ? (
+            <a className="launch-card launch-card-ai" href={aiUrl} target="_blank" rel="noopener noreferrer" onClick={(event: MouseEvent<HTMLAnchorElement>) => {
+              if (!isNativeRuntime()) return
+              event.preventDefault()
+              void openNativeAiWorkspaceUrl(aiUrl).catch((failure: unknown) => { toast.error(toErrorMessage(failure, '无法打开工作区')) })
+            }}>
+              <span className="launch-icon"><Sparkles size={24} aria-hidden="true" /></span>
+              <span className="launch-text"><strong>AI 工作区</strong><span>{aiUnavailable ? '尚未就绪 · 查看工作区' : '继续思考，开始创造'}</span></span>
+              <ExternalLink size={16} aria-hidden="true" />
+            </a>
+          ) : (
+            <div className="launch-card launch-card-ai launch-card-disabled" aria-disabled="true"><span className="launch-icon"><Sparkles size={24} aria-hidden="true" /></span><span className="launch-text"><strong>AI 工作区</strong><span>AI 地址尚未配置</span></span></div>
+          )}
+          <Link className="launch-card" to="/files"><span className="launch-icon"><FolderOpen size={24} aria-hidden="true" /></span><span className="launch-text"><strong>我的文件</strong><span>{storage.fileCount} 个文件，随时取用</span></span><ChevronRight size={17} aria-hidden="true" /></Link>
+          <Link className="launch-card" to="/minecraft"><span className="launch-icon"><Gamepad2 size={24} aria-hidden="true" /></span><span className="launch-text"><strong>Minecraft</strong><span>{minecraft.online ? `${minecraft.players.online} 位玩家在线 · 查看 mcbot` : '服务器与 mcbot 控制中心'}</span></span><ChevronRight size={17} aria-hidden="true" /></Link>
+        </div>
+      </section>
+
+      <section className={cx('dashboard-health', concerns.length > 0 && 'dashboard-health-attention')} aria-label="异常摘要">
+        <div className="dashboard-health-heading">{concerns.length > 0 ? <AlertTriangle size={18} aria-hidden="true" /> : <CheckCircle2 size={18} aria-hidden="true" />}<strong>{concerns.length > 0 ? '需要留意' : '暂无已知异常'}</strong></div>
+        {concerns.length > 0 ? <div className="dashboard-health-items">{concerns.map((item) => <Link key={item.label} to={item.to}>{item.label}<ChevronRight size={13} aria-hidden="true" /></Link>)}</div> : <span className="dashboard-health-note">主机、文件与服务状态已同步</span>}
+      </section>
+
+      <div className="stats-grid" id="host-status">
         <Stat
           label="主机"
           icon={<Cpu size={16} />}
@@ -300,10 +343,6 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="dashboard-row dashboard-row-metrics">
-        <MetricsCharts />
-      </div>
-
       <div className="dashboard-row dashboard-row-backup">
         <Card
           title="备份状态"
@@ -402,80 +441,26 @@ export function Dashboard() {
           </p>
         </Card>
 
-        <Card title="快捷入口">
+        <Card title="连接信息">
           <ul className="quick-links">
-            <li>
-              {aiUrl ? (
-                <a
-                  className="quick-link"
-                  href={aiUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(event: MouseEvent<HTMLAnchorElement>) => {
-                    if (!isNativeRuntime()) return
-                    event.preventDefault()
-                    void openNativeAiWorkspaceUrl(aiUrl).catch((error: unknown) => {
-                      toast.error(toErrorMessage(error, '无法打开工作区'))
-                    })
-                  }}
-                >
-                  <span className="quick-icon" aria-hidden="true"><Sparkles size={18} /></span>
-                  <span className="quick-text">
-                    <strong>AI 工作区</strong>
-                    <span>{dshWeb === undefined ? 'opencode' : 'DeepSeek Harness'} · 统一登录</span>
-                  </span>
-                  <ExternalLink size={15} aria-hidden="true" />
-                </a>
-              ) : (
-                <div className="quick-link quick-link-disabled" aria-disabled="true">
-                  <span className="quick-icon" aria-hidden="true"><Sparkles size={18} /></span>
-                  <span className="quick-text">
-                    <strong>AI 工作区</strong>
-                    <span>AI 地址未配置</span>
-                  </span>
-                </div>
-              )}
-            </li>
             <li>
               <a className="quick-link" href="https://connect.raspberrypi.com" target="_blank" rel="noopener noreferrer">
                 <span className="quick-icon" aria-hidden="true"><Cloud size={18} /></span>
-                <span className="quick-text">
-                  <strong>RPi Connect</strong>
-                  <span>远程连接树莓派</span>
-                </span>
+                <span className="quick-text"><strong>RPi Connect</strong><span>远程连接树莓派</span></span>
                 <ExternalLink size={15} aria-hidden="true" />
               </a>
             </li>
             <li>
               <div className="quick-link">
                 <span className="quick-icon" aria-hidden="true"><Gamepad2 size={18} /></span>
-                <span className="quick-text">
-                  <strong>Minecraft 地址</strong>
-                  <span className="mono">{minecraft.publicAddress || '暂不可用'}</span>
-                </span>
-                <CopyButton
-                  value={minecraft.publicAddress ?? ''}
-                  label="复制"
-                  iconOnly
-                  ariaLabel="复制 Minecraft 服务器地址"
-                  disabled={!minecraft.publicAddress}
-                />
+                <span className="quick-text"><strong>Minecraft 地址</strong><span className="mono">{minecraft.publicAddress || '尚未配置'}</span></span>
+                <CopyButton value={minecraft.publicAddress ?? ''} label="复制" ariaLabel="复制 Minecraft 连接地址" disabled={!minecraft.publicAddress} />
               </div>
-            </li>
-            <li>
-              <Link className="quick-link" to="/files">
-                <span className="quick-icon" aria-hidden="true"><FolderOpen size={18} /></span>
-                <span className="quick-text">
-                  <strong>云盘</strong>
-                  <span>上传、预览与管理文件</span>
-                </span>
-                <ChevronRight size={15} aria-hidden="true" />
-              </Link>
             </li>
           </ul>
         </Card>
 
-        <Card title="服务状态">
+        <Card title={<span id="service-status">服务状态</span>}>
           <ul className="service-list">
             {(Object.entries(services) as [string, ServiceState][]).map(([key, state]) => (
               <li key={key} className="service-item">
@@ -502,6 +487,10 @@ export function Dashboard() {
             </div>
           </div>
         </Card>
+      </div>
+
+      <div className="dashboard-row dashboard-row-metrics">
+        <MetricsCharts />
       </div>
 
       <Card

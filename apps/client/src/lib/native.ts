@@ -25,8 +25,16 @@ export interface NativeBridge {
   clearDevice(): Promise<void>
   signRequest(method: string, path: string, body: string, bodySha256?: string): Promise<SignedHeaders | null>
   hasSession(): Promise<boolean>
-  openAiWorkspace(url: string): Promise<void>
+  openAiWorkspace(url: string, userAgent?: string): Promise<void>
+  downloadFile?(path: string, suggestedName: string, transferId: string): Promise<NativeDownloadResult>
+  cancelTransfer?(id: string): Promise<void>
+  createPreview?(path: string): Promise<NativePreview>
+  releasePreview?(id: string): Promise<void>
+  backgroundApp?(): Promise<void>
 }
+
+export interface NativeDownloadResult { status: 'saved' | 'cancelled' }
+export interface NativePreview { id: string; url: string }
 
 let testBridge: NativeBridge | null = null
 let tauriBridge: NativeBridge | null = null
@@ -68,7 +76,12 @@ async function loadTauriBridge(): Promise<NativeBridge> {
         ...(bodySha256 ? { bodySha256 } : {}),
       }),
     hasSession: () => invoke<boolean>('has_session'),
-    openAiWorkspace: (url) => invoke<void>('open_ai_workspace', { url }),
+    openAiWorkspace: (url, userAgent) => invoke<void>('open_ai_workspace', { url, userAgent }),
+    downloadFile: (path, suggestedName, transferId) => invoke<NativeDownloadResult>('download_file', { path, suggestedName, transferId }),
+    cancelTransfer: (id) => invoke<void>('cancel_transfer', { id }),
+    createPreview: (path) => invoke<NativePreview>('create_preview', { path }),
+    releasePreview: (id) => invoke<void>('release_preview', { id }),
+    backgroundApp: () => invoke<void>('background_app'),
   }
   return tauriBridge
 }
@@ -107,9 +120,41 @@ export async function signNativeRequest(
   return (await bridge()).signRequest(method, path, body, bodySha256)
 }
 
-export async function openNativeAiWorkspace(url: string): Promise<void> {
+export async function openNativeAiWorkspace(url: string, userAgent = navigator.userAgent): Promise<void> {
   if (!isNativeRuntime()) throw new Error('当前不是客户端')
-  await (await bridge()).openAiWorkspace(url)
+  await (await bridge()).openAiWorkspace(url, userAgent)
+}
+
+/** 原生保存目标来自系统选择器，调用方不能传入本机路径。 */
+export async function downloadNativeFile(path: string, suggestedName: string, transferId = crypto.randomUUID()): Promise<NativeDownloadResult> {
+  const native = await bridge()
+  if (!native.downloadFile) throw new Error('当前客户端不支持文件下载')
+  return native.downloadFile(path, suggestedName, transferId)
+}
+
+export async function cancelNativeTransfer(id: string): Promise<void> {
+  const native = await bridge()
+  if (!native.cancelTransfer) throw new Error('当前客户端不支持取消下载')
+  await native.cancelTransfer(id)
+}
+
+/** 返回短期预览句柄，不包含设备令牌；组件卸载后应释放。 */
+export async function createNativePreview(path: string): Promise<NativePreview> {
+  const native = await bridge()
+  if (!native.createPreview) throw new Error('当前客户端不支持文件预览')
+  return native.createPreview(path)
+}
+
+export async function releaseNativePreview(id: string): Promise<void> {
+  const native = await bridge()
+  if (!native.releasePreview) throw new Error('当前客户端不支持释放预览')
+  await native.releasePreview(id)
+}
+
+export async function backgroundNativeApp(): Promise<void> {
+  const native = await bridge()
+  if (!native.backgroundApp) throw new Error('当前客户端不支持返回后台')
+  await native.backgroundApp()
 }
 
 export async function hasNativeSession(): Promise<boolean> {

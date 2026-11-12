@@ -12,6 +12,7 @@ import { formatRetryAfter } from '../lib/format'
 import { openNativeAiWorkspaceUrl, resolveNativeAiNext } from '../lib/ai-workspace'
 import { isNativeRuntime } from '../lib/native'
 import { assignExternalUrl, externalLoginRedirect } from '../lib/next-url'
+import { rememberedRoute } from '../lib/browser-state'
 
 type LoginStep = 'password' | 'totp' | 'recovery'
 
@@ -59,7 +60,7 @@ export function Login({ next }: LoginPageProps) {
         const aiNext = await resolveNativeAiNext(next)
         if (aiNext) await openNativeAiWorkspaceUrl(aiNext).catch(() => undefined)
         const redirect = externalLoginRedirect(next)
-        navigate(aiNext || redirect ? '/' : (next ?? '/'), { replace: true })
+        navigate(aiNext || redirect ? '/' : (next && next !== '/' ? next : rememberedRoute()), { replace: true })
       })()
       return
     }
@@ -68,7 +69,7 @@ export function Login({ next }: LoginPageProps) {
       assignExternalUrl(redirect)
       return
     }
-    navigate(next ?? '/', { replace: true })
+    navigate(next && next !== '/' ? next : rememberedRoute(), { replace: true })
   }, [next, navigate])
 
   // 已登录时直接离开登录页（外部 AI 工作区经服务端 ai-ticket 换票，其他外部地址整页跳转）

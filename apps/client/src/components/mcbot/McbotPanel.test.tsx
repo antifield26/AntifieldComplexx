@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type {
   McbotAutonomySnapshot,
@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   autonomy: vi.fn(),
   startAutonomy: vi.fn(),
   stopAutonomy: vi.fn(),
+  presence: vi.fn(),
+  goals: vi.fn(),
 }))
 
 vi.mock('../../api/client', () => ({
@@ -41,6 +43,8 @@ vi.mock('../../api/client', () => ({
       autonomy: mocks.autonomy,
       startAutonomy: mocks.startAutonomy,
       stopAutonomy: mocks.stopAutonomy,
+      presence: mocks.presence,
+      goals: mocks.goals,
     },
   },
   // 测试只需按 code 判断降级；非 ApiError 返回 false。
@@ -258,6 +262,8 @@ function renderPanel() {
 
 beforeEach(() => {
   mocks.status.mockResolvedValue(snapshot())
+  mocks.presence.mockResolvedValue({ presence: { mode: 'auto', source: 'default', updatedAt: null, connected: true, lastDecision: '' } })
+  mocks.goals.mockResolvedValue({ goals: [] })
   mocks.history.mockImplementation(async (query: McbotHistoryQuery) =>
     query.kind === 'samples' ? samplesResult() : alertsResult(),
   )
@@ -363,6 +369,46 @@ describe('McbotPanel 状态与降级', () => {
 })
 
 describe('McbotPanel 任务控制', () => {
+  it('同一渲染周期重复确认只提交一次任务请求', async () => {
+    let finish: (value: { ok: true }) => void = () => undefined
+    mocks.startTask.mockReturnValueOnce(new Promise<{ ok: true }>((resolve) => { finish = resolve }))
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: '开始任务' }))
+    const submit = within(screen.getByRole('dialog', { name: '开始任务' })).getByRole('button', { name: '开始' })
+    act(() => { fireEvent.click(submit); fireEvent.click(submit) })
+    expect(mocks.startTask).toHaveBeenCalledOnce()
+    await act(async () => { finish({ ok: true }) })
+    expect(await screen.findByText(/已请求 mcbot 开始/)).toBeInTheDocument()
+  })
+
+  it('确认期间失去控制权限时不使用缓存状态发起任务', async () => {
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: '开始任务' }))
+    mocks.status.mockResolvedValue(snapshot({ reachable: false, error: 'mcbot_unavailable' }))
+    fireEvent(window, new Event('af:refresh'))
+    await screen.findByText(/无法连接 mcbot：/)
+    await userEvent.click(within(screen.getByRole('dialog', { name: '开始任务' })).getByRole('button', { name: '开始' }))
+    expect(mocks.startTask).not.toHaveBeenCalled()
+    expect(await screen.findByText('当前控制不可用，请刷新状态后重试')).toBeInTheDocument()
+  })
+
+  it('待恢复任务在确认期间更换时，不恢复未经确认的新任务', async () => {
+    const pendingSnapshot = (taskId: string) => snapshot({ status: mcbotStatus({ task: idleTask({
+      state: 'pending_resume', name: 'fishing', pendingResume: {
+        taskId, name: 'fishing', startedAt: '2026-11-11T12:00:00.000Z', elapsedSec: 30,
+        progress: progress(), expiresAt: '2026-11-11T12:10:00.000Z',
+      },
+    }) }) })
+    mocks.status.mockResolvedValueOnce(pendingSnapshot('task-old')).mockResolvedValue(pendingSnapshot('task-new'))
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
+    fireEvent(window, new Event('af:refresh'))
+    await waitFor(() => expect(mocks.status).toHaveBeenCalledTimes(2))
+    await userEvent.click(within(screen.getByRole('dialog', { name: '恢复任务' })).getByRole('button', { name: '恢复' }))
+    expect(mocks.resumeTask).not.toHaveBeenCalled()
+    expect(await screen.findByText('当前控制不可用，请刷新状态后重试')).toBeInTheDocument()
+  })
+
   it('开始任务需要二次确认，并按所选任务调用接口', async () => {
     renderPanel()
     expect(await screen.findByRole('button', { name: '开始任务' })).toBeEnabled()
@@ -414,18 +460,54 @@ describe('McbotPanel 任务控制', () => {
     await waitFor(() => expect(mocks.resumeTask).toHaveBeenCalledWith('task-pending-1'))
   })
 
-  it('移动目标排除 mcbot 自己，过来使用所选玩家', async () => {
+  it('移动目标排除 mcbot 自己，二次确认后使用所选玩家', async () => {
     renderPanel()
     const select = (await screen.findByLabelText('选择移动目标玩家')) as HTMLSelectElement
     expect(within(select).getByRole('option', { name: 'Antifield' })).toBeTruthy()
     expect(within(select).queryByRole('option', { name: 'mcbot' })).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: '过来' }))
+    expect(mocks.move).not.toHaveBeenCalled()
+    await userEvent.click(within(screen.getByRole('dialog', { name: '移动控制' })).getByRole('button', { name: '确认移动' }))
     await waitFor(() => expect(mocks.move).toHaveBeenCalledWith('come', 'Antifield'))
     expect(await screen.findByText(/已请求 mcbot 过来/)).toBeTruthy()
 
     await userEvent.click(screen.getByRole('button', { name: '回家' }))
+    await userEvent.click(within(screen.getByRole('dialog', { name: '移动控制' })).getByRole('button', { name: '确认移动' }))
     await waitFor(() => expect(mocks.move).toHaveBeenLastCalledWith('home', undefined))
+  })
+
+  it('移动确认期间任务开始时不再执行手动移动', async () => {
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: '回家' }))
+    mocks.status.mockResolvedValue(snapshot({ status: mcbotStatus({ task: activeTask() }) }))
+    fireEvent(window, new Event('af:refresh'))
+    await screen.findAllByText('进行中')
+    await userEvent.click(within(screen.getByRole('dialog', { name: '移动控制' })).getByRole('button', { name: '确认移动' }))
+    expect(mocks.move).not.toHaveBeenCalled()
+    expect(await screen.findByText('移动条件已变化，请查看当前连接、任务和目标玩家后重试')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['连接已断开', snapshot({ status: mcbotStatus({ minecraft: { ...mcbotStatus().minecraft, connected: false } }) })],
+    ['目标玩家已离开', snapshot({ status: mcbotStatus({ admin: { ...mcbotStatus().admin, online: { count: 1, max: 6, players: ['mcbot'] } } }) })],
+  ])('移动确认期间%s时不提交', async (_label, nextSnapshot) => {
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: '过来' }))
+    mocks.status.mockResolvedValue(nextSnapshot)
+    fireEvent(window, new Event('af:refresh'))
+    await waitFor(() => expect(document.querySelector('#mcbot-move-target')).toBeDisabled())
+    await userEvent.click(within(screen.getByRole('dialog', { name: '移动控制' })).getByRole('button', { name: '确认移动' }))
+    expect(mocks.move).not.toHaveBeenCalled()
+    expect(await screen.findByText('移动条件已变化，请查看当前连接、任务和目标玩家后重试')).toBeInTheDocument()
+  })
+
+  it('取消移动确认不会发出写请求', async () => {
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: '回家' }))
+    await userEvent.click(within(screen.getByRole('dialog', { name: '移动控制' })).getByRole('button', { name: '取消' }))
+    expect(mocks.move).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
 

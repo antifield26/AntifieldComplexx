@@ -1,5 +1,10 @@
 # 架构
 
+## v1.2.1 客户端结构
+
+apps/client 的共享 React 界面采用数据路由处理离开确认，主窗口管理浏览状态和网络恢复。原生桥负责系统密钥、签名、流式保存和短期 loopback 预览。Windows 隔离 AI 窗口、Android 可追踪本地插件的 AI Activity 均不拥有主窗口 IPC。产物仍写入 Workbench web/dist，schema 21、契约 v2 不变。
+
+
 > 项目定位：**个人综合交互平台**。`apps/workbench` 只是 Web 端技术名；平台统一承载个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
 
 ## 1. 总览

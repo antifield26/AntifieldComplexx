@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect } from 'react'
-import { Link, Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { lazy, Suspense, useContext, useEffect } from 'react'
+import { Link, Navigate, Route, Routes, UNSAFE_DataRouterContext, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { AppMetaProvider } from './meta/MetaContext'
 import { ToastProvider } from './components/Toast'
@@ -13,6 +13,13 @@ import { usePageTitle } from './hooks/usePageTitle'
 import { openNativeAiWorkspaceUrl, resolveNativeAiNext } from './lib/ai-workspace'
 import { isNativeRuntime } from './lib/native'
 import { assignExternalUrl, externalLoginRedirect, sanitizeNext } from './lib/next-url'
+import { NativeTitlebar } from './components/NativeTitlebar'
+import { NetworkStatus } from './components/NetworkStatus'
+import { ClientNavigation } from './components/ClientNavigation'
+import { NavigationGuard } from './components/NavigationGuard'
+import { rememberedRoute } from './lib/browser-state'
+import { ConnectionRecovery } from './components/ConnectionRecovery'
+import { NativeAiEvents } from './components/NativeAiEvents'
 
 const Files = lazy(() => import('./pages/Files').then(({ Files }) => ({ default: Files })))
 const Knowledge = lazy(() => import('./pages/Knowledge').then(({ Knowledge }) => ({ default: Knowledge })))
@@ -22,12 +29,14 @@ const Minecraft = lazy(() => import('./pages/Minecraft').then(({ Minecraft }) =>
 const Activity = lazy(() => import('./pages/Activity').then(({ Activity }) => ({ default: Activity })))
 const Settings = lazy(() => import('./pages/Settings').then(({ Settings }) => ({ default: Settings })))
 const Chatbots = lazy(() => import('./pages/Chatbots').then(({ Chatbots }) => ({ default: Chatbots })))
+const More = lazy(() => import('./pages/More').then(({ More }) => ({ default: More })))
 
 /** 受保护路由：会话恢复中显示占位；未登录跳转登录页并带上返回地址。 */
 function ProtectedRoute() {
   const { status } = useAuth()
   const location = useLocation()
   if (status === 'loading') return <AppLoading />
+  if (status === 'unavailable') return <ConnectionRecovery />
   if (status === 'anonymous') {
     const next = `${location.pathname}${location.search}${location.hash}`
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />
@@ -62,9 +71,10 @@ function LoginRoute() {
   }, [status, externalRedirect, next, navigate])
 
   if (status === 'loading') return <AppLoading />
+  if (status === 'unavailable') return <ConnectionRecovery />
   if (status === 'authenticated') {
     if (externalRedirect) return <AppLoading text="正在跳转…" />
-    return <Navigate to={next ?? '/'} replace />
+    return <Navigate to={next && next !== '/' ? next : rememberedRoute()} replace />
   }
   return <Login next={next} />
 }
@@ -85,11 +95,18 @@ function NotFound() {
  * /s/:token 为公开分享页，位于受保护路由之外，不依赖登录态。
  */
 export function App() {
+  const dataRouter = useContext(UNSAFE_DataRouterContext)
   return (
+    <>
+    <NativeTitlebar />
     <ErrorBoundary>
       <ToastProvider>
         <AuthProvider>
           <AppMetaProvider>
+            <NetworkStatus />
+            <ClientNavigation />
+            <NativeAiEvents />
+            {dataRouter ? <NavigationGuard /> : null}
             <Suspense fallback={<AppLoading text="正在加载页面…" />}>
               <Routes>
                 <Route path="/login" element={<LoginRoute />} />
@@ -105,6 +122,7 @@ export function App() {
                   <Route path="/bots" element={<Navigate to="/chatbots" replace />} />
                   <Route path="/activity" element={<Activity />} />
                   <Route path="/settings" element={<Settings />} />
+                  <Route path="/more" element={<More />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               </Routes>
@@ -113,5 +131,6 @@ export function App() {
         </AuthProvider>
       </ToastProvider>
     </ErrorBoundary>
+    </>
   )
 }

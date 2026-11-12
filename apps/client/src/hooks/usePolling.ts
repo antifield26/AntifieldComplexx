@@ -18,6 +18,7 @@ export function usePolling(callback: () => void | Promise<void>, intervalMs: num
 
     const schedule = (): void => {
       window.clearTimeout(timer)
+      if (stopped) return
       timer = window.setTimeout(() => {
         void tick()
       }, intervalMs)
@@ -25,7 +26,7 @@ export function usePolling(callback: () => void | Promise<void>, intervalMs: num
 
     const tick = async (): Promise<void> => {
       if (stopped) return
-      if (document.visibilityState === 'visible' && !inFlight) {
+      if (document.visibilityState === 'visible' && navigator.onLine && !inFlight) {
         inFlight = true
         try {
           await savedCallback.current()
@@ -46,10 +47,12 @@ export function usePolling(callback: () => void | Promise<void>, intervalMs: num
 
     schedule()
     document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('af:refresh', onVisibilityChange)
     return () => {
       stopped = true
       window.clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('af:refresh', onVisibilityChange)
     }
   }, [enabled, intervalMs])
 }

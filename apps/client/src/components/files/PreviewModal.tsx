@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Download, FileX } from 'lucide-react'
+import { FileX } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
 import type { FileItem, TextPreviewResult } from '../../api/types'
 import { Modal } from '../Modal'
@@ -11,6 +11,8 @@ import { EmptyState } from '../EmptyState'
 import { MarkdownView } from '../MarkdownView'
 import { MediaPreview } from './MediaPreview'
 import { formatBytes } from '../../lib/format'
+import { useFileContentUrl } from '../../hooks/useFileContentUrl'
+import { DownloadButton } from './DownloadButton'
 
 export interface PreviewModalProps {
   file: FileItem | null
@@ -32,6 +34,9 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
   const previewKind = file?.previewKind ?? 'none'
   const isText = previewKind === 'text' || previewKind === 'markdown'
   const isMedia = previewKind === 'audio' || previewKind === 'video'
+  const inlinePath = file && ['image', 'pdf', 'audio', 'video'].includes(previewKind) && file.inlineAllowed !== false
+    ? api.files.contentUrl(file.id, { inline: true }) : null
+  const preview = useFileContentUrl(inlinePath)
 
   useEffect(() => {
     setText(null)
@@ -59,15 +64,12 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
   if (!file) return null
 
   const downloadUrl = api.files.contentUrl(file.id, { download: true })
-  const inlineUrl = api.files.contentUrl(file.id, { inline: true })
+  const inlineUrl = preview.url ?? undefined
   const inlineAllowed = file.inlineAllowed !== false
   const description = `${file.kind === 'dir' ? '文件夹' : formatBytes(file.size)}${file.mime ? ` · ${file.mime}` : ''}`
 
   const downloadLink = (
-    <a className="btn btn-secondary btn-md" href={downloadUrl}>
-      <Download size={16} aria-hidden="true" />
-      <span className="btn-label">下载</span>
-    </a>
+    <DownloadButton path={downloadUrl} name={file.name} />
   )
 
   return (
@@ -85,6 +87,8 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
         </div>
       }
     >
+      {preview.loading ? <LoadingBlock text="正在准备预览…" /> : null}
+      {preview.error ? <InlineError message={preview.error} /> : null}
       {previewKind === 'image' ? (
         !inlineAllowed ? (
           <EmptyState
@@ -125,8 +129,8 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
         )
       ) : null}
 
-      {isMedia ? (
-        <MediaPreview key={file.id} file={file} inlineUrl={inlineUrl} downloadUrl={downloadUrl} />
+      {isMedia && (inlineUrl || !inlineAllowed) ? (
+        <MediaPreview key={file.id} file={file} inlineUrl={inlineUrl ?? ''} downloadUrl={downloadUrl} />
       ) : null}
 
       {isText ? (

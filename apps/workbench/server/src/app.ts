@@ -400,7 +400,12 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     }
     const bearer = deviceAuth.readBearer(request.headers.authorization)
     if (bearer) request.bearerToken = bearer
-    else request.auth = auth.authenticate(readSessionToken(request)) ?? undefined
+    else {
+      const context = auth.authenticate(readSessionToken(request))
+      // 应用 Cookie 只接受浏览器会话。设备 token 必须验签，不能借 Cookie 绕过私钥证明。
+      // AI 主机的 SSO Cookie 在上面的独立代理分支处理。
+      request.auth = context && !context.session.device_id ? context : undefined
+    }
   })
 
   // 带 Bearer 的请求在解析前保留原始字节，供设备签名覆盖。无 Bearer 的请求不缓冲。

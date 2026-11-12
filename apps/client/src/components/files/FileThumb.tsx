@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../api/client'
 import type { FileItem } from '../../api/types'
 import { FileIcon } from '../FileIcon'
+import { AuthenticatedImage } from './AuthenticatedImage'
 
 export interface FileThumbProps {
   file: FileItem
@@ -27,7 +28,7 @@ export function FileThumb({ file, size = 24 }: FileThumbProps) {
 
   return (
     <span className="file-thumb">
-      <img
+      <AuthenticatedImage
         className="file-thumb-image"
         src={api.files.contentUrl(file.id, { inline: true })}
         alt=""

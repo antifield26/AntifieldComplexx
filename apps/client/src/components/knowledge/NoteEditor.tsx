@@ -4,6 +4,9 @@
 // 历史版本：列表 → 预览 → 二次确认恢复；恢复后由父级刷新列表。
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useUnsavedChanges } from '../../lib/navigation-guard'
+import { AuthenticatedImage } from '../files/AuthenticatedImage'
+import { DownloadButton } from '../files/DownloadButton'
 import type { DragEvent, FormEvent } from 'react'
 import {
   ChevronLeft,
@@ -440,6 +443,7 @@ export function NoteEditor({ open, note, onClose, onSaved, onRestored }: NoteEdi
   const hasHistory = Boolean(note?.id)
   const dirty =
     title !== baseline.title || bodyMd !== baseline.bodyMd || tagInput !== baseline.tagInput || pinned !== baseline.pinned
+  useUnsavedChanges(dirty)
   const requestClose = (): void => {
     if (busy) return
     if (dirty) setDiscardOpen(true)
@@ -630,7 +634,7 @@ export function NoteEditor({ open, note, onClose, onSaved, onRestored }: NoteEdi
                 {attachments.map((attachment) => (
                   <li key={attachment.fileId} className="note-attachment-item">
                     {isInlineImage(attachment) ? (
-                      <img
+                      <AuthenticatedImage
                         className="note-attachment-thumb"
                         src={attachment.url}
                         alt=""
@@ -644,6 +648,7 @@ export function NoteEditor({ open, note, onClose, onSaved, onRestored }: NoteEdi
                     <span className="note-attachment-name" title={attachment.name}>{attachment.name}</span>
                     <span className="note-attachment-size">{formatBytes(attachment.size)}</span>
                     <div className="note-attachment-actions">
+                      <DownloadButton path={`/api/files/${encodeURIComponent(attachment.fileId)}/content?download=1`} name={attachment.name} />
                       <Button
                         size="sm"
                         variant="ghost"

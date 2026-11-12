@@ -57,9 +57,10 @@ import {
   toggleSelection,
 } from '../lib/selection'
 import { cx } from '../lib/classnames'
+import { cancelNativeTransfer, downloadNativeFile, isNativeRuntime } from '../lib/native'
+import { filePreferences, recalledFileSession, rememberFilePreferences, rememberFileSession } from '../lib/browser-state'
 
 const LIST_PAGE_SIZE = 200
-const VIEW_STORAGE_KEY = 'af-files-view'
 
 type ViewMode = 'list' | 'grid'
 
@@ -107,16 +108,10 @@ export function Files() {
   const [searchParams, setSearchParams] = useSearchParams()
   const parentId = searchParams.get('parent')
 
-  const [page, setPage] = useState(1)
-  const [sort, setSort] = useState<FileSortField>('name')
-  const [dir, setDir] = useState<FileSortDirection>('asc')
-  const [view, setView] = useState<ViewMode>(() => {
-    try {
-      return window.localStorage.getItem(VIEW_STORAGE_KEY) === 'grid' ? 'grid' : 'list'
-    } catch {
-      return 'list'
-    }
-  })
+  const [page, setPage] = useState(() => recalledFileSession(parentId ?? 'root').page)
+  const [sort, setSort] = useState<FileSortField>(() => filePreferences().sort)
+  const [dir, setDir] = useState<FileSortDirection>(() => filePreferences().dir)
+  const [view, setView] = useState<ViewMode>(() => filePreferences().view)
 
   const [items, setItems] = useState<FileItem[]>([])
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([{ id: null, name: '全部文件' }])
@@ -125,7 +120,19 @@ export function Files() {
   const [error, setError] = useState<string | null>(null)
   const [quota, setQuota] = useState<StorageInfo | null>(null)
 
-  const [searchInput, setSearchInput] = useState('')
+  const [searchInput, setSearchInput] = useState(() => recalledFileSession(parentId ?? 'root').search)
+  const [downloadState, setDownloadState] = useState<{ id: string; name: string } | null>(null)
+  const downloadRef = useRef<string | null>(null)
+  const downloadMounted = useRef(true)
+  useEffect(() => {
+    downloadMounted.current = true
+    return () => {
+      downloadMounted.current = false
+      if (downloadRef.current) void cancelNativeTransfer(downloadRef.current).catch(() => undefined)
+    }
+  }, [])
+  useEffect(() => { rememberFilePreferences({ sort, dir, view }) }, [sort, dir, view])
+  useEffect(() => { rememberFileSession(parentId ?? 'root', { search: searchInput, page }) }, [parentId, searchInput, page])
   const debouncedSearch = useDebouncedValue(searchInput.trim(), 300)
   const searching = debouncedSearch.length > 0
   const [searchResult, setSearchResult] = useState<FileSearchResult | null>(null)
@@ -297,11 +304,6 @@ export function Files() {
 
   const changeView = (next: ViewMode): void => {
     setView(next)
-    try {
-      window.localStorage.setItem(VIEW_STORAGE_KEY, next)
-    } catch {
-      // 忽略隐私模式下不可写的情况
-    }
   }
 
   const changeSort = (field: FileSortField): void => {
@@ -328,6 +330,17 @@ export function Files() {
   }
 
   const downloadFile = (file: FileItem): void => {
+    if (isNativeRuntime()) {
+      if (downloadRef.current) { toast.info('请先完成或取消当前下载'); return }
+      const id = crypto.randomUUID()
+      downloadRef.current = id
+      setDownloadState({ id, name: file.name })
+      void downloadNativeFile(api.files.contentUrl(file.id, { download: true }), file.name, id)
+        .then((result) => { if (downloadMounted.current) toast.info(result.status === 'saved' ? '文件已保存' : '下载已取消') })
+        .catch(() => { if (downloadMounted.current) toast.error('下载失败，请检查连接后重试') })
+        .finally(() => { if (downloadRef.current === id) downloadRef.current = null; if (downloadMounted.current) setDownloadState(null) })
+      return
+    }
     const anchor = document.createElement('a')
     anchor.href = api.files.contentUrl(file.id, { download: true })
     anchor.rel = 'noopener'
@@ -561,6 +574,10 @@ export function Files() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {downloadState ? <div className="notice notice-info file-download-feedback" role="status">
+        <span>正在保存「{downloadState.name}」…</span>
+        <Button variant="ghost" size="sm" onClick={() => void cancelNativeTransfer(downloadState.id).catch(() => undefined)}>取消下载</Button>
+      </div> : null}
       <PageHeader
         title="文件"
         description={quota ? `共 ${quota.fileCount} 个文件 · 回收站 ${formatBytes(quota.trashBytes)}` : '上传、预览与管理文件'}

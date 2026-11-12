@@ -5,10 +5,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { api, ApiError, isApiError, setCsrfToken, setUnauthorizedHandler, toErrorMessage } from '../api/client'
+import { api, ApiError, isApiError, sessionFailureKind, setCsrfToken, setUnauthorizedHandler, toErrorMessage } from '../api/client'
 import type { DeviceEnrollment, LoginResult, PasswordChallenge, SessionInfo, User } from '../api/types'
 import { APP_VERSION } from '../lib/app-version'
 import { bindForegroundHeartbeat } from '../lib/heartbeat'
+import { activateBrowserState, clearBrowserState } from '../lib/browser-state'
+import { cancelReadRequests } from '../lib/read-requests'
+import { clearAiWorkspaceNavigation } from '../lib/ai-workspace'
 import {
   clearNativeDevice,
   clearNativeSession,
@@ -18,7 +21,7 @@ import {
   storeNativeSession,
 } from '../lib/native'
 
-export type AuthStatus = 'loading' | 'authenticated' | 'anonymous'
+export type AuthStatus = 'loading' | 'authenticated' | 'anonymous' | 'unavailable'
 
 export interface AuthContextValue {
   status: AuthStatus
@@ -85,11 +88,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const mountedRef = useRef(true)
 
   const clearSession = useCallback(() => {
+    clearBrowserState()
+    clearAiWorkspaceNavigation()
     setCsrfToken(null)
     setUser(null)
     setSession(null)
     setStatus('anonymous')
   }, [])
+
+  const handleSessionFailure = useCallback(async (error: unknown): Promise<boolean> => {
+    if (!(error instanceof ApiError)) return false
+    const kind = sessionFailureKind(error.status, error.code)
+    if (!kind) return false
+    try {
+      if (kind === 'device') await clearNativeDevice()
+      else await clearNativeSession()
+    } catch { /* 服务端已拒绝凭据，页面仍退出，后续登录明确报告密钥库错误。 */ }
+    clearSession()
+    setBootstrapError(error.message)
+    return true
+  }, [clearSession])
 
   // 恢复会话：只在挂载时执行一次
   useEffect(() => {
@@ -107,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         const me = await api.auth.me()
         if (!mountedRef.current) return
+        activateBrowserState(me.user.username)
         setCsrfToken(me.csrfToken)
         setUser(me.user)
         setSession(me.session)
@@ -114,10 +133,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setBootstrapError(null)
       } catch (error) {
         if (!mountedRef.current) return
-        setStatus('anonymous')
-        if (error instanceof ApiError && error.status === 401) {
-          setBootstrapError(null)
-        } else {
+        if (!(await handleSessionFailure(error))) {
+          setStatus('unavailable')
           setBootstrapError(toErrorMessage(error, '无法连接服务器，请确认服务已启动'))
         }
       }
@@ -126,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       mountedRef.current = false
     }
-  }, [])
+  }, [handleSessionFailure])
 
   // 任意业务接口返回会话失效时，清空本地登录态
   useEffect(() => {
@@ -154,7 +171,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (run: () => Promise<LoginResult>): Promise<LoginResult> => {
       try {
         const result = await run()
+        cancelReadRequests()
         await acceptNativeSession(result)
+        activateBrowserState(result.user.username)
         setCsrfToken(result.csrfToken)
         setUser(result.user)
         setStatus('authenticated')
@@ -216,13 +235,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession])
 
   const refresh = useCallback(async (): Promise<void> => {
-    const me = await api.auth.me()
-    setCsrfToken(me.csrfToken)
-    setUser(me.user)
-    setSession(me.session)
-    setStatus('authenticated')
-    setBootstrapError(null)
-  }, [])
+    try {
+      const me = await api.auth.me()
+      activateBrowserState(me.user.username)
+      setCsrfToken(me.csrfToken)
+      setUser(me.user)
+      setSession(me.session)
+      setStatus('authenticated')
+      setBootstrapError(null)
+    } catch (error) {
+      if (!(await handleSessionFailure(error))) setBootstrapError(toErrorMessage(error, '暂时无法连接服务器'))
+      throw error
+    }
+  }, [handleSessionFailure])
+
+  useEffect(() => {
+    if (status !== 'unavailable') return
+    const retry = (): void => { void refresh().catch((error: unknown) => setBootstrapError(toErrorMessage(error, '暂时无法连接服务器'))) }
+    window.addEventListener('af:refresh', retry)
+    return () => window.removeEventListener('af:refresh', retry)
+  }, [status, refresh])
 
   const value = useMemo<AuthContextValue>(
     () => ({

@@ -104,6 +104,8 @@ import { chunkCount, isValidResumeRecord, resumeStorageKey, uploadFingerprint, t
 import { readApiOrigin } from '../lib/api-origin'
 import { isNativeRuntime, signNativeRequest } from '../lib/native'
 import { planBinaryRequest, planJsonRequest, sha256Hex } from '../lib/request-plan'
+import { cancelReadRequests, sharedRead, waitForReadRetry } from '../lib/read-requests'
+import { reportConnection } from '../lib/connection'
 
 const CSRF_COOKIE = 'af_csrf'
 const CSRF_HEADER = 'X-CSRF-Token'
@@ -291,6 +293,10 @@ export type AuthFailureKind = 'session' | 'device'
 let unauthorizedHandler: ((kind: AuthFailureKind) => void) | null = null
 
 export function setCsrfToken(token: string | null): void {
+  if (token === null) {
+    cancelReadRequests()
+    attachmentImports.clear()
+  }
   csrfToken = token
 }
 
@@ -411,7 +417,7 @@ export interface RequestOptions {
   timeoutMs?: number
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function requestOnce<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method ?? 'GET'
   const bodyText = options.body !== undefined ? JSON.stringify(options.body) : undefined
   const native = isNativeRuntime()
@@ -447,6 +453,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       headers: planned.headers,
       body: planned.body,
       credentials: planned.credentials,
+      redirect: 'error',
       signal,
     })
   } catch (error) {
@@ -454,8 +461,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       throw new ApiError(0, 'timeout', ERROR_MESSAGES.timeout ?? '请求超时，请检查网络后重试')
     }
     if (isAbortError(error)) throw error
+    reportConnection(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'unavailable')
     throw new ApiError(0, 'network_error', ERROR_MESSAGES.network_error ?? '网络连接失败')
   }
+
+  reportConnection(response.status >= 500 ? 'unavailable' : 'online')
 
   if (!response.ok) {
     const error = parseApiError(
@@ -469,7 +479,26 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   if (response.status === 204) return undefined as T
   const payload = await readJsonBody(response)
+  if (payload === null) throw new ApiError(response.status, 'invalid_response', '服务器响应异常，请稍后重试')
   return payload as T
+}
+
+/** 普通读取允许合并与两次退避；每次重新签名，票据及写操作只发送一次。 */
+function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  if ((options.method ?? 'GET') !== 'GET' || path.startsWith('/api/auth/ai-ticket')) return requestOnce<T>(path, options)
+  const key = `${path}\n${options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS}\n${options.skipAuthRedirect === true}`
+  return sharedRead<T>(key, async (signal) => {
+    for (let attempt = 0; ; attempt += 1) {
+      try { return await requestOnce<T>(path, { ...options, signal }) }
+      catch (error) {
+        const retryable = error instanceof ApiError && (
+          error.code === 'network_error' || error.code === 'timeout' || [502, 503, 504].includes(error.status)
+        )
+        if (!retryable || attempt >= 2 || signal.aborted) throw error
+        await waitForReadRetry(1000 * (attempt + 1), signal)
+      }
+    }
+  }, options.signal)
 }
 
 function get<T>(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<T> {
@@ -612,6 +641,7 @@ export function uploadNoteAttachments(
   files: File[],
   callbacks: NoteAttachmentUploadCallbacks = {},
 ): Promise<NoteAttachmentListResult> {
+  if (isNativeRuntime() && files.length > 0) return uploadNativeNoteAttachments(noteId, files, callbacks)
   return new Promise((resolve, reject) => {
     if (files.length === 0) {
       resolve({ items: [] })
@@ -669,9 +699,53 @@ export function uploadNoteAttachments(
   })
 }
 
+const attachmentImports = new Map<string, string>()
+
+/** 原生附件复用分片上传，避免 multipart 超过设备签名请求体上限。关联失败后仅重试归属确认。 */
+async function uploadNativeNoteAttachments(noteId: string, files: File[], callbacks: NoteAttachmentUploadCallbacks): Promise<NoteAttachmentListResult> {
+  const items: NoteAttachment[] = []
+  let completed = 0
+  const total = files.reduce((sum, file) => sum + file.size, 0)
+  for (const file of files) {
+    const key = `${noteId}:${uploadFingerprint(file, null)}`
+    const attach = (uploadId: string): Promise<NoteAttachmentListResult> => post(
+      `/api/notes/${encodeId(noteId)}/attachments/from-upload`, { uploadId }, { signal: callbacks.signal },
+    )
+    const pending = attachmentImports.get(key)
+    if (pending) {
+      try {
+        const result = await attach(pending)
+        items.push(...result.items)
+        attachmentImports.delete(key)
+        completed += file.size
+        callbacks.onProgress?.(completed, total)
+        continue
+      } catch (error) {
+        if (!(error instanceof ApiError) || !['upload_not_completed', 'upload_not_found'].includes(error.code)) throw error
+        attachmentImports.delete(key)
+      }
+    }
+    let uploadId: string | null = null
+    await uploadFileChunked(file, null, {
+      signal: callbacks.signal,
+      onSession: (id) => { uploadId = id; attachmentImports.set(key, id) },
+      onProgress: (loaded) => callbacks.onProgress?.(completed + loaded, total),
+    })
+    if (!uploadId) throw new ApiError(0, 'invalid_response', '附件上传未返回可关联会话')
+    const result = await attach(uploadId)
+    items.push(...result.items)
+    attachmentImports.delete(key)
+    completed += file.size
+    callbacks.onProgress?.(completed, total)
+  }
+  return { items }
+}
+
 /* ---------- 大文件分片上传（v0.3.1） ---------- */
 
 export interface ChunkedUploadOptions {
+  /** 仅供需要将完成上传归属到笔记的调用方保留会话标识。 */
+  onSession?: (uploadId: string) => void
   chunkSize?: number
   signal?: AbortSignal
   onProgress?: (loaded: number, total: number) => void
@@ -885,6 +959,7 @@ export async function uploadFileChunked(
   if (resumed) {
     try {
       const status = await get<ChunkUploadStatus>(`/api/uploads/${encodeId(resumed.uploadId)}`, { signal: options.signal })
+      options.onSession?.(status.uploadId)
       const outcome = await resumeOrRestartUpload(status, storageKey, file, parentId, chunkSize, options.signal)
       if ('items' in outcome) return outcome
       session = outcome
@@ -902,6 +977,7 @@ export async function uploadFileChunked(
   }
 
   // 只持久化续传所需最小字段；文件身份由 storage key 指纹保证。
+  options.onSession?.(session.uploadId)
   const record: ResumeRecord = {
     uploadId: session.uploadId,
     received: [...session.received],

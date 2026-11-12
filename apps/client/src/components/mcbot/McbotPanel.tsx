@@ -1,8 +1,8 @@
 // mcbot 面板（/minecraft 的 mcbot 标签页）：状态、任务控制、移动、游戏内聊天、事件流与历史；
-// v1.0.2 增加 AI 自主模式（自主状态卡 + 带目标启动 + 二次确认急停）。
+// 多步目标、手动任务、AI 自主、移动聊天与历史分区展示。
 // 数据来自 GET /api/mcbot/status（5 秒轮询）与 GET /api/mcbot/history；写操作走 /api/mcbot/*。
 // 安全边界：不展示 mcbot Token/地址/内部路径，聊天与事件一律纯文本渲染；开始/停止/恢复/发送、
-// 自主启动/停止均需二次确认。
+// 移动与自主启动/停止均需二次确认。
 // 降级：禁用显示说明；不可达/过期显示缓存数据与警告；控制未启用时禁用全部写操作；
 // 旧版 mcbot 无 autonomy 段时隐藏自主模式卡，不渲染不可用控制。
 
@@ -104,8 +104,9 @@ function hasControlChars(value: string): boolean {
 type ConfirmState =
   | { type: 'start'; name: McbotTaskName }
   | { type: 'stop' }
-  | { type: 'resume' }
+  | { type: 'resume'; taskId: string }
   | { type: 'say'; message: string }
+  | { type: 'move'; action: McbotMoveAction; target?: string }
   | { type: 'autonomy-start'; goal: string }
   | { type: 'autonomy-stop' }
   | null
@@ -601,7 +602,7 @@ function McbotMoveCard({
           : '移动结果会以事件形式返回；回家/停下不需要目标玩家。'
 
   return (
-    <Card title="移动控制" description="手动让 mcbot 移动；移动可随时停下，不改变任务状态。">
+    <Card title="移动控制" description="手动移动需要二次确认；任务空闲时可操作。">
       <div className="mcbot-move-form">
         <label className="field-label" htmlFor="mcbot-move-target">
           目标玩家
@@ -744,6 +745,7 @@ export function McbotPanel() {
   const [actionBusy, setActionBusy] = useState(false)
   const requestIdRef = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
+  const operationBusyRef = useRef(false)
 
   const load = useCallback(async (): Promise<void> => {
     // 轮询与手动刷新可能并发：旧请求先完成时不得覆盖新请求结果。
@@ -786,6 +788,8 @@ export function McbotPanel() {
     action: () => Promise<T>,
     successText: (result: T) => string,
   ): Promise<boolean> => {
+    if (!controlReady || operationBusyRef.current) return false
+    operationBusyRef.current = true
     setActionBusy(true)
     try {
       const result = await action()
@@ -796,6 +800,7 @@ export function McbotPanel() {
       toast.error(toErrorMessage(actionError, 'mcbot 操作失败，请重试'))
       return false
     } finally {
+      operationBusyRef.current = false
       setActionBusy(false)
       setConfirm(null)
     }
@@ -807,6 +812,7 @@ export function McbotPanel() {
   const controlReady = snapshot?.enabled === true && snapshot.reachable && snapshot.controlEnabled
   // /say 是写操作：只读模式（未配置控制 Token）必须禁用，避免成为绕过权限的写通道。
   const sayReady = controlReady && snapshot?.sayEnabled === true
+  const controlsAvailable = controlReady && !actionBusy && moveBusy === null
   const disabled = snapshot ? !snapshot.enabled : errorCode === 'mcbot_disabled'
   const pendingResume = status?.task.pendingResume ?? null
   /** 应用刚启动时首次轮询完成前 reachable=false/lastPollAt=null 属正常，不提示“不可达”。 */
@@ -883,6 +889,13 @@ export function McbotPanel() {
     confirmMessage = `确定向游戏内发送这条消息（${confirm.message.length} 个字符）？`
     confirmDetails = <p className="mcbot-say-preview">{confirm.message}</p>
     confirmText = '发送'
+  } else if (confirm?.type === 'move') {
+    confirmTitle = '移动控制'
+    confirmMessage = confirm.target
+      ? `确定让 mcbot ${MCBOT_MOVE_ACTION_LABELS[confirm.action]}「${confirm.target}」？`
+      : `确定让 mcbot ${MCBOT_MOVE_ACTION_LABELS[confirm.action]}？`
+    confirmDetails = '移动结果会在事件流中返回；确认时会重新检查连接、任务与目标玩家状态。'
+    confirmText = '确认移动'
   } else if (confirm?.type === 'autonomy-start') {
     confirmTitle = '启动自主模式'
     confirmMessage = confirm.goal
@@ -899,7 +912,12 @@ export function McbotPanel() {
   }
 
   const handleConfirm = (): void => {
-    if (!confirm || actionBusy) return
+    if (!confirm || operationBusyRef.current) return
+    if (!controlReady || (confirm.type === 'say' && !sayReady) || (confirm.type === 'resume' && confirm.taskId !== pendingResume?.taskId)) {
+      setConfirm(null)
+      toast.error('当前控制不可用，请刷新状态后重试')
+      return
+    }
     switch (confirm.type) {
       case 'start': {
         const label = mcbotTaskNameLabel(confirm.name)
@@ -916,7 +934,7 @@ export function McbotPanel() {
         void runAction(() => api.mcbot.stopTask(), () => '已请求 mcbot 停止任务')
         break
       case 'resume':
-        void runAction(() => api.mcbot.resumeTask(pendingResume?.taskId), () => '已请求 mcbot 恢复任务')
+        void runAction(() => api.mcbot.resumeTask(confirm.taskId), () => '已请求 mcbot 恢复任务')
         break
       case 'say':
         void runAction(() => api.mcbot.say(confirm.message), () => '已发送游戏内聊天').then((ok) => {
@@ -924,6 +942,9 @@ export function McbotPanel() {
           setSayText('')
           setSayError(null)
         })
+        break
+      case 'move':
+        void handleMove(confirm.action, confirm.target)
         break
       case 'autonomy-start':
         void runAction(
@@ -976,7 +997,13 @@ export function McbotPanel() {
   }
 
   const handleMove = async (action: McbotMoveAction, target: string | undefined): Promise<void> => {
-    if (moveBusy) return
+    if (operationBusyRef.current) return
+    if (!controlReady || !status?.minecraft.connected || status.task.active || ((action === 'come' || action === 'follow') && (!target || !mcbotOnlinePlayers(status).includes(target)))) {
+      setConfirm(null)
+      toast.error('移动条件已变化，请查看当前连接、任务和目标玩家后重试')
+      return
+    }
+    operationBusyRef.current = true
     setMoveBusy(action)
     try {
       await api.mcbot.move(action, target)
@@ -989,7 +1016,9 @@ export function McbotPanel() {
     } catch (moveError) {
       toast.error(toErrorMessage(moveError, 'mcbot 移动请求失败，请重试'))
     } finally {
+      operationBusyRef.current = false
       setMoveBusy(null)
+      setConfirm(null)
     }
   }
 
@@ -1038,71 +1067,62 @@ export function McbotPanel() {
         <div className="notice notice-muted">当前 mcbot 契约不支持安全发言，升级到契约 v2 后可用。</div>
       ) : null}
 
-      <McbotStatusCard
-        snapshot={snapshot}
-        error={error}
-        refreshing={refreshing}
-        onRefresh={() => void refresh()}
-      />
+      <McbotPresenceGoalsCard controlReady={controlsAvailable} onChanged={() => { void load() }} />
 
-      {snapshot.reachable && !autonomy ? (
-        <div className="notice notice-muted">
-          当前 mcbot 未提供自主模式状态（旧版本或未启用）：自主模式控制已隐藏，任务/移动操作不受影响。
-        </div>
-      ) : null}
-
-      {autonomy ? (
-        <McbotAutonomyCard
-          autonomy={autonomy}
-          controlReady={controlReady}
-          goal={autonomyGoal}
-          goalError={autonomyError}
-          onGoalChange={(value) => {
-            setAutonomyGoal(value)
-            setAutonomyError(null)
-          }}
-          onStart={handleAutonomyStart}
-          onStop={() => setConfirm({ type: 'autonomy-stop' })}
-        />
-      ) : null}
-
-      <McbotPresenceGoalsCard controlReady={controlReady} onChanged={() => { void load() }} />
+      <McbotStatusCard snapshot={snapshot} error={error} refreshing={refreshing} onRefresh={() => void refresh()} />
 
       {status ? (
-        <>
+        <section className="mcbot-section" aria-label="手动任务区">
+          <div className="mcbot-section-label"><span>手动任务</span><span>选择单项任务，按需加入队列</span></div>
           <McbotTaskCard
             status={status}
-            controlReady={controlReady}
+            controlReady={controlsAvailable}
             taskName={taskName}
             onTaskNameChange={setTaskName}
             onStart={() => setConfirm({ type: 'start', name: taskName })}
             onStop={() => setConfirm({ type: 'stop' })}
-            onResume={() => setConfirm({ type: 'resume' })}
+            onResume={() => setConfirm({ type: 'resume', taskId: pendingResume?.taskId ?? '' })}
             onDiscardPending={() => setConfirm({ type: 'stop' })}
           />
+        </section>
+      ) : null}
+
+      <section className="mcbot-section" aria-label="自主模式区">
+        <div className="mcbot-section-label"><span>AI 自主</span><span>显式启动，随时急停</span></div>
+        {autonomy ? (
+          <McbotAutonomyCard
+            autonomy={autonomy}
+            controlReady={controlsAvailable}
+            goal={autonomyGoal}
+            goalError={autonomyError}
+            onGoalChange={(value) => { setAutonomyGoal(value); setAutonomyError(null) }}
+            onStart={handleAutonomyStart}
+            onStop={() => setConfirm({ type: 'autonomy-stop' })}
+          />
+        ) : snapshot.reachable ? <div className="notice notice-muted">当前 mcbot 未提供自主模式状态（旧版本或未启用）：自主模式控制已隐藏，任务/移动操作不受影响。</div> : null}
+      </section>
+
+      {status ? (
+        <section className="mcbot-section" aria-label="移动与聊天区">
+          <div className="mcbot-section-label"><span>移动与聊天</span><span>直接连接当前世界</span></div>
           <div className="mcbot-columns">
-            <McbotMoveCard
-              status={status}
-              controlReady={controlReady}
-              moveBusy={moveBusy}
-              onMove={(action, target) => void handleMove(action, target)}
-            />
+            <McbotMoveCard status={status} controlReady={controlsAvailable} moveBusy={moveBusy} onMove={(action, target) => setConfirm({ type: 'move', action, target })} />
             <McbotSayCard
-              ready={sayReady}
+              ready={sayReady && !actionBusy && moveBusy === null}
               text={sayText}
               error={sayError}
-              onTextChange={(value) => {
-                setSayText(value)
-                setSayError(null)
-              }}
+              onTextChange={(value) => { setSayText(value); setSayError(null) }}
               onSubmit={handleSaySubmit}
             />
           </div>
-        </>
+        </section>
       ) : null}
 
-      <McbotEventsCard snapshot={snapshot} />
-      <McbotHistoryCard />
+      <section className="mcbot-section" aria-label="事件与历史区">
+        <div className="mcbot-section-label"><span>事件与历史</span><span>查看动作结果与状态记录</span></div>
+        <McbotEventsCard snapshot={snapshot} />
+        <McbotHistoryCard />
+      </section>
 
       <ConfirmDialog
         open={confirm !== null}
@@ -1111,10 +1131,10 @@ export function McbotPanel() {
         details={confirmDetails}
         confirmText={confirmText}
         tone={confirmTone}
-        loading={actionBusy}
+        loading={actionBusy || moveBusy !== null}
         onConfirm={handleConfirm}
         onClose={() => {
-          if (!actionBusy) setConfirm(null)
+          if (!actionBusy && moveBusy === null) setConfirm(null)
         }}
       />
     </div>

@@ -1,5 +1,16 @@
 # AntifieldComplexx HTTP API 契约
 
+## v1.2.1 兼容增量
+
+- 应用 Cookie 仅接受未绑定设备的浏览器会话。设备 sessionToken 改放 Cookie 返回 401，不能获取 CSRF 绕过签名；AI 主机专用 SSO Cookie 保留独立入口。
+- 签名时钟偏差仍为 ±120 秒；nonce 保留到末个有效秒结束。
+- 新增 POST /api/notes/:id/attachments/from-upload，JSON 为 {uploadId:string}，认证与其他笔记写接口相同，成功 200 {items:[NoteAttachment]}。
+- 仅接管当前 actor 已完成会话对应的活动根目录 user 文件。origin 变更及附件关联同事务提交，不重复扣配额。同笔记重试幂等，跨笔记、目录或分享引用拒绝。multipart 兼容。
+- 错误包括 404 upload_not_found，409 upload_not_completed、attachment_upload_used、attachment_file_in_use，以及原有笔记、数量和大小错误。
+- 原生文件 IPC 仅 main 本地源可调用，内容端点限定 /api/files/:id/content；固定 API 源、重定向拒绝、系统选择器和流式落盘。预览句柄限 loopback、可撤销并支持 Range，令牌不进入 URL。
+- AI 顶层导航只允许固定 AI／Access HTTPS 源，SSO 入口仅固定 AI 源及合法 next。保持实际 User-Agent；Access 登录后最多由主窗口重新换票一次，服务端票据时限不变。
+
+
 > **DSH 契约**。生产已启用 DSH Web。`GET /api/dashboard` 增加 `dsh.webUrl` 和 `dsh.readiness`。就绪键为 `dsh_web`、`dsh_qq`、`dsh_mcbot`，只出现已配置服务。既有 `opencode` 字段保留用于兼容，DSH Web 启用后停止旧探测。AI 主机沿用 Workbench SSO 和会话校验。  启用 `DSH_QQ_MANAGED` 后，已登录的 `GET /api/chatbots/status` 返回 `410 chatbot_managed_by_dsh`。旧发布、通知管理、工具和公开 QQ Webhook 路由返回 404。告警历史仍包含已存在的 QQ 投递详情，新事件由 Webhook 投递。mcbot HTTP 契约保持 v2。
 
 服务端与前端共同遵守本文件。所有路径除特别说明外均以 `https://app.example.com` 为源（占位域名；实际见 `.local/DEPLOYMENT.md`）。
@@ -33,7 +44,7 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "1.2.0", "schemaVersion": 21, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
+{ "ok": true, "version": "1.2.1", "schemaVersion": 21, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
 ```
 
 - `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
@@ -480,7 +491,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "1.2.0", "schemaVersion": 21, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
+- `GET /api/version`（需要会话）：`{ "version": "1.2.1", "schemaVersion": 21, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
   - `schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。旧服务端不下发时前端按关闭/未配置/null 降级。
   - `mcbotEnabled`/`mcbotControlEnabled`（v0.8.0）：mcbot 集成是否启用、控制接口是否可用（`MCBOT_ENABLED=true` 且 `MCBOT_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 mcbot 标签与控制操作。两者都不含 mcbot 地址/Token。
   - schema **17**；`audit.persisted` 表示诊断是否来自 DB 持久化行（DB 不可用时 false，回退内存计数）。
@@ -832,7 +843,7 @@ ChatbotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|proje
 
 ## 15. mcbot Bot 对接（v0.8.0 引入；v1.0.2 自主模式；v1.0.3 环境/动作工具；v1.0.5 在线模式/目标/自动生存；v1.0.6 寻路状态；v1.0.7 成功时间与兜底原因；v1.0.9 事件缺口；v1.0.10 活动范围；v1.0.11 反射、v1.0.12 世界记忆与 v1.0.13 记忆坐标不新增应用字段；默认关闭）
 
-mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。目标上游为 mcbot **v1.2.0**（契约 v2，兼容已声明契约 v1 的旧版本）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，v1.0.9 增加可空 `eventGap`，v1.0.10 至 v1.2.0 不新增应用字段，旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
+mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。目标上游为 mcbot **v1.2.1**（契约 v2，兼容已声明契约 v1 的旧版本）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，v1.0.9 增加可空 `eventGap`，v1.0.10 至 v1.2.0 不新增应用字段，旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
 
 ### 通用语义
 

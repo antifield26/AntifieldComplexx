@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:networkSecurityConfig="@xml/client_network_security_config">
+        <activity android:name="app.antifieldcomplexx.runtime.AiWorkspaceActivity"
+            android:exported="false" android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden|uiMode"
+            android:theme="@style/ClientAiTheme" />
+    </application>
+</manifest>

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+/** 在线模式与多步目标：突出动作结果、阻塞与下一步，所有写操作保留控制检查和二次确认。 */
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Moon, Play, Square, Target } from 'lucide-react'
 import { api, isAbortError, isApiError, toErrorMessage } from '../../api/client'
@@ -16,8 +17,10 @@ import { ConfirmDialog } from '../ConfirmDialog'
 import { EmptyState } from '../EmptyState'
 import { InlineError } from '../InlineError'
 import { RelativeTime } from '../RelativeTime'
+import { ProgressBar } from '../ProgressBar'
 import { useToast } from '../Toast'
 import { mcbotTaskNameLabel } from '../../lib/mcbot'
+import { usePolling } from '../../hooks/usePolling'
 
 const PRESENCE_LABELS: Record<McbotPresenceMode, string> = {
   auto: '自动在线',
@@ -64,6 +67,31 @@ const FAILURE_LABELS: Record<string, string> = {
   unknown: '步骤失败',
 }
 
+const FAILURE_HINTS: Record<string, string> = {
+  path: '确认路线畅通后，从当前步骤继续。',
+  survival: '确认生命状态与周围环境安全后继续。',
+  supplies: '检查工具、食物和箱子空间，补足后继续。',
+  interrupted: '确认当前状态后，从未完成的步骤继续。',
+  unknown: '检查当前步骤的错误信息后继续。',
+}
+
+function stepLabel(step: McbotGoal['steps'][number]): string {
+  return step.kind === 'task' ? mcbotTaskNameLabel(step.taskName) : step.kind === 'deposit' ? '存箱' : '回家'
+}
+
+function nextAction(goal: McbotGoal): string {
+  if (goal.status === 'completed') return '全部步骤已完成，可以创建新的目标。'
+  if (goal.status === 'canceled') return '目标已取消；如需继续，请创建新目标。'
+  if (goal.status === 'failed') return '检查失败原因后，创建新的目标。'
+  const current = goal.steps[goal.currentStep]
+  if (goal.status === 'paused') return goal.lastError
+    ? `${FAILURE_HINTS[goal.lastFailureKind ?? 'unknown'] ?? FAILURE_HINTS.unknown} 从第 ${goal.currentStep + 1} 步继续。`
+    : `准备好后，从第 ${goal.currentStep + 1} 步继续。`
+  if (goal.status === 'pending') return '确认开始后，按顺序执行全部步骤。'
+  const next = goal.steps.slice(goal.currentStep + 1).find((step) => step.status === 'pending')
+  return current ? `正在${stepLabel(current)}${next ? `，完成后${stepLabel(next)}` : '，完成后结束目标'}。` : '等待最新执行结果。'
+}
+
 function goalStatusTone (status: string): 'muted' | 'success' | 'warning' | 'danger' | 'info' {
   if (status === 'running') return 'success'
   if (status === 'paused') return 'warning'
@@ -99,13 +127,17 @@ export function McbotPresenceGoalsCard({
   const [busy, setBusy] = useState(false)
   const [planIndex, setPlanIndex] = useState(0)
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null)
+  const requestIdRef = useRef(0)
+  const busyRef = useRef(false)
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const load = useCallback(async (signal?: AbortSignal, afterAction = false) => {
+    if (busyRef.current && !afterAction) return
+    const requestId = ++requestIdRef.current
     const [presenceResult, goalsResult] = await Promise.allSettled([
-      api.mcbot.presence(signal),
-      api.mcbot.goals(10, signal),
+      Promise.resolve().then(() => api.mcbot.presence(signal)),
+      Promise.resolve().then(() => api.mcbot.goals(10, signal)),
     ])
-    if (signal?.aborted) return
+    if (signal?.aborted || requestId !== requestIdRef.current) return
     if (presenceResult.status === 'fulfilled') {
       setPresence(presenceResult.value.presence ?? null)
       setError(null)
@@ -126,35 +158,51 @@ export function McbotPresenceGoalsCard({
 
   useEffect(() => {
     const controller = new AbortController()
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const refresh = async () => {
-      await load(controller.signal).catch(() => {})
-      if (!controller.signal.aborted) timer = setTimeout(() => { void refresh() }, 5000)
-    }
-    void refresh()
+    void load(controller.signal)
     return () => {
       controller.abort()
-      clearTimeout(timer)
+      requestIdRef.current += 1
     }
   }, [load])
 
+  usePolling(() => load(), 5000)
+
   async function runAction (work: () => Promise<void>, success: string): Promise<void> {
-    if (busy) return
+    if (!controlReady || busyRef.current) return
+    busyRef.current = true
+    requestIdRef.current += 1
     setBusy(true)
     try {
       await work()
       toast.success(success)
       onChanged?.()
-      await load()
+      await load(undefined, true)
     } catch (failure) {
       if (!isAbortError(failure)) toast.error(isApiError(failure) ? toErrorMessage(failure) : '操作失败')
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
 
   function confirmAction (): void {
     if (!confirm) return
+    if (!controlReady || busyRef.current) {
+      setConfirm(null)
+      return
+    }
+    if (confirm.kind !== 'presence') {
+      const goal = goals.find((item) => item.id === confirm.goalId)
+      const valid = goal && (confirm.kind === 'start' ? goal.status === 'pending'
+        : confirm.kind === 'resume' ? goal.status === 'paused'
+          : confirm.kind === 'pause' ? goal.status === 'running'
+            : ['pending', 'paused', 'running'].includes(goal.status))
+      if (!valid) {
+        setConfirm(null)
+        toast.error('目标状态已更新，请查看当前状态后重试')
+        return
+      }
+    }
     if (confirm.kind === 'presence') {
       void runAction(async () => {
         if (confirm.mode) await api.mcbot.setPresence(confirm.mode)
@@ -200,12 +248,58 @@ export function McbotPresenceGoalsCard({
   return (
     <>
       <Card
-        title="在线模式与长期目标"
-        description="常驻在线、自动生存和多步目标均由 mcbot 执行；切换与开始需要二次确认。"
+        className="mcbot-goals-card"
+        title="目标执行"
+        description="采集、存箱、回家，按动作结果推进；开始与恢复需要二次确认。"
         actions={<Badge tone={controlReady ? 'success' : 'muted'}>{controlReady ? '可控' : '只读'}</Badge>}
       >
+        <div className="mcbot-goal-overview"><Target size={18} aria-hidden="true" /><span>多步目标</span><span className="mcbot-goal-overview-note">{goals.some((goal) => goal.status === 'running') ? '正在执行计划' : '准备下一次出发'}</span></div>
+        {goalsError ? <InlineError message={goalsError} /> : null}
+        {goals.length === 0 ? (
+          <EmptyState compact icon={<Target size={22} />} title="暂无长期目标" description="创建计划后先查看步骤，再确认开始执行。" />
+        ) : (
+          <ul className="mcbot-goal-list">
+            {[...goals].sort((left, right) => {
+              const rank = (goal: McbotGoal): number => goal.status === 'running' ? 0 : goal.status === 'paused' ? 1 : goal.status === 'pending' ? 2 : 3
+              return rank(left) - rank(right)
+            }).map((goal) => {
+              const completed = goal.steps.filter((step) => step.status === 'completed' || step.status === 'skipped').length
+              const currentError = goal.lastError || goal.steps[goal.currentStep]?.lastError
+              return (
+                <li className={`mcbot-goal-item mcbot-goal-${goal.status}`} key={goal.id}>
+                  <div className="mcbot-goal-heading"><strong>{goal.objective}</strong><Badge tone={goalStatusTone(goal.status)}>{goalStatusLabel(goal.status)}</Badge></div>
+                  <div className="mcbot-goal-progress"><span>已完成 {completed} / {goal.steps.length} 步</span><ProgressBar value={goal.steps.length > 0 ? completed / goal.steps.length * 100 : 0} tone="accent" ariaLabel={`${goal.objective}的执行进度`} /></div>
+                  <ol className="mcbot-goal-steps" aria-label={`${goal.objective}的步骤`}>
+                    {goal.steps.map((step, index) => (
+                      <li key={`${goal.id}-${index}`} className={`mcbot-goal-step mcbot-goal-step-${step.status}`} aria-current={index === goal.currentStep && (goal.status === 'running' || goal.status === 'paused') ? 'step' : undefined}>
+                        <span className="mcbot-goal-step-index" aria-hidden="true">{step.status === 'completed' ? '✓' : index + 1}</span><span><strong>{stepLabel(step)}</strong><span>{goalStatusLabel(step.status)}</span></span>
+                      </li>
+                    ))}
+                  </ol>
+                  <div className="mcbot-goal-guidance">
+                    <div className={currentError ? 'mcbot-goal-blocked' : undefined}><span>阻塞原因</span><p>{currentError ? `${goal.lastFailureKind ? `${FAILURE_LABELS[goal.lastFailureKind] ?? '步骤失败'} · ` : ''}${currentError}` : '暂无阻塞上报'}</p></div>
+                    <div><span>下一步</span><p>{nextAction(goal)}</p></div>
+                  </div>
+                  <div className="mcbot-goal-actions">
+                    {goal.status === 'pending' || goal.status === 'paused' ? <Button size="sm" variant="primary" disabled={!controlReady || busy} icon={<Play size={14} />} onClick={() => setConfirm(goal.status === 'paused' ? { kind: 'resume', goalId: goal.id, label: `第 ${goal.currentStep + 1} 步继续` } : { kind: 'start', goalId: goal.id, label: '开始' })}>{goal.status === 'paused' ? `从第 ${goal.currentStep + 1} 步继续` : '开始'}</Button> : null}
+                    {goal.status === 'running' ? <Button size="sm" variant="secondary" disabled={!controlReady || busy} icon={<Moon size={14} />} onClick={() => setConfirm({ kind: 'pause', goalId: goal.id, label: '暂停' })}>暂停</Button> : null}
+                    {goal.status === 'pending' || goal.status === 'paused' || goal.status === 'running' ? <Button size="sm" variant="danger" disabled={!controlReady || busy} icon={<Square size={14} />} onClick={() => setConfirm({ kind: 'cancel', goalId: goal.id, label: '取消' })}>取消</Button> : null}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+
+        <form className="mcbot-task-controls mcbot-create-plan" onSubmit={createPlan}>
+          <label className="field-label" htmlFor="mcbot-goal-preset">新建计划</label>
+          <div className="select-field"><select id="mcbot-goal-preset" className="select" value={planIndex} disabled={!controlReady || busy} onChange={(event) => setPlanIndex(Number(event.target.value))}>{PRESET_PLANS.map((plan, index) => <option key={plan.label} value={index}>{plan.label}</option>)}</select></div>
+          <Button type="submit" variant="secondary" disabled={!controlReady || busy} loading={busy}>创建计划</Button>
+        </form>
+
+        <details className="mcbot-presence-details"><summary>在线模式<span>{presence ? PRESENCE_LABELS[presence.mode] : '尚未读取'}</span></summary>
         {error ? <InlineError message={error} /> : null}
-        <div className="mcbot-task-facts">
+        <div className="mcbot-presence-controls">
           <span className="mcbot-fact-label">在线模式</span>
           <div className="mcbot-task-controls" role="group" aria-label="在线模式">
             {(Object.keys(PRESENCE_LABELS) as McbotPresenceMode[]).map((mode) => (
@@ -230,97 +324,7 @@ export function McbotPresenceGoalsCard({
           ) : null}
         </div>
 
-        <h3 className="subsection-title">多步目标</h3>
-        {goalsError ? <InlineError message={goalsError} /> : null}
-        <form className="mcbot-task-controls" onSubmit={createPlan}>
-          <label className="field-label" htmlFor="mcbot-goal-preset">预设计划</label>
-          <div className="select-field">
-            <select
-              id="mcbot-goal-preset"
-              className="select"
-              value={planIndex}
-              disabled={!controlReady || busy}
-              onChange={(event) => setPlanIndex(Number(event.target.value))}
-            >
-              {PRESET_PLANS.map((plan, index) => (
-                <option key={plan.label} value={index}>{plan.label}</option>
-              ))}
-            </select>
-          </div>
-          <Button type="submit" variant="secondary" disabled={!controlReady || busy} loading={busy}>
-            创建计划
-          </Button>
-        </form>
-
-        {goals.length === 0 ? (
-          <EmptyState compact icon={<Target size={22} />} title="暂无长期目标" description="创建预设计划后，目标默认待开始；需要显式点击开始。" />
-        ) : (
-          <ul className="mcbot-queue">
-            {goals.map((goal) => (
-              <li className="mcbot-queue-item" key={goal.id}>
-                <div>
-                  <div className="mcbot-queue-name">{goal.objective}</div>
-                  <div className="mcbot-fact-hint">
-                    <Badge tone={goalStatusTone(goal.status)}>{goalStatusLabel(goal.status)}</Badge>
-                    {' '}
-                    {goal.steps.map((step, index) => (
-                      <span key={`${goal.id}-${index}`}>
-                        {index > 0 ? ' → ' : ''}
-                        {step.kind === 'task'
-                          ? mcbotTaskNameLabel(step.taskName)
-                          : step.kind === 'deposit' ? '存箱' : '回家'}
-                        {step.status !== 'pending' ? `（${goalStatusLabel(step.status)}）` : ''}
-                      </span>
-                    ))}
-                  </div>
-                  {goal.lastError ? (
-                    <div className="notice notice-warning">
-                      {goal.lastFailureKind ? `${FAILURE_LABELS[goal.lastFailureKind] ?? '步骤失败'} · ` : ''}
-                      {goal.lastError}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="mcbot-pending-actions">
-                  {goal.status === 'pending' || goal.status === 'paused' ? (
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      disabled={!controlReady || busy}
-                      icon={<Play size={14} />}
-                      onClick={() => setConfirm(goal.status === 'paused'
-                        ? { kind: 'resume', goalId: goal.id, label: `第 ${goal.currentStep + 1} 步继续` }
-                        : { kind: 'start', goalId: goal.id, label: '开始' })}
-                    >
-                      {goal.status === 'paused' ? `从第 ${goal.currentStep + 1} 步继续` : '开始'}
-                    </Button>
-                  ) : null}
-                  {goal.status === 'running' ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={!controlReady || busy}
-                      icon={<Moon size={14} />}
-                      onClick={() => setConfirm({ kind: 'pause', goalId: goal.id, label: '暂停' })}
-                    >
-                      暂停
-                    </Button>
-                  ) : null}
-                  {goal.status === 'pending' || goal.status === 'paused' || goal.status === 'running' ? (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      disabled={!controlReady || busy}
-                      icon={<Square size={14} />}
-                      onClick={() => setConfirm({ kind: 'cancel', goalId: goal.id, label: '取消' })}
-                    >
-                      取消
-                    </Button>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        </details>
       </Card>
 
       <ConfirmDialog

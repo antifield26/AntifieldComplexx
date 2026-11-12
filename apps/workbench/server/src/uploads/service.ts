@@ -335,7 +335,7 @@ export class UploadService {
   async complete(actor: Actor, id: string, expectedSha256?: string): Promise<CompleteResult> {
     const session = this.ownedSession(actor, id)
     if (session.status === 'completed' && session.file_id) {
-      return { ok: true, file: this.files.get(session.file_id).item }
+      return { ok: true, file: this.files.completedUploadItem(session.file_id) }
     }
     if (session.status !== 'uploading') throw conflict('上传会话当前不可完成', 'upload_not_completable')
     const count = this.db

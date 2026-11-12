@@ -1,5 +1,12 @@
 # 安全说明
 
+## v1.2.1 候选安全边界
+
+设备绑定会话不能降级应用 Cookie；nonce 覆盖完整有效秒，严格 HTTP 模式拒绝游戏内自主启动。原生 IPC 同时检查 main 标识及本地来源，文件传输限定固定源／内容端点并拒绝重定向，登出撤销句柄与传输。
+
+AI 仅导航固定 AI／Access 来源，远端无主窗口权限，实际 UA、一次性票据及服务端失效检查保留；首次 Access 登录后只补发一次新票。不改变 schema 或 Cloudflare API 放行范围。审计与未决项见 AUDIT。
+
+
 > **DSH 安全边界**。Web、QQ、mcbot Agent 使用独立账号、凭据和状态目录。DSH Web 只监听 loopback，Workbench 通过私有 socket 交换启动令牌并向浏览器发出 host-only Cookie。应用会话失效后关闭旧 WebSocket。QQ 工具只在经过平台确认的会话与成员范围内工作。Minecraft 动作通过专用 socket 和单次运行 Bearer 复用 mcbot 的权限与预算校验。迁移和回滚步骤见 [切换手册](./DSH-MIGRATION.md)。
 
 ## 1. 资产与信任边界

@@ -6,7 +6,7 @@
  * - 只上传 `.tar.gz.age` 加密归档，明文归档一律拒绝上传（计入 plaintextSkipped）；
  * - 上传前校验本地密文 SHA-256（.sha256 旁文件必须存在且匹配）与 <name>.meta.json 元数据；
  * - `rclone copyto --checksum --immutable` 上传归档及其 `.sha256`/`.meta.json` 伴随文件；
- * - 链感知保留：保留“远端最新 full 及其后全部 inc”与最近 N 天归档；绝不删除最新 full；
+ * - 链感知保留：只把远端三件套齐备的 full 作为淘汰基线；任一上传或确认失败时禁止删除；
  * - 删除前做上限保护（--max-delete），默认 dry-run 可预览；
  * - 状态 JSON 输出到 stdout/--json-out（字段：lastRunAt/ok/remoteLabel/uploaded/skipped/failed/
  *   bytes/keptRemote/plaintextSkipped/error），由 backup-offsite.ps1 写回 Pi（0644，应用只读）。
@@ -35,6 +35,13 @@ export const ENCRYPTED_PATTERN = /^snapshot-(\d{8}T\d{6,9}Z)(?:-\d+)?-(full|inc)
 export const PLAINTEXT_PATTERN = /^snapshot-(\d{8}T\d{6,9}Z)(?:-\d+)?-(full|inc)\.tar\.gz$/
 /** 远端保留的伴随文件后缀（随归档一起上传/删除）。 */
 const COMPANION_SUFFIXES = ['.sha256', '.meta.json']
+
+/** 密文及两个伴随文件齐备才是可恢复的远端归档；残缺集只允许补传，不参与淘汰基线。 */
+function completeRemoteArchives(remoteNames) {
+  const names = new Set(remoteNames ?? [])
+  return new Set([...names].filter(name => isEncryptedName(name)
+    && COMPANION_SUFFIXES.every(suffix => names.has(name + suffix))))
+}
 
 /**
  * 解析归档名里的时间戳（yyyyMMddTHHmmss[1-9 位小数秒]Z）为 epoch 毫秒；失败返回 null。
@@ -85,13 +92,13 @@ export function sanitizeStatusText(text) {
 
 /**
  * 计算链感知保留计划（纯函数，便于测试）。
- * - remoteNames：远端已有的归档名（可含伴随文件，函数内部过滤）；
+ * - remoteNames：远端已有的归档与伴随文件名；三件套不齐的归档不参与保留/删除规划；
  * - keepDays：额外保留最近 N 天的归档（即使不属于最新 full 链）；
  * - now：当前时间（毫秒），测试可注入。
  * 返回 { keep, remove, newestFull }；绝不把最新 full 放进 remove。
  */
 export function planRetention(remoteNames, { keepDays = 30, now = Date.now() } = {}) {
-  const archives = [...new Set((remoteNames ?? []).filter((name) => isEncryptedName(name)))]
+  const archives = [...completeRemoteArchives(remoteNames)]
     .map((name) => ({ name, stamp: parseStamp(name), mode: archiveMode(name) }))
     .filter((item) => item.stamp !== null)
     .sort((a, b) => a.stamp - b.stamp)
@@ -117,7 +124,7 @@ export function planRetention(remoteNames, { keepDays = 30, now = Date.now() } =
 
 /** 本地归档候选：返回可直接上传的加密归档与拒绝统计。 */
 export function selectUploadCandidates(localArchives, remoteNames) {
-  const remote = new Set((remoteNames ?? []).filter((name) => isEncryptedName(name)))
+  const remote = completeRemoteArchives(remoteNames)
   const candidates = []
   const plaintextSkipped = []
   for (const item of localArchives ?? []) {
@@ -325,6 +332,7 @@ export async function runOffsite(options, deps = {}) {
   let uploaded = 0
   let failed = 0
   let bytes = 0
+  const copied = []
   for (const candidate of candidates) {
     // 只允许上传带密文 SHA 与 meta 的加密归档；缺失即失败（不静默）。
     if (!candidate.hasSidecar || !candidate.hasMeta) {
@@ -367,7 +375,7 @@ export async function runOffsite(options, deps = {}) {
       const localPath = fileName === candidate.name ? candidate.path : `${candidate.path}${fileName.slice(candidate.name.length)}`
       if (!existsSync(localPath)) { uploadOk = false; break }
       if (options.dryRun) continue
-      const copy = await runRclone(['copyto', '--checksum', localPath, remoteJoin(options.remote, options.remotePath, fileName)])
+      const copy = await runRclone(['copyto', '--checksum', '--immutable', localPath, remoteJoin(options.remote, options.remotePath, fileName)])
       if (copy.code !== 0) {
         uploadOk = false
         log(`rclone copyto failed (${sanitizeStatusText(copy.stderr || copy.stdout)}): ${fileName}`)
@@ -382,23 +390,40 @@ export async function runOffsite(options, deps = {}) {
             return NaN
           }
         })()
-        if (sizeCheck.code === 0 && Number.isFinite(remoteSize) && remoteSize !== candidate.sizeBytes) {
+        if (sizeCheck.code !== 0 || !Number.isFinite(remoteSize) || remoteSize !== candidate.sizeBytes) {
           uploadOk = false
-          log(`remote size mismatch: ${fileName}`)
+          log(`remote size verification failed: ${fileName}`)
           break
         }
       }
     }
     if (!uploadOk) { failed += 1; continue }
-    uploaded += 1
-    bytes += candidate.sizeBytes
+    copied.push(candidate)
   }
   const skipped = Math.max(0, localArchives.filter((item) => item.encrypted).length - candidates.length - failed)
 
-  // 上传后重新列远端，计算链感知保留；只删 `.age` 归档及伴随文件。
-  const afterUpload = options.dryRun
-    ? [...remoteNames]
-    : parseLsfOutput((await runRclone(['lsf', '--files-only', '--max-depth', '1', remoteDirectory])).stdout)
+  // 上传后确认完整集；列表读取失败或任何上传失败时，不能借残缺的新 full 淘汰旧恢复链。
+  let afterUpload = remoteNames
+  if (!options.dryRun) {
+    const confirmation = await runRclone(['lsf', '--files-only', '--max-depth', '1', remoteDirectory])
+    if (confirmation.code !== 0) {
+      return { exitCode: 1, status: buildStatus({ ...statusBase, ok: false, failed: failed + 1, plaintextSkipped, error: 'remote_confirmation_failed' }) }
+    }
+    afterUpload = parseLsfOutput(confirmation.stdout)
+  }
+  const complete = completeRemoteArchives(afterUpload)
+  for (const candidate of copied) {
+    if (!options.dryRun && !complete.has(candidate.name)) {
+      failed += 1
+      log(`remote archive set incomplete: ${candidate.name}`)
+      continue
+    }
+    uploaded += 1
+    bytes += candidate.sizeBytes
+  }
+  if (failed > 0) {
+    return { exitCode: 1, status: buildStatus({ ...statusBase, ok: false, uploaded, skipped, failed, bytes, plaintextSkipped, keptRemote: complete.size, error: 'partial_failure_no_retention' }) }
+  }
   const plan = planRetention(afterUpload, { keepDays: options.keepDays, now: now() })
   if (plan.remove.length > options.maxDelete) {
     return { exitCode: 1, status: buildStatus({ ...statusBase, ok: false, uploaded, skipped, failed, bytes, plaintextSkipped, keptRemote: plan.keep.length, error: sanitizeStatusText(`delete_limit_exceeded: ${plan.remove.length} > ${options.maxDelete}`) }) }

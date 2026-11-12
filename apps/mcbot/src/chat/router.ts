@@ -1,3 +1,4 @@
+/** 游戏内消息分发：按主人白名单与严格面板模式限制动作入口，普通对话不授予控制权。 */
 import type { Config } from '../config.ts'
 import type { Logger } from '../logger.ts'
 import type { RuntimeState } from '../state.ts'
@@ -102,6 +103,18 @@ export class ChatRouter {
   }
 
   private async handleAutonomyStart (goal: string | null, username: string): Promise<void> {
+    if (this.deps.config.httpOnlyHighRisk) {
+      this.deps.audit?.append({
+        event: 'command.denied',
+        source: 'chat',
+        actor: username,
+        action: 'autonomy.start',
+        result: 'denied',
+        details: { reason: 'http_only_high_risk' }
+      })
+      await this.deps.chatSender.say('这个动作现在需要从面板操作哦。', 'autonomy').catch(() => {})
+      return
+    }
     const autonomy = this.deps.autonomy
     if (!autonomy || !autonomy.enabled) {
       await this.deps.chatSender.say('自主模式还没开启。', 'autonomy').catch(() => {})

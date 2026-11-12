@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
+import { createNativePreview, downloadNativeFile, isNativeRuntime, releaseNativePreview } from '../lib/native'
+import { readApiOrigin } from '../lib/api-origin'
 
 // 预览内容一律视为不可信：禁止 style 标签/属性与 class/id（防止仿冒应用按钮/卡片），外链统一新窗口打开。
 const SANITIZE_CONFIG = {
@@ -20,7 +22,7 @@ export function isAllowedMarkdownImageSrc(raw: string | null | undefined): boole
   if (!value) return false
   // 协议相对地址（//evil.example）没有本站来源，直接拒绝
   if (value.startsWith('//')) return false
-  const baseOrigin =
+  const baseOrigin = isNativeRuntime() && readApiOrigin() ? readApiOrigin() :
     typeof window !== 'undefined' && window.location?.origin && window.location.origin !== 'null'
       ? window.location.origin
       : null
@@ -74,18 +76,47 @@ export function MarkdownView({ content, className }: MarkdownViewProps) {
 
   useEffect(() => {
     let active = true
+    const previews: string[] = []
     void Promise.resolve(marked.parse(content))
-      .then((parsed) => {
+      .then(async (parsed) => {
         if (!active) return
-        setHtml(DOMPurify.sanitize(parsed, SANITIZE_CONFIG))
+        const safeHtml = DOMPurify.sanitize(parsed, SANITIZE_CONFIG)
+        if (!isNativeRuntime()) { setHtml(safeHtml); return }
+        const template = document.createElement('template')
+        template.innerHTML = safeHtml
+        const images = Array.from(template.content.querySelectorAll('img[src]'))
+        await Promise.all(images.map(async (image, index) => {
+          const original = image.getAttribute('src')
+          image.removeAttribute('src')
+          if (!original || index >= 32 || !isAllowedMarkdownImageSrc(original)) return
+          try {
+            const url = new URL(original, readApiOrigin() || window.location.origin)
+            const preview = await createNativePreview(`${url.pathname}${url.search}`)
+            if (!active) { void releaseNativePreview(preview.id).catch(() => undefined); return }
+            previews.push(preview.id)
+            image.setAttribute('src', preview.url)
+          } catch { image.setAttribute('alt', '图片预览不可用') }
+        }))
+        if (active) setHtml(template.innerHTML)
       })
       .catch(() => {
         if (active) setHtml('')
       })
     return () => {
       active = false
+      for (const id of previews) void releaseNativePreview(id).catch(() => undefined)
     }
   }, [content])
 
-  return <div className={className ? `markdown-body ${className}` : 'markdown-body'} dangerouslySetInnerHTML={{ __html: html }} />
+  return <div className={className ? `markdown-body ${className}` : 'markdown-body'}
+    onClick={(event) => {
+      if (!isNativeRuntime() || !(event.target instanceof Element)) return
+      const anchor = event.target.closest('a')
+      const href = anchor?.getAttribute('href')
+      if (!href || !isAllowedMarkdownImageSrc(href)) return
+      event.preventDefault()
+      const path = new URL(href, readApiOrigin() || window.location.origin)
+      void downloadNativeFile(`${path.pathname}?download=1`, anchor?.textContent?.trim() || '附件').catch(() => undefined)
+    }}
+    dangerouslySetInnerHTML={{ __html: html }} />
 }

@@ -1,4 +1,17 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.0）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.1）
+
+## v1.2.1 候选构建与发布
+
+生产仍为 v1.2.0，当前 schema **v21**。同 schema 回滚仅切 release／配置，保留数据库及 WAL。
+
+三个公开 HTTPS 源由未提交的 .local/client-build.env 或 CI 环境提供：VITE_API_ORIGIN、VITE_AI_ORIGIN、VITE_ACCESS_ORIGIN。npm run build:client:windows／build:client:android 同时注入 Vite 和 Cargo，缺失或非法即失败。
+
+Windows 构建 NSIS；Android Linux CI 使用 Rust 1.99.1、Java 17、SDK 36、NDK 27.0.12077973。保持原包名及兼容签名，私钥不进源码或发布附件。本机 Windows 符号链接失败不能用旧 SO 拼包冒充通过。
+
+切换前验证 schema 21 一致性快照及 release／配置，再部署应用、空闲 Bot 并覆盖升级客户端。验证登录、文件、AI、控制、完整 smoke、Windows 实拉及 schema 21／世界隔离恢复后发布。Minecraft 不因本版重启。
+
+异地副本三件套上传或确认失败时整轮禁止删除；同名冲突用 immutable 拒绝，保全旧链后人工核查。
+
 
 > v1.2.0 已于 2026-11-11 部署。客户端与 schema 21 绑定。迁移前快照 `db-predeploy-20261111T104848131Z.sqlite`（schema 20，sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）。迁移后的演练按 schema 21。退回 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略与公网界面（`PUBLIC_APP_SHELL=true`）。只恢复公网界面时改回该开关并重启，不改 schema。当前生产演练 `20261110T022941Z` 是 schema 20，不能代替 schema 21 演练。
 

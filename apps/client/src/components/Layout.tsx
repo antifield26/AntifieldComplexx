@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+/** 应用导航外壳：桌面完整侧栏，移动端四个固定入口；抽屉管理焦点与滚动，不持有凭据。 */
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Activity,
   Bot as Chatbot,
@@ -8,6 +9,7 @@ import {
   Gamepad2,
   LayoutDashboard,
   LogOut,
+  LoaderCircle,
   Menu,
   Settings,
   Share2,
@@ -24,6 +26,7 @@ import { Logo } from './Logo'
 import { PwaInstallPrompt } from './PwaInstallPrompt'
 import { PwaUpdatePrompt } from './PwaUpdatePrompt'
 import { cx } from '../lib/classnames'
+import { registerBackHandler } from '../lib/navigation-guard'
 
 interface NavItem {
   to: string
@@ -34,7 +37,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: '/', label: '工作台', icon: LayoutDashboard, end: true },
+  { to: '/', label: '首页', icon: LayoutDashboard, end: true },
   { to: '/files', label: '文件', icon: FolderOpen },
   { to: '/knowledge', label: '知识库', icon: BookOpen },
   { to: '/shares', label: '分享', icon: Share2, requiresShares: true },
@@ -45,7 +48,7 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 const PAGE_TITLES: Record<string, string> = {
-  '/': '工作台',
+  '/': '首页',
   '/files': '文件',
   '/knowledge': '知识库',
   '/shares': '分享管理',
@@ -54,6 +57,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/chatbots': '机器人',
   '/activity': '活动',
   '/settings': '设置',
+  '/more': '更多',
 }
 
 const FOCUSABLE_SELECTOR =
@@ -138,11 +142,13 @@ function SidebarContent({ username, onNavigate }: SidebarContentProps) {
 }
 
 const BOTTOM_TABS: NavItem[] = [
-  { to: '/', label: '工作台', icon: LayoutDashboard, end: true },
+  { to: '/', label: '首页', icon: LayoutDashboard, end: true },
   { to: '/files', label: '文件', icon: FolderOpen },
-  { to: '/knowledge', label: '知识库', icon: BookOpen },
-  { to: '/minecraft', label: 'Minecraft', icon: Gamepad2 },
+  { to: '/minecraft', label: 'MC', icon: Gamepad2 },
+  { to: '/more', label: '更多', icon: Menu },
 ]
+
+const MORE_PATHS = ['/more', '/knowledge', '/shares', '/trash', '/chatbots', '/activity', '/settings']
 
 /** 应用外壳：桌面固定侧栏；移动端顶部栏 + 抽屉导航（含焦点陷阱）+ 底部 Tab。 */
 export function Layout() {
@@ -151,6 +157,7 @@ export function Layout() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const drawerRef = useRef<HTMLDivElement>(null)
   const pageTitle = PAGE_TITLES[location.pathname] ?? '工作台'
+  const moreActive = MORE_PATHS.some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
   usePageTitle(pageTitle)
 
   useEffect(() => {
@@ -164,7 +171,6 @@ export function Layout() {
         id = ''
       }
       if (!id) {
-        window.scrollTo({ top: 0, behavior: 'auto' })
         return
       }
       let timer = 0
@@ -177,12 +183,12 @@ export function Layout() {
       timer = window.setTimeout(scroll, 250)
       return () => window.clearTimeout(timer)
     }
-    window.scrollTo({ top: 0, behavior: 'auto' })
   }, [location.pathname, location.hash])
 
   // 移动端抽屉：滚动锁、Esc 关闭、Tab 焦点陷阱与焦点恢复
   useEffect(() => {
     if (!drawerOpen) return
+    const unregisterBack = registerBackHandler(() => { setDrawerOpen(false); return true })
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -227,6 +233,7 @@ export function Layout() {
       window.clearTimeout(focusTimer)
       document.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = previousOverflow
+      unregisterBack()
       previouslyFocused?.focus()
     }
   }, [drawerOpen])
@@ -258,12 +265,19 @@ export function Layout() {
 
       <main className="app-main">
         <div className="app-content">
-          <Outlet />
+          <Suspense fallback={<div className="page-loading" role="status"><LoaderCircle size={22} className="spin" aria-hidden="true" /><span>正在加载页面…</span></div>}>
+            <Outlet />
+          </Suspense>
         </div>
       </main>
 
       <nav className="bottom-nav" aria-label="底部导航">
-        {BOTTOM_TABS.map((item) => (
+        {BOTTOM_TABS.map((item) => item.to === '/more' ? (
+          <Link key={item.to} to={item.to} className={cx('bottom-tab', moreActive && 'bottom-tab-active')} aria-current={moreActive ? 'page' : undefined}>
+            <item.icon size={20} aria-hidden="true" />
+            <span>{item.label}</span>
+          </Link>
+        ) : (
           <NavLink
             key={item.to}
             to={item.to}
@@ -274,15 +288,6 @@ export function Layout() {
             <span>{item.label}</span>
           </NavLink>
         ))}
-        <button
-          type="button"
-          className={cx('bottom-tab', drawerOpen && 'bottom-tab-active')}
-          onClick={() => setDrawerOpen(true)}
-          aria-label="打开更多导航"
-        >
-          <Menu size={20} aria-hidden="true" />
-          <span>更多</span>
-        </button>
       </nav>
 
       {drawerOpen ? (

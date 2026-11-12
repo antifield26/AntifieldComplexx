@@ -16,7 +16,7 @@ import type { Config } from '../config.ts'
 import type { Actor, FileService } from '../files/service.ts'
 import { audit } from '../auth/audit.ts'
 import { transaction } from '../db.ts'
-import { AppError, badRequest, notFound, tooLarge } from '../util/errors.ts'
+import { AppError, badRequest, conflict, notFound, tooLarge } from '../util/errors.ts'
 import { newId } from '../util/ids.ts'
 import { nowIso } from '../util/time.ts'
 
@@ -656,6 +656,60 @@ export class NoteService {
   listAttachments(noteId: string): { items: NoteAttachmentItem[] } {
     this.row(noteId)
     return { items: this.attachmentsOf([noteId]).get(noteId) ?? [] }
+  }
+
+  /** 只接管当前用户已完成分片会话的文件；可见性转换与笔记关联原子提交，不重复占配额。 */
+  addAttachmentFromUpload(actor: Actor, noteId: string, uploadId: string): { items: NoteAttachmentItem[] } {
+    const { files, config } = this.attachmentDeps()
+    let added = false
+    let title = ''
+    const item = transaction(this.db, () => {
+      const note = this.row(noteId)
+      title = note.title
+      const session = this.db.prepare('SELECT actor, status, file_id, size FROM upload_sessions WHERE id = ?')
+        .get(uploadId) as { actor: string; status: string; file_id: string | null; size: number } | undefined
+      if (!session || session.actor !== actor.username) throw notFound('上传会话不存在', 'upload_not_found')
+      if (session.status !== 'completed' || !session.file_id) {
+        throw conflict('上传会话尚未完成', 'upload_not_completed')
+      }
+      const linked = this.db.prepare('SELECT note_id FROM note_attachments WHERE file_id = ? LIMIT 1')
+        .get(session.file_id) as { note_id: string } | undefined
+      if (linked) {
+        if (linked.note_id !== noteId) throw conflict('上传文件已用于其他笔记', 'attachment_upload_used')
+        const existing = this.attachmentsOf([noteId]).get(noteId)?.find(file => file.fileId === session.file_id)
+        if (!existing) throw notFound('附件不存在')
+        return existing
+      }
+      const file = files.contentInfo(session.file_id)
+      if (file.origin !== 'user' || file.kind !== 'file' || Number(file.size) !== Number(session.size)) {
+        throw conflict('上传文件已不可用', 'attachment_file_in_use')
+      }
+      if (file.size > config.noteAttachmentMaxBytes) {
+        throw tooLarge(`单个附件不能超过 ${Math.floor(config.noteAttachmentMaxBytes / 1024 / 1024)} MiB`)
+      }
+      const count = this.db.prepare('SELECT COUNT(*) AS c FROM note_attachments WHERE note_id = ?')
+        .get(noteId) as { c: number }
+      if (Number(count.c) >= config.noteMaxAttachments) {
+        throw new AppError(400, 'too_many_attachments', `每篇笔记最多 ${config.noteMaxAttachments} 个附件`)
+      }
+      const adopted = files.adoptUploadAsNote(file.id)
+      this.db.prepare('INSERT INTO note_attachments (note_id, file_id, created_at) VALUES (?, ?, ?)')
+        .run(noteId, adopted.id, nowIso())
+      added = true
+      return {
+        fileId: adopted.id,
+        name: adopted.name,
+        size: adopted.size,
+        mime: adopted.mime,
+        url: attachmentUrl(adopted.id),
+      }
+    })
+    if (added) {
+      audit(this.db, actor.username, 'note_attachment_add', title, {
+        noteId, count: 1, bytes: item.size,
+      }, actor.ip)
+    }
+    return { items: [item] }
   }
 
   /**

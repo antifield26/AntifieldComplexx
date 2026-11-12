@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { cx } from '../lib/classnames'
+import { registerBackHandler } from '../lib/navigation-guard'
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -97,6 +98,14 @@ export function Modal({
   onCloseRef.current = onClose
   busyRef.current = busy
   isTopRef.current = isTop
+  useEffect(() => {
+    if (!open) return
+    return registerBackHandler(() => {
+      if (!isTopRef.current) return false
+      if (!busyRef.current) onCloseRef.current()
+      return true
+    })
+  }, [open])
 
   // 入栈/出栈：open 期间注册为当前弹窗，栈变化时更新 isTop
   useEffect(() => {

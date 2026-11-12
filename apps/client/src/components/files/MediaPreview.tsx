@@ -3,10 +3,11 @@
 
 import { useEffect, useState } from 'react'
 import type { SyntheticEvent } from 'react'
-import { Download, FileWarning } from 'lucide-react'
+import { FileWarning } from 'lucide-react'
 import type { FileItem } from '../../api/types'
 import { mediaErrorMessage, mediaKindOf, mediaInlineAllowed, mediaMimeHint } from '../../lib/media'
 import { EmptyState } from '../EmptyState'
+import { DownloadButton } from './DownloadButton'
 
 export interface MediaPreviewProps {
   file: FileItem
@@ -26,10 +27,7 @@ export function MediaPreview({ file, inlineUrl, downloadUrl }: MediaPreviewProps
   }, [file.id])
 
   const downloadLink = (
-    <a className="btn btn-secondary btn-md" href={downloadUrl}>
-      <Download size={16} aria-hidden="true" />
-      <span className="btn-label">下载文件</span>
-    </a>
+    <DownloadButton path={downloadUrl} name={file.name} label="下载文件" />
   )
 
   const handleError = (event: SyntheticEvent<HTMLMediaElement>): void => {

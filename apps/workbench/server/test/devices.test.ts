@@ -10,6 +10,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.ts'
 import { canonicalDeviceRequest, DEVICE_ACTIVE_LIMIT, DEVICE_BODY_LIMIT } from '../src/auth/device-sign.ts'
 import { registerDevice } from '../src/auth/devices.ts'
+import { createSession } from '../src/auth/sessions.ts'
 import { createUser } from '../src/auth/users.ts'
 import { AppError } from '../src/util/errors.ts'
 import { cleanupDir, cookieHeader, currentCode, parseSetCookies, seedAdmin, tempDataDir, testConfig, testDb } from './helpers.ts'
@@ -120,6 +121,18 @@ test('浏览器登录不返回会话原文，设备签名覆盖读写与失败�
     resetTotp(db, seeded.userId)
     const key = createDeviceKey()
     const first = await enroll(app, db, seeded, password, key, '书房电脑')
+    // 设备 token 只能配合私钥签名使用，改放 Cookie 也不能降级成浏览器会话。
+    const deviceCookie = `af_session=${first.token}`
+    for (const url of ['/api/auth/me', '/api/devices', '/api/auth/ai-ticket?next=https%3A%2F%2Fai.test%2F']) {
+      const unsignedCookie = await app.inject({ method: 'GET', url, headers: { cookie: deviceCookie } })
+      assert.equal(unsignedCookie.statusCode, 401, `${url}: ${unsignedCookie.body}`)
+    }
+    const unsignedHeartbeat = await app.inject({
+      method: 'POST',
+      url: '/api/devices/heartbeat',
+      headers: { cookie: deviceCookie, 'x-csrf-token': csrf },
+    })
+    assert.equal(unsignedHeartbeat.statusCode, 401, unsignedHeartbeat.body)
     const listed = await app.inject({
       method: 'GET',
       url: '/api/devices',
@@ -131,6 +144,26 @@ test('浏览器登录不返回会话原文，设备签名覆盖读写与失败�
     assert.equal(devices[0]?.current, true)
     assert.equal(devices[0]?.online, false)
     assert.equal(Object.hasOwn(devices[0] ?? {}, 'publicKey'), false)
+
+    const ticketPath = '/api/auth/ai-ticket?next=https%3A%2F%2Fai.test%2F'
+    const signedTicket = await app.inject({
+      method: 'GET',
+      url: ticketPath,
+      headers: {
+        ...deviceHeaders(key, first.id, first.token, 'GET', ticketPath, Buffer.alloc(0)),
+        accept: 'application/json',
+      },
+    })
+    assert.equal(signedTicket.statusCode, 200, signedTicket.body)
+    const ticketUrl = new URL(signedTicket.json().url as string)
+    const exchanged = await app.inject({
+      method: 'GET',
+      url: ticketUrl.pathname + ticketUrl.search,
+      headers: { host: ticketUrl.host },
+    })
+    assert.equal(exchanged.statusCode, 302, exchanged.body)
+    assert.equal(exchanged.headers.location, '/')
+    assert.equal(parseSetCookies(([] as string[]).concat(exchanged.headers['set-cookie'] ?? [])).af_session, first.token)
 
     const browserList = await app.inject({ method: 'GET', url: '/api/devices', headers: { cookie } })
     assert.equal(browserList.statusCode, 200)
@@ -338,6 +371,56 @@ test('声明超过 9 MiB 的设备请求在验签前拒绝', async () => {
     })
     assert.equal(response.statusCode, 413)
     assert.equal(response.json().error.code, 'device_body_too_large')
+  } finally {
+    await context.app.close()
+    db.close()
+    cleanupDir(dir)
+  }
+})
+
+test('设备 nonce 覆盖允许时钟窗口的完整末秒，清理后旧请求已越界', async (t) => {
+  const now = Date.parse('2026-11-11T12:00:00.000Z')
+  t.mock.timers.enable({ apis: ['Date'], now })
+  const dir = tempDataDir()
+  const db = testDb(dir)
+  const seeded = await seedAdmin(db)
+  const key = createDeviceKey()
+  const device = registerDevice(db, seeded.userId, {
+    name: '边界测试', platform: 'windows', publicKey: key.publicKey, appVersion: '1.2.0',
+  })
+  const session = createSession(db, seeded.userId, 'csrf-boundary', 7, '127.0.0.1', 'test', device.id)
+  const context = await buildApp(testConfig(dir), db)
+  const url = '/api/devices'
+  const headersAt = (offset: number) => deviceHeaders(key, device.id, session.token, 'GET', url, Buffer.alloc(0), {
+    timestamp: String(now / 1000 + offset),
+  })
+  const boundary = headersAt(-120)
+  try {
+    const first = await context.app.inject({ method: 'GET', url, headers: boundary })
+    assert.equal(first.statusCode, 200, first.body)
+    t.mock.timers.tick(999)
+    const replay = await context.app.inject({ method: 'GET', url, headers: boundary })
+    assert.equal(replay.statusCode, 401, replay.body)
+    assert.equal(replay.json().error.code, 'device_replay')
+    const saved = db.prepare('SELECT expires_at FROM device_nonces WHERE device_id = ? AND nonce = ?')
+      .get(device.id, boundary['x-device-nonce']!) as { expires_at: string }
+    assert.equal(saved.expires_at, new Date(now + 1000).toISOString())
+
+    const future = await context.app.inject({ method: 'GET', url, headers: headersAt(120) })
+    assert.equal(future.statusCode, 200, future.body)
+    for (const offset of [-121, 121]) {
+      const outside = await context.app.inject({ method: 'GET', url, headers: headersAt(offset) })
+      assert.equal(outside.statusCode, 401, outside.body)
+      assert.equal(outside.json().error.code, 'device_clock_skew')
+    }
+    t.mock.timers.tick(1)
+    const expired = await context.app.inject({ method: 'GET', url, headers: boundary })
+    assert.equal(expired.statusCode, 401)
+    assert.equal(expired.json().error.code, 'device_clock_skew')
+    const current = await context.app.inject({ method: 'GET', url, headers: headersAt(1) })
+    assert.equal(current.statusCode, 200, current.body)
+    assert.equal(db.prepare('SELECT nonce FROM device_nonces WHERE device_id = ? AND nonce = ?')
+      .get(device.id, boundary['x-device-nonce']!), undefined)
   } finally {
     await context.app.close()
     db.close()

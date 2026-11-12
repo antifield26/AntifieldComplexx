@@ -281,6 +281,11 @@ export class FileService {
     return { item: toItem(row), path: this.breadcrumbFor(row.parent_id) }
   }
 
+  /** 供已校验归属的完成上传会话重试读取；接管为附件后仍返回同一文件结果。 */
+  completedUploadItem(id: string): FileItem {
+    return toItem(this.activeRow(id))
+  }
+
   breadcrumbFor(parentId: string | null): Breadcrumb[] {
     const chain: Breadcrumb[] = []
     let current = parentId
@@ -513,6 +518,23 @@ export class FileService {
     audit(this.db, actor.username, 'upload', finalName, { id, size: input.size, parentId: input.parentId, origin }, actor.ip)
     const row = this.db.prepare('SELECT * FROM files WHERE id = ?').get(id) as unknown as FileRow
     return toItem(row)
+  }
+
+  /** 已完成上传转为笔记附件；调用方须在同一事务校验上传归属并登记笔记关联。 */
+  adoptUploadAsNote(id: string): FileItem {
+    const row = this.userActiveRow(id)
+    if (row.kind !== 'file' || row.parent_id !== null) {
+      throw conflict('文件已被放入目录，不能作为新附件登记', 'attachment_file_in_use')
+    }
+    const shared = this.db.prepare(
+      `SELECT 1 FROM shares WHERE file_id = ?
+       UNION ALL SELECT 1 FROM share_items WHERE file_id = ? LIMIT 1`,
+    ).get(id, id)
+    if (shared) throw conflict('文件已有分享引用，不能作为新附件登记', 'attachment_file_in_use')
+    const name = this.uniqueName(null, row.name, id, 'note')
+    this.db.prepare("UPDATE files SET origin = 'note', parent_id = NULL, name = ?, updated_at = ? WHERE id = ?")
+      .run(name, nowIso(), id)
+    return toItem({ ...row, origin: 'note', parent_id: null, name })
   }
 
   rename(actor: Actor, id: string, rawName: string): FileItem {

@@ -79,7 +79,8 @@ export class DeviceAuthenticator {
       this.fail(ip, device.user_username, device.id, 'bad_signature')
       throw deviceSignatureInvalid()
     }
-    const expiresAt = new Date((timestamp + DEVICE_CLOCK_SKEW_SEC) * 1000).toISOString()
+    // 验签以整秒比较且包含窗口末秒，nonce 必须保留到该秒完整结束。
+    const expiresAt = new Date((timestamp + DEVICE_CLOCK_SKEW_SEC + 1) * 1000).toISOString()
     if (!consumeDeviceNonce(this.db, device.id, headers.nonce, expiresAt)) {
       this.fail(ip, device.user_username, device.id, 'replay')
       throw deviceReplay()
