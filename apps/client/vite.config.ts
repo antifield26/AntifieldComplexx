@@ -20,20 +20,23 @@ const rocketLoaderOptOut: Plugin = {
 const loginEntryBudget: Plugin = {
   name: 'antifield-login-entry-budget',
   apply: 'build',
-  generateBundle(_options, bundle) {
-    const pending = Object.values(bundle).filter((item) => item.type === 'chunk' && item.isEntry).map((item) => item.fileName)
-    const visited = new Set<string>()
-    let bytes = 0
-    for (const name of pending) {
-      if (visited.has(name)) continue
-      visited.add(name)
-      const item = bundle[name]
-      if (!item || item.type !== 'chunk') continue
-      bytes += Buffer.byteLength(item.code, 'utf8')
-      pending.push(...item.imports)
-    }
-    if (bytes > 500_000) this.error(`登录入口与静态依赖为 ${bytes} 字节，超过 500000 字节上限`)
-    this.info(`登录入口与静态依赖：${bytes} / 500000 字节`)
+  generateBundle: {
+    order: 'post',
+    handler(_options, bundle) {
+      const pending = Object.values(bundle).filter((item) => item.type === 'chunk' && item.isEntry).map((item) => item.fileName)
+      const visited = new Set<string>()
+      let bytes = 0
+      for (const name of pending) {
+        if (visited.has(name)) continue
+        visited.add(name)
+        const item = bundle[name]
+        if (!item || item.type !== 'chunk') continue
+        bytes += Buffer.byteLength(item.code, 'utf8')
+        pending.push(...item.imports)
+      }
+      if (bytes > 500_000) this.error(`登录入口与静态依赖为 ${bytes} 字节，超过 500000 字节上限`)
+      this.info(`登录入口与静态依赖：${bytes} / 500000 字节`)
+    },
   },
 }
 
