@@ -33,9 +33,9 @@ Android 构建从受版本控制的 `icons/android` 同步五种密度与自适�
 异地副本三件套上传或确认失败时整轮禁止删除；同名冲突用 immutable 拒绝，保全旧链后人工核查。
 
 
-> v1.2.0 于 2026-11-11 将 schema 迁到 21。客户端与 schema 21 绑定。迁移前快照 `db-predeploy-20261111T104848131Z.sqlite`（schema 20，sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）。当前 schema 21 应用与世界隔离演练为 `20261112T115843Z`。退回 v1.1.1 必须恢复 schema 20 快照、v1.1.1 release、当时的 Access 策略与公网界面（`PUBLIC_APP_SHELL=true`）。只恢复公网界面时改回该开关并重启，不改 schema。
+> v1.2.0 于 2026-11-11 将 schema 迁到 21。客户端与 schema 21 绑定。迁移前快照 `db-predeploy-20261111T104848131Z.sqlite`（schema 20，sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）。当前应用与世界隔离演练为 `20261113T081625Z`（schema 21）。退回 v1.1.1 必须恢复 schema 20 快照、v1.1.1 release、当时的 Access 策略与公网界面（`PUBLIC_APP_SHELL=true`）。只恢复公网界面时改回该开关并重启，不改 schema。
 
-> Workbench release 为 `20261112T115350Z`，mcbot 为 `20261112T115627Z`。同 schema 回到 v1.2.0 使用 Workbench `20261111T104738Z` 与 mcbot `20261111T105117Z`，保留现行数据库及 WAL。退回 v1.1.1 使用 Workbench `20261109T143755Z` 与 mcbot `20261110T022539Z`，并恢复上面的 schema 20 快照。回滚到 v1.1.0 使用各自的 `20261108T080545Z` release。部署与备份证据见 [验收记录](ACCEPTANCE.md)。
+> Workbench release 为 `20261113T072133Z`，mcbot 为 `20261113T072417Z`（运行提交 `58b7693`）。同 schema 回到 v1.2.1 使用 Workbench `20261112T115350Z` 与 mcbot `20261112T115627Z`，保留现行数据库及 WAL。再退到 v1.2.0 使用 Workbench `20261111T104738Z` 与 mcbot `20261111T105117Z`，同样保留数据库及 WAL。退回 v1.1.1 使用 Workbench `20261109T143755Z` 与 mcbot `20261110T022539Z`，并恢复上面的 schema 20 快照。回滚到 v1.1.0 使用各自的 `20261108T080545Z` release。部署与备份证据见 [验收记录](ACCEPTANCE.md)。
 
 > **v1.1.0 部署记录（2026-11-08，历史）**。Workbench 与 mcbot release 为 `20261108T080545Z`，DSH release 为 `20261108T143448Z`。Workbench schema 20，mcbot 契约 v2。OpenCode 2.2.5 已从 Pi 退役。安装、验收与回滚见 [Agent Harness 切换手册](./DSH-MIGRATION.md)。
 

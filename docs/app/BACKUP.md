@@ -531,7 +531,7 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 
 - **已覆盖**：应用数据归档（DB + 普通文件）、密钥包（env/cloudflared/Minecraft 配置/opencode env + opencode DB/config 一致性快照，
   env 含 `CHATBOT_SECRET_KEY`）、Minecraft 世界一致性归档（Pi 拉取前暂存最多 4 份、PC ack 删除远端；PC `world\` 长期保留 4 份）、自动化恢复演练；
-  可选整包 age 加密与 PC 端异地副本（默认关闭）。
+  可选整包 age 加密与 PC 端异地副本（模板默认关闭；生产 v1.2.2 已开启整包加密与 Google Drive 异地副本）。
 - **未覆盖**：Minecraft 插件/Paper 配置（由密钥包/应用归档部分覆盖）、对象存储；普通归档仍含 TOTP/会话明文与 Bot 凭据密文，
   PC ACL/离线介质是最后防线；age 私钥或 `CHATBOT_SECRET_KEY` 丢失分别导致密钥包/Bot Token 不可恢复。
 - **v0.7.3 Bot 上下文文档不进入备份**：`/var/lib/antifieldcloud-context` 为派生数据（角色卡/记忆权威在 DB 与角色卡表），
@@ -539,7 +539,7 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 - **导入归档保留**：`BACKUP_IMPORT_RETENTION_DAYS`（默认 90，0=永久）控制 Web 导入归档保留；维护任务清理超期
   `origin='import'` 归档（跳过活动恢复计划引用），并清理无 DB 记录的超期导入文件。
 - 浏览器导入上限 100 MiB；更大归档用 scp 到 inbox，备份归档导入独立于文件分片上传。
-- 世界备份依赖 Minecraft 运行与 RCON；Windows 世界拉取周任务已安装并手动验证；恢复演练保持手动/季度，异地副本保持关闭。
+- 世界备份依赖 Minecraft 运行与 RCON；Windows 世界拉取周任务已安装并手动验证；恢复演练保持手动/季度。异地副本已启用，每日 13:00，只上传 `.age`。
 - 恢复演练记录见 §7 与 `.local/DR-DRILL.md`；每次升级前重新演练。
 
 ### 本轮明确不修 / 已知残留（DR 系列）

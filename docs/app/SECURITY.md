@@ -162,7 +162,7 @@ AI 仅导航固定 AI／Access 来源，远端无主窗口权限，实际 UA、�
 - 端点 `/autonomy/mcp` 不得经应用/Cloudflare/nftables 暴露；仅 OpenCode 运行时 loopback 调用。
 ### mcbot（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-- **网络/上游**：mcbot 是独立服务（本版 v1.2.1，最低 v0.6.0，契约 v2），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `mcbot_unavailable` 且不暴露底层 message。自 v0.6.1 起上游逐行把行首 `/` 中和为全角 `／`。
+- **网络/上游**：mcbot 是独立服务（本版 v1.2.2，最低 v0.6.0，契约 v2），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `mcbot_unavailable` 且不暴露底层 message。自 v0.6.1 起上游逐行把行首 `/` 中和为全角 `／`。
 - **Token 分离**：读 Token 仅用于 `/status`、`/events/recent`、`/history`；控制 Token 仅用于 `/task/*`、`/move`、`/say`（v0.8.1 起 `/say` 是写操作，只读模式返回 `503 mcbot_control_disabled`）；控制 Token 为空时控制方法直接 `mcbot_control_disabled`（不发请求）。Token 来自独立 env，由 root 的 `scripts/sync-mcbot-tokens.sh` 同步（只读 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，不读取 RCON/OpenCode 密码；写前备份 env、同目录临时文件 + `mv` 原子替换、保持 0640，不回显 Token）。
 - **HTTP 面**：`/api/mcbot/*` 全部 `requireAuth`；写操作额外 `csrfGuard`；控制类共享 20/min/IP、`/say` 10/min/IP 限流；服务端白名单校验任务名（11 种，含 clearing）、移动动作（4 种）、`taskId`（trim 后 1–64、无内部空白/控制字符）、消息（trim 后 1–720、**任意位置禁止 ASCII `/`**、禁止 C0 控制字符/DEL，防上游按 240 字符切行后的命令注入）；`/history` 校验 `kind` 与数组形状，只透传对象行；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `mcbot_*`，其它错误统一映射为固定中文文案，不含上游原文/URL/Token。
 - **审计**：`mcbot.task.start/stop/resume`、`mcbot.move`、`mcbot.control_failed`、`mcbot.autonomy.start/stop`、`mcbot.presence.set`、`mcbot.goal.*` 记录动作与元数据；`mcbot.say` 只记录字符数，**绝不记录聊天正文**；事件/聊天不写审计正文。
@@ -251,7 +251,7 @@ AI 仅导航固定 AI／Access 来源，远端无主窗口权限，实际 UA、�
 14. **scrypt 仍为 N=2^15**：升级到 2^16/2^17 需要密码哈希版本迁移，列入后续。
 15. **`http-proxy` 在 Node 26 有 `util._extend` 弃用警告**：Node 27 前需评估替换。
 16. **Cloudflare 约 100 MiB/100s 限制**：普通上传仍受单请求限制；分片承载 5 GiB 文件，但总时长仍受 Cloudflare/网络影响。
-17. **Windows 世界拉取/演练任务**：`AntifieldCloud-World-Pull` 周任务（周日 12:00）由 `install-backup-task.ps1` 与每日任务一起安装。计划任务 `-File` 使用 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`（安装时从仓库复制）。任务名与该目录名不变。恢复演练 `drill.ps1` 保持手动/季度；异地副本保持关闭、未配置 remote。任务以当前用户运行，依赖直连网线与 SSH 公钥；未安装/未运行时状态 unknown、告警可能触发。
+17. **Windows 世界拉取/演练任务**：`AntifieldCloud-World-Pull` 周任务（周日 12:00）由 `install-backup-task.ps1` 与每日任务一起安装。计划任务 `-File` 使用 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`（安装时从仓库复制）。任务名与该目录名不变。恢复演练 `drill.ps1` 保持手动/季度。异地副本已启用，每日 13:00，只上传 `.age`。任务以当前用户运行，依赖直连网线与 SSH 公钥；未安装/未运行时状态 unknown、告警可能触发。
 18. **Bot 测试为 mock-only**：QQ 适配器/队列/发布/Chat/记忆/文本分段/图片下载/自检/诊断/角色与记忆管理仅用进程内假平台、夹具与假 HTTP，未对真实 QQ 平台做限流、签名漂移、平台故障的负路径验收；
     上线前必须在 QQ 开放平台完成回调地址/事件订阅并联调（`docs/app/DEPLOY.md` §9.8）。QQ 真实回调与真实模型已验证；AI 仅 Chat；图片/自助命令等真实消息已由用户实发验收通过（图片端到端成功）；诊断/角色记忆面板按用户确认整体通过。
 19. **Bot 仅文本、单平台**：QQ 官方 Bot 只支持文本（单条 ≤2000），无媒体/附件/按钮/引用；平台收敛后不再有 Telegram/Discord/Slack 备选通道，QQ 平台故障时 Bot 不可用；无多管理员审批流；发布仅有单管理员 TOTP + `PUBLISH` 双确认。

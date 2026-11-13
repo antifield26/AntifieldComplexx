@@ -13,7 +13,7 @@ AntifieldComplexx 的生产 QQ 由 DeepSeek Harness QQ Agent 处理白名单私�
 生产图片由 DSH QQ Agent 交给模型。OpenCode prompt files 只属于已退役的回滚路径。
 企业微信/钉钉/飞书的 Bot 收发与多管理员审批未实现；企业微信告警中继属于独立通知通道。
 
-> 当前代码：v1.2.2 / schema 21，2026-11-13 已部署，剩余运维验收中。生产 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`；DSH 0.2.2-rc.1／QQ 插件 0.5.5，runtime `20261113T080907Z`（QQ 包装器提交 `22103d8`，依赖不变）。同 schema 回退 v1.2.1 仅还原应用 `20261112T115350Z`／Bot `20261112T115627Z` 与配置，保留现行数据库及 WAL。退回 v1.1.1 必须恢复 schema 20 快照，详见 DEPLOY。下文 Webhook、凭据数据库、发布队列与 OpenCode 管线仅描述历史回滚路径；生产 `DSH_QQ_MANAGED=true` 禁用这些入口。
+> 当前代码：v1.2.2 / schema 21，2026-11-13 已部署并验收。生产 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`；DSH 0.2.2-rc.1／QQ 插件 0.5.5，runtime `20261113T080907Z`（QQ 包装器提交 `22103d8`，依赖不变）。同 schema 回退 v1.2.1 仅还原应用 `20261112T115350Z`／Bot `20261112T115627Z` 与配置，保留现行数据库及 WAL。退回 v1.1.1 必须恢复 schema 20 快照，详见 DEPLOY。下文 Webhook、凭据数据库、发布队列与 OpenCode 管线仅描述历史回滚路径；生产 `DSH_QQ_MANAGED=true` 禁用这些入口。
 > 安全边界：QQ AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台 Ed25519 签名/时间戳鉴权；
 > 除自助命令（`/help`、`/memory`、`/role` 仅私聊；`/reset`、`/forget confirm` 全用户）外，斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；
 > 发布必须 TOTP + `PUBLISH` 二次确认，且仅文本；通知/命令/Chat 输出不包含内部路径或 URL；私聊角色/记忆正文不通过 API/UI 暴露，群聊角色正文仅管理员在 Web 编辑；

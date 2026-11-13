@@ -157,7 +157,7 @@ npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldclo
 ```
 
 部署（PC，本版 v1.2.2，2026-11-13 已部署并验收，证据见 ACCEPTANCE）：OpenCode 2.2.5 已退役，安装与回滚见 [DSH-MIGRATION](docs/app/DSH-MIGRATION.md)。应用部署 `.\scripts\deploy.ps1 -PiHost <直连 IP>`。部署之后的冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.2.2 -ExpectedSchemaVersion 21 -ExpectedMcbotVersion 1.2.2 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.1 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`（最低兼容 mcbot v0.6.0；配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 mcbot 时用 `-SkipMcbot`）。生产 `/healthz` 回答 1.2.2 / schema 21。
-Pi 上同步/校验 mcbot Token（root，本版 mcbot v1.2.1，最低 v0.6.0）：`sudo bash scripts/sync-mcbot-tokens.sh`、`sudo bash scripts/sync-mcbot-tokens.sh --check`（只比较不写盘，不回显 Token；失败会原子替换 env）。
+Pi 上同步/校验 mcbot Token（root，本版 mcbot v1.2.2，最低 v0.6.0）：`sudo bash scripts/sync-mcbot-tokens.sh`、`sudo bash scripts/sync-mcbot-tokens.sh --check`（只比较不写盘，不回显 Token；失败会原子替换 env）。
 
 ## 目录
 
@@ -202,10 +202,10 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - 限流状态在内存中，应用重启清零；`http-proxy` 在 Node 26 有弃用警告，Node 27 前需评估替换；scrypt 仍为 N=2^15；单进程单点，`synchronous=NORMAL` 不抗突然断电最后若干毫秒写入。
 - 分享不支持目录打包，多文件分享不提供服务端 zip；下载次数为会话级近似限制；无公开笔记分享。
 - 不支持 WebDAV、Minecraft 启停/控制台、多用户/权限分离；Cloudflare 约 100 MiB/100s 请求限制仍约束单请求上传。
-- 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取周任务（周日 12:00）已安装并手动验证成功；恢复演练保持手动/季度，异地副本保持关闭。
-- **备份整包加密默认关闭且 Web 不可恢复**：加密归档（`.age`）只能在 PC 用离线私钥解密/校验/恢复；私钥丢失即无法恢复明文，Pi 不持私钥也无法代解密。预部署 DB 快照继续明文（0600、保留 2 份，供自动回滚），属威胁模型明确豁免项。
+- 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取周任务（周日 12:00）已安装并手动验证成功；恢复演练保持手动/季度。异地副本已启用 Google Drive，每日 13:00，只上传 `.age`。
+- **备份整包加密生产已开启，Web 仍不可恢复**：模板默认 `BACKUP_ARCHIVE_ENCRYPTION=false`。加密归档（`.age`）只能在 PC 用离线私钥解密/校验/恢复；私钥丢失即无法恢复明文，Pi 不持私钥也无法代解密。预部署 DB 快照继续明文（0600、保留 2 份，供自动回滚），属威胁模型明确豁免项。
 - **加密失败关闭的残余窗口**：SIGKILL/断电/ENOSPC 可能残留 `*.plain.tmp`（正常路径立即删除，>24h 由下次 prepare 清理）；崩溃只允许产生可清理临时文件或“有密文无 DB 行”孤儿（只报告、不自动删除），后者需人工核对。
-- **异地副本默认关闭**：需用户在 PC 配置 rclone remote/凭据（脚本不创建），只上传 `.age`；状态由 PC 写回 Pi，缺失视为未配置、不告警；远端保留策略按链感知（最新 full + 其后 inc + 最近 N 天），不做跨远端多副本。当前 rclone 已安装，用户确认保持关闭、不配置 remote。
+- **异地副本**：只上传 `.age`；状态由 PC 写回 Pi，缺失视为未配置、不告警；远端保留策略按链感知（最新 full + 其后 inc + 最近 N 天），不做跨远端多副本。生产已配置 Google Drive（drive.file、专用目录），每日 13:00。模板默认关闭，新环境需先配置 rclone remote 与凭据。
 - **明确残余**：服务端单进程/同步维护任务；平台适配与模型路径仍需 mock + 部署后真实验收；物理孤儿文件只回收 id 形状且超期者；`/api/version` 诊断不含历史；预部署快照与旧归档保留策略见 `docs/app/BACKUP.md` §11。
 - Bot 已知限制：仅 QQ 官方 Bot（单平台）；QQ 仅文本、不支持出站媒体/附件/按钮/引用；群/频道只有 @Bot 事件（或显式开启全量消息后由模型决定是否回复）；C2C 私聊开放 Chat；命令严格只读；企业微信/钉钉/飞书与多管理员审批未支持。
 - **v0.7.3 文档模式属于已退役的 OpenCode 回滚路径**：启用前需完成读范围矩阵；失败即保持关闭；上下文目录为派生数据、不进入备份。
@@ -213,7 +213,7 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，需 QQ 后台开启接收所有消息并由群主授权获取全部消息。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量按清单覆盖，同毫秒写入会进入下一次增量；时钟回拨仍记 `clockSkew`，归档时间不早于最近一份本机归档。Web 导入归档按 90 天保留；告警持续 firing 每 24h 重通知；`.backup.lock` 有 30s 心跳续租。
-- **发布状态**：v1.2.1 已于 2026-11-12 部署，已发布 annotated Tag `v1.2.1`。发布页附带 Windows x64 安装包、Android arm64 压缩包与 SHA256SUMS。Tag 指向 `26bcc70`，生产进程仍是 `0f7be18`。上一已部署版本 v1.2.0 于 2026-11-11 完成部署。再上一版本是 v1.1.1（2026-11-10）。5 格垂直墙在禁止挖掘/放置时只做明确兜底。历史发布记录见 [CHANGELOG.md](CHANGELOG.md) 与 [AUDIT](docs/app/AUDIT.md)。
+- **发布状态**：v1.2.2 已于 2026-11-13 部署并验收，已发布 annotated Tag `v1.2.2`。发布页附带 `AntifieldComplexx_1.2.2_x64-setup.exe`（3,401,307 字节）、`AntifieldComplexx-1.2.2-arm64.zip`（6,160,540 字节）与 SHA256SUMS。Tag 指向 `e2ec493`，生产进程仍是 `58b7693`。上一已部署版本 v1.2.1 于 2026-11-12 完成部署。再上一版本是 v1.2.0（2026-11-11），然后是 v1.1.1（2026-11-10）。5 格垂直墙在禁止挖掘/放置时只做明确兜底。历史发布记录见 [CHANGELOG.md](CHANGELOG.md) 与 [AUDIT](docs/app/AUDIT.md)。
 - **mcbot 告警只有事件语义**：上游 `alert` 映射为 `status='event'` 历史事件，不参与 firing/resolved 状态机，也没有恢复通知/冷却；上游告警状态需在 mcbot 侧查看（本应用只记录与转发）。
 - **mcbot 聊天/事件不持久化**：事件流与聊天只存在进程内存（最多 100 条且序列化 ≤512 KiB），应用或 mcbot 重启即丢失；历史接口只返回 mcbot 自己的 samples/alerts，不保存聊天正文。
 - **mcbot 轮询延迟与单实例**：状态/事件最多滞后一个轮询周期（默认 5s），控制结果最终一致；单进程内存缓存，不支持多实例/多副本；mcbot 不可达/数据过期/部分轮询失败时展示缓存与可见警告并降级。

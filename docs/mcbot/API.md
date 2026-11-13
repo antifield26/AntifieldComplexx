@@ -1,4 +1,4 @@
-# AntifieldComplexx 对接契约（mcbot v1.2.1 / v2）
+# AntifieldComplexx 对接契约（mcbot v1.2.2 / v2）
 
 > 契约 v2 的本机发言使用控制 Token。Workbench 可读取 v1 并沿用既有控制，v1 发言在 Workbench 停用。
 

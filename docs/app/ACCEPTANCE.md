@@ -23,6 +23,7 @@
 - Windows 任务最终 installedAt `2026-11-13T14:16:50.7758244Z`，每日异地 13:00；安装的 PS／Node 脚本 SHA 与仓库一致。从调度器实际启动后退出码 0，Pi 读回 `lastRunAt=2026-11-13T14:16:54.299Z`、ok=true、keptRemote=4、error=null；下一次为 2026-11-14 13:00（北京时间）。令牌过期后的无人值守刷新与安全落盘实测通过。
 - 完整 Access smoke 最终 **39／0／0／0**。清理的是本轮生成的纯随机测试夹具，哈希证据另存；真实应用归档、世界归档和恢复报告保留。根域名的公开说明只匹配自身关闭 RUM，保留安全检测，应用／AI／Minecraft 子域名记录与 Access 边界不变。Minecraft PID 仍为 1068，启动时间 2026-11-12 23:00:14 CST。
 - 双端发布附件沿用已验收的 f8b462a 构建，当前客户端及构建输入与其一致：Windows NSIS SHA `271dbdb17231b4f91238559c8c98cf876eb41fa0e1bf25639ece9d418e4b761a`；Android arm64 发布 ZIP SHA `bf8fc6d7d1f403b4f0cc4e14cc0be5613c5f682ff9dec2c47dd6a57b31fd717c`，包内 APK SHA 见上文。完整台账见 [BACKLOG](BACKLOG.md)。
+- 已发布 annotated Tag `v1.2.2` 与 GitHub Release。Tag 指向 `e2ec493`，生产进程仍是 `58b7693`。发布页附带 `AntifieldComplexx_1.2.2_x64-setup.exe`（3,401,307 字节）、`AntifieldComplexx-1.2.2-arm64.zip`（6,160,540 字节）与 `SHA256SUMS`。
 
 ### v1.2.1 生产部署与双端验收（2026-11-12）
 

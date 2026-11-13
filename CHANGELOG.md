@@ -11,6 +11,7 @@
 - QQ 启动或断连持续未就绪 90 秒后结束子进程，5 秒宽限后强制收口，由 systemd 恢复；日志不记录平台正文或凭据。
 - Google Drive 应用密文链通过分段、回下载解密及云端隔离恢复，自动任务实跑通过；远端名称规范化，拒绝误用本地路径。
 - schema 21、mcbot 契约 v2、DSH 与 13 个自主工具不变。双端登录通过，MC 真机验收按用户要求跳过；完整 Access smoke 39／0，应用与世界恢复演练通过。交付证据见 docs/app/ACCEPTANCE.md。
+- 已发布 annotated Tag `v1.2.2` 与 GitHub Release。Tag 指向 `e2ec493`，生产进程仍是 `58b7693`。发布页附带 `AntifieldComplexx_1.2.2_x64-setup.exe`（3,401,307 字节）、`AntifieldComplexx-1.2.2-arm64.zip`（6,160,540 字节）与 `SHA256SUMS`。
 
 ## [v1.2.1] - 2026-11-12
 

@@ -17,7 +17,7 @@
 | [备份隐私说明](app/BACKUP-OAUTH-PRIVACY.md) | 自用 Google Drive 备份的授权范围、数据用途与撤销 |
 | [SECURITY](app/SECURITY.md) | 安全模型、边界与加固 |
 | [CHATBOT](app/CHATBOT.md) | QQ chatbot 子系统（原 bot，schema v18 更名） |
-| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.1.1 与历史版本结果） |
+| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.2.2 与历史版本结果） |
 | [ROADMAP](app/ROADMAP.md) | 版本边界与后续路线 |
 | [AUDIT](app/AUDIT.md) | 审计与修复总记录（含 v1.1.1 至 v1.0.5、磁盘审计附录） |
 | [BACKLOG](app/BACKLOG.md) | 当前 12 项收口台账，区分分支、生产及未决验证 |
