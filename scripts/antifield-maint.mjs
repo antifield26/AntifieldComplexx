@@ -46,7 +46,6 @@ export function boundedFile(file, max = MAX_STATUS, owner) {
 /** 只有这些参数能抵达子进程；不使用 shell，也不接受可执行文件或用户指定环境。 */
 export function maintenanceCommand(args) {
   const [verb, ...rest] = args
-  if (verb === 'read-status' && rest.length === 1 && READ_STATES.has(rest[0])) { process.stdout.write(boundedFile(rest[0])); return }
   const backup = ['--pending', '--prepare', '--snapshot-db']
   if (verb === 'backup') {
     const valid = rest.length === 1 && backup.includes(rest[0]) ||
@@ -114,6 +113,7 @@ function removeArchive(kind, name) {
 export function main(args) {
   if (process.getuid?.() !== 0) throw new Error('root_required')
   const [verb, ...rest] = args
+  if (verb === 'read-status' && rest.length === 1 && READ_STATES.has(rest[0])) { process.stdout.write(boundedFile(rest[0])); return }
   if (verb === 'write-status' && rest.length === 2) { writeState(...rest); return }
   if (verb === 'remove-archive' && rest.length === 2) { removeArchive(...rest); return }
   if (verb === 'env-keys' && !rest.length) {
