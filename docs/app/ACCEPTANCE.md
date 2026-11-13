@@ -1,8 +1,8 @@
 # AntifieldComplexx 验收记录
 
-### v1.2.2 实施与运维验收（2026-11-13，进行中）
+### v1.2.2 生产交付与恢复验收（2026-11-13）
 
-当前版本 v1.2.2 的 Workbench、mcbot 和双端已部署，剩余运维门禁收口中，尚未发布 Tag／Release；schema 21、契约 v2、DSH 0.2.2-rc.1、QQ 插件 0.5.5 不变。OpenCode v2.2.5 仅用于历史回滚。
+当前版本 v1.2.2 的 Workbench、mcbot 和双端已部署，约定门禁已通过，版本以 v1.2.2 Tag／Release 归档；schema 21、契约 v2、DSH 0.2.2-rc.1、QQ 插件 0.5.5 不变。OpenCode v2.2.5 仅用于历史回滚。
 
 - 41 项核心修复回归、20 项草案解析／编辑回归，以及 32 项运维相关夹具通过。维度及自动观察另有假方块、并发、限额与历史格式验证；夹具不等同于实机。
 - 用户确认 age 私钥有两份离线副本，私钥仅在 PC 使用。Pi 独立公钥 root:root 0644，整包加密已开启；新全量 `snapshot-20261113T053901280Z-full.tar.gz.age`（SHA-256 `07650b4037ef01e33d1924690461ce66a8c40d8d1d7a8ab9a062acfb2f63c054`）及增量 `snapshot-20261113T055826089Z-inc.tar.gz.age` 已实际拉取、校验密文并解密核对明文 SHA／大小后确认。DSH 密钥包实际拉取通过。
@@ -19,7 +19,10 @@
 - Google Drive 的 33,573,390 字节纯随机内容密文，强制 8 MiB 分段上传后独立回下载，SHA-256 `2584de0915f9db0e2b9f4d2689ba1236292969d190bddf1e01ae74eb9793aada` 一致，PC age 解密后原内容 SHA 也一致。真实应用 full＋3 inc、八份旁文件全部上传，再仅从云端回下载到全新目录，演练 `20261113T135356Z` 验证 schema 21 及恢复链通过。云端日常副本当前范围为应用密文链；该隔离目录不混入本地世界归档，world_archive_missing 为明确范围提示，生产应用／世界演练状态仍保留 `20261113T081625Z`。
 - 真实接入发现裸远端名被 rclone 当作本地目录，已统一显式远端冒号并拒绝 Windows 盘符、本地路径和临时后端；22 项异地回归通过，未以模拟 runner 的相同错误充当真实可用证据。
 - OAuth 的自有网站说明以独立 Pages 静态站点托管，Google HTML 所有权验证通过。公开仓库只收录通用静态源文件和隐私说明，不含真实域名、账号验证标记或凭据。
-- 尚余异地计划任务启用与最终 smoke；未发布 Tag／Release。详细进度以 [BACKLOG](BACKLOG.md) 为准。
+- 最终代码 `fffb11d` 的 [主 CI](https://github.com/antifield26/AntifieldComplexx/actions/runs/43438388433)、覆盖率／审计／密钥／运维／DSH 门禁及 [双端构建](https://github.com/antifield26/AntifieldComplexx/actions/runs/43438388332) 全部通过。本地完整 check 为服务端／脚本 682（680 通过、2 跳过）、web 357、mcbot 189，Rust 22，登录入口保持 495,101 字节。
+- Windows 任务最终 installedAt `2026-11-13T14:16:50.7758244Z`，每日异地 13:00；安装的 PS／Node 脚本 SHA 与仓库一致。从调度器实际启动后退出码 0，Pi 读回 `lastRunAt=2026-11-13T14:16:54.299Z`、ok=true、keptRemote=4、error=null；下一次为 2026-11-14 13:00（北京时间）。令牌过期后的无人值守刷新与安全落盘实测通过。
+- 完整 Access smoke 最终 **39／0／0／0**。清理的是本轮生成的纯随机测试夹具，哈希证据另存；真实应用归档、世界归档和恢复报告保留。根域名的公开说明只匹配自身关闭 RUM，保留安全检测，应用／AI／Minecraft 子域名记录与 Access 边界不变。Minecraft PID 仍为 1068，启动时间 2026-11-12 23:00:14 CST。
+- 双端发布附件沿用已验收的 f8b462a 构建，当前客户端及构建输入与其一致：Windows NSIS SHA `271dbdb17231b4f91238559c8c98cf876eb41fa0e1bf25639ece9d418e4b761a`；Android arm64 发布 ZIP SHA `bf8fc6d7d1f403b4f0cc4e14cc0be5613c5f682ff9dec2c47dd6a57b31fd717c`，包内 APK SHA 见上文。完整台账见 [BACKLOG](BACKLOG.md)。
 
 ### v1.2.1 生产部署与双端验收（2026-11-12）
 

@@ -1,8 +1,8 @@
 # AntifieldComplexx 实施计划与状态
 
-## v1.2.2（2026-11-13 已部署，剩余异地验收）
+## v1.2.2（2026-11-13 已部署并验收）
 
-本轮按用户指定版本统一处理 12 项修复、特性与治理，范围及逐项状态以 [BACKLOG](BACKLOG.md) 为准。Workbench、mcbot 与双端已升级；schema 21、契约 v2、DSH 版本及 13 个工具不变。双端登录通过，MC 远程管理真机验收按用户要求跳过。整包加密、固定 sudo 入口、应用及世界隔离恢复已验收；异地供应商替换尚未完成，Tag／Release 保持未发布。完整证据见 [ACCEPTANCE](ACCEPTANCE.md)。
+本轮按用户指定版本统一处理 12 项修复、特性与治理，范围及逐项状态以 [BACKLOG](BACKLOG.md) 为准。Workbench、mcbot 与双端已升级；schema 21、契约 v2、DSH 版本及 13 个工具不变。双端登录通过，MC 远程管理真机验收按用户要求跳过。整包加密、固定 sudo 入口、应用及世界隔离恢复已验收；Google Drive 的分段、回下载解密、应用链云端恢复和自动任务实跑通过，最终 Access smoke 39／0，版本通过 Tag／Release 归档。完整证据见 [ACCEPTANCE](ACCEPTANCE.md)。
 
 ## v1.2.1（2026-11-12 已部署，历史）
 
