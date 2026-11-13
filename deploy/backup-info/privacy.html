@@ -1,0 +1,19 @@
+<!doctype html>
+<!-- 自用备份的公开说明页面；不读取凭据、不访问云盘、不运行脚本。 -->
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><title>AntifieldComplexx Backup 隐私说明</title><style>body{margin:0;background:#071019;color:#dbe9f2;font:16px/1.8 system-ui,sans-serif}main{max-width:850px;margin:0 auto;padding:56px 24px}h1{line-height:1.3;font-size:2rem;color:#f2fbff}h2{font-size:1.25rem;margin-top:2rem;color:#7dd3fc}a{color:#67e8f9}code{overflow-wrap:anywhere;color:#bae6fd}nav{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:36px}li{margin:12px 0}.lead{font-size:1.1rem;color:#afc5d3}footer{margin-top:40px;border-top:1px solid #254051;padding-top:18px;color:#93aab9}</style></head><body><main><nav><a href="/">应用说明</a><a href="/privacy.html">隐私说明</a><a href="https://github.com/antifield26/AntifieldComplexx">项目仓库</a></nav><h1>AntifieldComplexx Backup 隐私说明</h1>
+<p>本说明适用于账号持有人在个人电脑运行的 Google Drive 加密备份工具，不适用于面向其他用户的数据收集服务。工具只将账号持有人选定的应用备份保存到其自己的 Google Drive。</p>
+<h2>授权范围与用途</h2>
+<p>Google OAuth 客户端请求 <code>https://www.googleapis.com/auth/drive.file</code>，用于创建备份目录、列出及上传由该客户端创建的文件、回下载校验和按保留策略清理旧副本。工具不请求读取整个云盘、Gmail、联系人或日历的权限。配置中的专用目录 ID 进一步限定日常备份操作范围，不变更文件分享权限。</p>
+<h2>上传与本地保存的数据</h2>
+<ul>
+<li>上传应用备份的 age 密文，以及对应的 SHA-256 和元数据旁文件。归档名称包含备份时间和全量／增量类型；元数据包含大小、摘要与加密格式等校验信息。</li>
+<li>备份业务内容只以密文上传。解密私钥由账号持有人离线保管，不上传 Google Drive，也不放入备份程序的 OAuth 配置。</li>
+<li>OAuth 客户端配置和刷新令牌保存在个人电脑的受限配置目录，仅用于持续备份与校验；不进入项目仓库、应用前端或服务端状态接口。</li>
+<li>运行状态仅记录时间、结果、计数和脱敏错误，不记录 OAuth 密钥、刷新令牌、备份正文或云端目录 ID。</li>
+</ul>
+<p>本工具不出售授权数据，不将其用于广告、训练模型或与备份无关的分析，也不向其他账号自动分享备份。数据在 Google Drive 上的处理同时受账号持有人与 Google 之间的适用条款及隐私政策约束。</p>
+<h2>保留、清理与撤销</h2>
+<p>备份默认按 30 天的链感知策略保留；最新完整全量基线及恢复所需增量受保护。上传或远端确认失败时，不执行该轮旧链清理。账号持有人可以在 Google Drive 管理或删除自己保存的副本；普通删除是否进入回收站及其保留期遵循 Google Drive 的设置。</p>
+<p>账号持有人可以在 Google 账号的第三方连接管理中撤销本客户端授权，并停用本机异地备份计划任务。撤销授权会阻止后续访问，不会自动删除已保存的云端副本。删除本机 OAuth 配置也不会删除离线解密私钥或其他备份。</p>
+<p>本工具对从 Google API 获得的信息的使用和传递遵守 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API 服务用户数据政策</a>，包括其中的 Limited Use 要求。说明更新及技术问题通过 <a href="https://github.com/antifield26/AntifieldComplexx">项目仓库</a> 跟踪，请勿在公开反馈中提交凭据或备份内容。</p>
+<p>更新日期：2026-11-13。</p><footer>AntifieldComplexx Backup · 个人账号自用 · 2026-11-13</footer></main></body></html>

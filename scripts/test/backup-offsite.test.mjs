@@ -130,12 +130,19 @@ test('旁文件解析与状态脱敏：路径/凭据不进入状态文本', () =
   }
 })
 
-test('远端路径校验：拒绝路径穿越与非法名', () => {
-  assert.equal(remoteBase('offsite', 'antifieldcloud/backups'), 'offsite/antifieldcloud/backups')
+test('远端名称统一为 rclone 远端语法，不会落入本地目录或 Windows 盘符', () => {
+  assert.equal(remoteBase('offsite', 'antifieldcloud/backups'), 'offsite:antifieldcloud/backups')
+  assert.equal(remoteBase('offsite:', ''), 'offsite:')
+  assert.equal(remoteBase('offsite', ''), 'offsite:')
+  assert.equal(remoteBase('offsite:', '/backups/'), 'offsite:backups')
   assert.throws(() => remoteBase('offsite', '../escape'))
-  assert.throws(() => remoteBase('bad remote', ''))
-  assert.equal(remoteJoin('offsite', 'backups', SAMPLE_ARCHIVE), `offsite/backups/${SAMPLE_ARCHIVE}`)
+  for (const invalid of ['bad remote', 'C', 'C:', 'offsite:folder', 'offsite::', ':local:', '--flag', './local']) {
+    assert.throws(() => remoteBase(invalid, ''), /invalid_remote/)
+  }
+  assert.equal(remoteJoin('offsite', 'backups', SAMPLE_ARCHIVE), `offsite:backups/${SAMPLE_ARCHIVE}`)
+  assert.equal(remoteJoin('offsite', '', SAMPLE_ARCHIVE), `offsite:${SAMPLE_ARCHIVE}`)
   assert.throws(() => remoteJoin('offsite', 'backups', '../x'))
+  assert.throws(() => remoteJoin('offsite', '', '..'))
 })
 
 test('CLI 参数：未知参数报错，dry-run/解析数字生效', () => {
@@ -182,9 +189,10 @@ test('runOffsite：只上传加密归档 + 伴随文件，拒绝明文，状态 
   const commands = []
   const remoteNames = []
   const runRclone = async (args) => {
+    assert.ok(args.at(-1).startsWith('offsite:'), '列表、上传、大小确认和删除都必须指向显式远端')
     commands.push(args)
     if (args[0] === 'lsf') return { code: 0, stdout: remoteNames.join('\n'), stderr: '' }
-    if (args[0] === 'copyto') { remoteNames.push(args.at(-1).split('/').at(-1)); return { code: 0, stdout: '', stderr: '' } }
+    if (args[0] === 'copyto') { remoteNames.push(args.at(-1).split(/[/:]/).at(-1)); return { code: 0, stdout: '', stderr: '' } }
     if (args[0] === 'size') return { code: 0, stdout: JSON.stringify({ bytes: Buffer.byteLength('ciphertext-bytes') }), stderr: '' }
     if (args[0] === 'deletefile') return { code: 0, stdout: '', stderr: '' }
     return { code: 1, stdout: '', stderr: 'unexpected' }
@@ -314,7 +322,7 @@ test('伴随文件失败时禁止删除，下一轮补齐后才允许淘汰旧�
       let failOnce = true
       const runRclone = async (args) => {
         commands.push(args)
-        const name = args.at(-1).split('/').at(-1)
+        const name = args.at(-1).split(/[/:]/).at(-1)
         if (args[0] === 'lsf') return { code: 0, stdout: [...remote].join('\n'), stderr: '' }
         if (args[0] === 'copyto') {
           assert.ok(args.includes('--checksum'))
@@ -363,7 +371,7 @@ test('上传后列表失败或缺少新伴随文件时失败关闭，不执行�
       let lists = 0
       let deletions = 0
       const runRclone = async (args) => {
-        const name = args.at(-1).split('/').at(-1)
+        const name = args.at(-1).split(/[/:]/).at(-1)
         if (args[0] === 'lsf') {
           lists += 1
           if (lists === 2 && fault === 'list_failed') return { code: 1, stdout: [...remote].join('\n'), stderr: 'fixture_list_failed' }

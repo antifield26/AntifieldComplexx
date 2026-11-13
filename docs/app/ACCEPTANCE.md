@@ -6,9 +6,9 @@
 
 - 41 项核心修复回归、20 项草案解析／编辑回归，以及 32 项运维相关夹具通过。维度及自动观察另有假方块、并发、限额与历史格式验证；夹具不等同于实机。
 - 用户确认 age 私钥有两份离线副本，私钥仅在 PC 使用。Pi 独立公钥 root:root 0644，整包加密已开启；新全量 `snapshot-20261113T053901280Z-full.tar.gz.age`（SHA-256 `07650b4037ef01e33d1924690461ce66a8c40d8d1d7a8ab9a062acfb2f63c054`）及增量 `snapshot-20261113T055826089Z-inc.tar.gz.age` 已实际拉取、校验密文并解密核对明文 SHA／大小后确认。DSH 密钥包实际拉取通过。
-- OneDrive 专用目录已完成 full＋inc 三件套上传，但标准分段上传及 Graph 返回的下载地址均 401；独立请求同样复现。云端未通过恢复验收，用户选择更换供应商。既有密文保留核对，状态已标记 `offsite_provider_replacement_pending`，不虚报正常。用户选择 Google Drive，专用 OAuth 客户端和回下载验收待完成，不启用 R2 计费。
+- OneDrive 专用目录已完成 full＋inc 三件套上传，但标准分段上传及 Graph 返回的下载地址均 401；独立请求同样复现。云端未通过恢复验收，用户选择更换供应商。既有密文保留核对，状态已标记 `offsite_provider_replacement_pending`，不虚报正常。用户选择 Google Drive，不启用 R2 计费。独立桌面 OAuth 客户端及 Production 已配置，实际授权仅 drive.file，配置再限制专用备份目录；客户端与刷新凭据仅存受限 PC 目录。
 - PC 完成加密 full＋inc、schema 21 和世界 `level.dat` 的隔离演练 `20261113T060053Z`。最新密钥包的密文 SHA、离线解密与目标库隔离恢复通过；历史包的 WAL 确认为空后，仅在隔离目录去除辅助文件。新快照以 DELETE 模式保存为单个数据库文件，不产生未登记的 WAL／SHM，夹具验证原库 WAL 中的新写入仍收录。
-- 本地完整 check 为服务端／脚本 677（676 通过、1 跳过）、前端 357、mcbot 188；Rust 22，Web 入口 495,101 字节。`8e41c1c` 的主 CI 和双端构建通过，维护修正 `f8b462a` 的主 CI 已通过；最终运行提交及计数将在部署后回填。
+- 本地完整 check 为服务端／脚本 677（676 通过、1 跳过）、前端 357、mcbot 188；Rust 22，Web 入口 495,101 字节。`8e41c1c` 的主 CI 和双端构建通过，维护修正 `f8b462a` 的主 CI 已通过；后续 Linux CI 与运行提交证据见下文。
 - Pi ARM64 隔离候选已验证实际固定 DSH／QQ 插件的 401／429／503、Web 越界读取与审批、Unix socket 换票、13 工具注册和 QQ 清除；占位凭据及本地假平台，没有真实 QQ／模型负载或游戏动作。
 - 固定维护入口已在 Pi 安装并验证真实备份流程；原 `NOPASSWD ALL` 已撤销。部署仍需管理员权限，固定入口不提供配置改写、安装任意脚本或部署能力。
 - 运行提交 `58b7693`：Workbench `20261113T072133Z`，mcbot `20261113T072417Z`。Workbench 包 SHA-256 `82a685129027e96547726c684d64be606dd5dadce49d413898a575b5e152b73e`；Bot 包 SHA-256 `776afe4a6871ae1ce19108750e98ec259a16d658fa2cbefa0bc76dc2402bf687`。schema 21 快照 `db-predeploy-20261113T072147842Z.sqlite`，SHA-256 `0f01b51bcc963eeef49216834ebf08d7dc775192ed2f0e406ec416bf0fa38651`。应用 smoke 27 通过、1 失败，唯一失败为 `offsite_provider_replacement_pending`；没有把它记为全绿。
@@ -16,7 +16,10 @@
 - 切换前发现 QQ active 但未就绪，守卫阻止切换；独立重连后恢复。包装器缺少长期未就绪退出机制，已补 90 秒监督及 5 秒退出宽限；Pi 隔离时钟与实际忽略 SIGTERM 的子进程四项验证通过。提交 `22103d8` 的主 CI 全绿，服务端／脚本 682 项（677 通过、5 跳过），web 357、mcbot 189；覆盖率、密钥、审计、依赖、DSH 和运维门禁通过。独立 runtime `20261113T080907Z` 只替换 QQ 包装器／监督模块，锁文件及实际固定版本一致；QQ 就绪稳定且 NRestarts=0，Web／mcbot Agent／Minecraft PID 未变化。
 - Windows 每日／世界备份任务已重新提权安装，标记 1.2.2、installedAt `2026-11-13T08:10:08.7698232Z`；脚本 SHA 与仓库一致。收权后使用安装副本实际拉取并解密确认 `snapshot-20261113T081525658Z-inc.tar.gz.age`、密钥包 `secrets-20261113T081527Z.tar.age`，世界拉取状态成功。最新业务快照离线恢复六个目标、运行中为零，未出现未登记 WAL／SHM。
 - 先保留 root 规则副本并安排 15 分钟自动回退，再撤销 `010_antifield-nopasswd`。独立 SSH 清除票据后，通用 root／shell 与任意路径被拒绝，固定维护正常；完整 Access smoke **38／1／0／0**，唯一失败仍是异地供应商待替换。应用 full＋3 inc、schema 21 和世界隔离恢复演练 `20261113T081625Z` 通过，恢复的 `level.dat` 为 537 字节，状态经固定入口成功写回。验收后确认收权，回退 timer 已撤销，密码管理员权限保留，未修改 SSH 或重启 Minecraft。
-- 尚余 Google Drive OAuth、回下载恢复与对应计划任务门禁；未发布 Tag／Release。详细进度以 [BACKLOG](BACKLOG.md) 为准。
+- Google Drive 的 33,573,390 字节纯随机内容密文，强制 8 MiB 分段上传后独立回下载，SHA-256 `2584de0915f9db0e2b9f4d2689ba1236292969d190bddf1e01ae74eb9793aada` 一致，PC age 解密后原内容 SHA 也一致。真实应用 full＋3 inc、八份旁文件全部上传，再仅从云端回下载到全新目录，演练 `20261113T135356Z` 验证 schema 21 及恢复链通过。云端日常副本当前范围为应用密文链；该隔离目录不混入本地世界归档，world_archive_missing 为明确范围提示，生产应用／世界演练状态仍保留 `20261113T081625Z`。
+- 真实接入发现裸远端名被 rclone 当作本地目录，已统一显式远端冒号并拒绝 Windows 盘符、本地路径和临时后端；22 项异地回归通过，未以模拟 runner 的相同错误充当真实可用证据。
+- OAuth 的自有网站说明以独立 Pages 静态站点托管，Google HTML 所有权验证通过。公开仓库只收录通用静态源文件和隐私说明，不含真实域名、账号验证标记或凭据。
+- 尚余异地计划任务启用与最终 smoke；未发布 Tag／Release。详细进度以 [BACKLOG](BACKLOG.md) 为准。
 
 ### v1.2.1 生产部署与双端验收（2026-11-12）
 

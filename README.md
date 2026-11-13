@@ -7,7 +7,7 @@
 > v1.2.1 本地门禁：2026-11-12 全量检查为服务端／脚本 670（669 pass、1 skip）、前端 343、mcbot 183。Access smoke 37/0/0/2。
 > 命名：2026-10-27 起项目更名为 **AntifieldComplexx**（原 AntifieldCloud）；GitHub 仓库为 [antifield26/AntifieldComplexx](https://github.com/antifield26/AntifieldComplexx)，旧仓库地址由 GitHub 自动重定向。生产运行时标识符（服务用户、systemd 单元、数据路径、Windows 计划任务）保持不变，详见 [AGENTS.md](AGENTS.md) §0.1。
 > 部署与运维见 [docs/app/DEPLOY.md](docs/app/DEPLOY.md)，备份/恢复见 [docs/app/BACKUP.md](docs/app/BACKUP.md)，契约见 [docs/app/API.md](docs/app/API.md)，路线与验收记录见 [docs/app/ROADMAP.md](docs/app/ROADMAP.md) 与 [docs/app/ACCEPTANCE.md](docs/app/ACCEPTANCE.md)。
-> 当前修复、特性和运维的 12 项进度统一见 [BACKLOG](docs/app/BACKLOG.md)，历史版本段落不重复计入当前待办。整包 age 已开启并完成本地隔离恢复，OneDrive 尚未通过云端回下载，不当作已验证灾备。
+> 当前修复、特性和运维的 12 项进度统一见 [BACKLOG](docs/app/BACKLOG.md)，历史版本段落不重复计入当前待办。整包 age 已开启并完成本地隔离恢复，OneDrive 已停止接入，Google Drive 的应用密文链回下载与隔离恢复已通过，日常任务与最终门禁进度见 BACKLOG。
 
 ## 项目定位
 
