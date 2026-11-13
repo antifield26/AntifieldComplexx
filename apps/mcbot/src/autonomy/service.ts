@@ -34,7 +34,7 @@ import {
   type AutonomyToolName,
   toolDisplayName
 } from './tools.ts'
-import { formatWorldMemoryIndex, WorldMemoryError, WorldMemoryStore, worldMemoryPath } from './world-memory.ts'
+import { formatWorldMemoryIndex, WorldMemoryError, type WorldMemoryStore, sharedWorldMemory, memoryDimension } from './world-memory.ts'
 
 const FINISH_GRACE_MS = 5000
 const MAX_REASON_CHARS = 120
@@ -169,7 +169,7 @@ export class AutonomyService {
   constructor (deps: AutonomyServiceDeps) {
     this.deps = deps
     this.logger = deps.logger
-    this.worldMemory = deps.worldMemory ?? new WorldMemoryStore(worldMemoryPath(deps.config.dataDir), deps.logger)
+    this.worldMemory = deps.worldMemory ?? sharedWorldMemory(deps.config.dataDir, undefined, deps.logger)
   }
 
   get enabled (): boolean {
@@ -439,7 +439,8 @@ export class AutonomyService {
       '7. 不要尝试聊天、执行命令、生成坐标/玩家名，或使用未列出的工具。',
       '8. 世界记忆只用 memory_read、memory_write、memory_forget。分类仅限 place、resource、food、danger、route、note。这些调用计入工具预算，不会启动任务。看到矿或自然树时，用 resource 记下种类和已经观察到的 x,y,z。挖矿和天然林会先读这些坐标。',
       formatEnvironment(environment),
-      formatWorldMemoryIndex(this.worldMemory.index()),
+      `当前维度：${this.deps.getBot()?.game?.dimension ?? 'minecraft:overworld'}；记忆工具只访问当前维度，不提供跨维度移动。`,
+      formatWorldMemoryIndex(this.currentWorldMemory().index()),
       `可用工具（以工具列表名称为准）：${tools}`
     ].filter(Boolean).join('\n')
   }
@@ -896,7 +897,7 @@ export class AutonomyService {
           }
         }
         case 'memory_write': {
-          const saved = await this.worldMemory.write(
+          const saved = await this.currentWorldMemory().write(
             typeof args.category === 'string' ? args.category : '',
             typeof args.key === 'string' ? args.key : '',
             typeof args.text === 'string' ? args.text : ''
@@ -908,7 +909,7 @@ export class AutonomyService {
           }
         }
         case 'memory_forget': {
-          const removed = await this.worldMemory.forget(
+          const removed = await this.currentWorldMemory().forget(
             typeof args.category === 'string' ? args.category : '',
             typeof args.key === 'string' ? args.key : ''
           )
@@ -931,7 +932,14 @@ export class AutonomyService {
   private readMemory (category: unknown, key: unknown): ReturnType<WorldMemoryStore['read']> {
     const parsedCategory = typeof category === 'string' && category.trim().length > 0 ? category : undefined
     const parsedKey = typeof key === 'string' && key.trim().length > 0 ? key : undefined
-    return this.worldMemory.read(parsedCategory, parsedKey)
+    return this.currentWorldMemory().read(parsedCategory, parsedKey)
+  }
+
+  private currentWorldMemory (): WorldMemoryStore {
+    const dimension = this.deps.getBot()?.game?.dimension ?? 'minecraft:overworld'
+    return memoryDimension(dimension) === 'overworld'
+      ? this.worldMemory
+      : sharedWorldMemory(this.deps.config.dataDir, dimension, this.logger)
   }
 
   private assertIdle (): void {
@@ -1052,6 +1060,9 @@ export class AutonomyService {
     return await this.withAction(run, async () => {
       if (run.stopRequested || !run.active) throw new AutonomyToolError('autonomy_stopped', 'autonomy session is not active')
       await bot.equip(item, 'hand')
+      if (run !== this.run || run.stopRequested || !run.active || run.abort.signal.aborted) {
+        throw new AutonomyToolError('autonomy_stopped', 'autonomy session is not active')
+      }
       await bot.consume()
       return { item: item.name, food: Math.round(bot.food) }
     })

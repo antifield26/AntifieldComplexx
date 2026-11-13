@@ -59,3 +59,9 @@ test('缺少 world-pull.ps1 时安装脚本在修改前失败', { skip: process.
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('异地任务显式传递独立凭据配置路径，不依赖交互会话环境', { skip: process.platform !== 'win32' && 'requires Windows PowerShell' }, () => {
+  const result = runInstaller(INSTALLER, ['-DryRun', '-InstallOffsiteTask', '-OffsiteRemote', 'offsite:', '-RcloneConfig', 'C:\\Restricted Config\\rclone.conf'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /-RcloneConfig "C:\\Restricted Config\\rclone\.conf"/)
+})

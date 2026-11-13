@@ -345,8 +345,8 @@ function Write-PiStatus {
   # 远端临时文件用随机名，避免手动并发运行互相覆盖（OPS-20）。
   $remoteTmp = "/tmp/antifieldcloud-pull-{0}.json" -f ([guid]::NewGuid().ToString("N").Substring(0, 12))
   Copy-ToPi $statusTmp $remoteTmp
-  Invoke-PiSsh "sudo install -o antifieldcloud -g antifieldcloud -m 0644 '$remoteTmp' /var/lib/antifieldcloud/backup-pull.json" | Out-Null
-  Invoke-PiSsh "sudo rm -f '$remoteTmp'" | Out-Null
+  Invoke-PiSsh "sudo -n /usr/local/sbin/antifield-maint write-status pull '$remoteTmp'" | Out-Null
+
 }
 
 # 密钥包拉取：独立 try/状态，失败只记录并在状态 JSON 中可见，不影响文件归档已成功的事实。
@@ -372,14 +372,16 @@ function Invoke-SecretsPull {
       return
     }
     $secretsFlags = if ($IncludeHostConfig) { " --include-host-config" } else { "" }
-    $meta = Invoke-RemoteJson "sudo /usr/bin/timeout -k 10 300 bash '$scriptPath'$secretsFlags" -TimeoutSeconds $SecretsTimeoutSec
+    $meta = Invoke-RemoteJson "sudo -n /usr/local/sbin/antifield-maint secrets$secretsFlags" -TimeoutSeconds $SecretsTimeoutSec
     if (-not $meta.ok) { throw "密钥备份失败：$($meta.error)" }
     if ($meta.mcbotStateRequired -isnot [bool] -or $meta.includesMcbotState -isnot [bool] -or
         $meta.mcbotStateRequired -ne $meta.includesMcbotState) { throw "密钥包缺少有效的 mcbot 收录状态" }
     if ($meta.mcbotStateRequired -and
         ($meta.mcbotStateFiles.'goals.db' -ne "included" -or
          $meta.mcbotStateFiles.'task-state.json' -notin @("included", "not_created") -or
-         $meta.mcbotStateFiles.'world-memory.json' -notin @("included", "not_created"))) {
+         $meta.mcbotStateFiles.'world-memory.json' -notin @("included", "not_created") -or
+         $meta.mcbotStateFiles.'world-memory.nether.json' -notin @("included", "not_created") -or
+         $meta.mcbotStateFiles.'world-memory.end.json' -notin @("included", "not_created"))) {
       throw "密钥包未验证目标库、待恢复任务和世界记忆的收录状态"
     }
     $script:secretsState.includesMcbotState = $meta.includesMcbotState
@@ -441,8 +443,8 @@ function Invoke-Pull {
   $script:lastArchiveMode = ""
   $script:lastArchiveBytes = [long]0
 
-  $cli = "sudo -u antifieldcloud -H /usr/local/bin/node /opt/antifieldcloud/current/scripts/backup.mjs"
-  $pending = Invoke-RemoteJson "$cli --pending --no-warnings"
+  $cli = "sudo -n /usr/local/sbin/antifield-maint backup"
+  $pending = Invoke-RemoteJson "$cli --pending"
   if (-not $pending.ok) { throw "查询 pending 失败：$($pending.error)" }
   if ($pending.warnings) {
     foreach ($warning in @($pending.warnings)) { Write-Log "远端提示：$warning" }
@@ -452,7 +454,7 @@ function Invoke-Pull {
   if ([int]$pending.count -eq 0) {
     $fullArg = if ($pending.recommendedMode -eq "full") { "--full" } else { "" }
     Write-Log "准备新归档（mode=$(if ($fullArg) { 'full' } else { 'inc' })）"
-    $prepared = Invoke-RemoteJson "timeout -k 30 3300 $cli --prepare $fullArg --no-warnings" -Attempts 1 -TimeoutSeconds $PrepareTimeoutSec
+    $prepared = Invoke-RemoteJson "timeout -k 30 3300 $cli --prepare $fullArg" -Attempts 1 -TimeoutSeconds $PrepareTimeoutSec
     if (-not $prepared.ok) { throw "生成归档失败：$($prepared.error)" }
     if ($prepared.warnings) {
       foreach ($warning in @($prepared.warnings)) { Write-Log "远端提示：$warning" }
@@ -573,13 +575,11 @@ function Invoke-Pull {
       }
     }
 
-    $ack = Invoke-RemoteJson "timeout -k 10 900 $cli --ack '$name' --sha256 '$sha' --no-warnings" -TimeoutSeconds (Get-DownloadTimeout $size)
+    $ack = Invoke-RemoteJson "timeout -k 10 900 $cli --ack '$name' --sha256 '$sha'" -TimeoutSeconds (Get-DownloadTimeout $size)
     if (-not $ack.ok) { throw "ack 失败：$($ack.error)" }
     $script:ackedArchives[$name] = $true
     try {
-      $deletePaths = "'$remote' '$remote.sha256'"
-      if ($isEncrypted -and $remoteMeta) { $deletePaths += " '$remoteMeta'" }
-      Invoke-PiSsh "sudo rm -f $deletePaths" | Out-Null
+      Invoke-PiSsh "sudo -n /usr/local/sbin/antifield-maint remove-archive app '$name'" | Out-Null
     } catch {
       Write-Log "警告：远端归档删除失败（下次 ack 会按保留策略清理）：$($_.Exception.Message)"
     }
@@ -633,9 +633,9 @@ for ($attempt = 1; $attempt -le 3; $attempt++) {
 $statusOk = $pullOk
 $pullError = if ($pullOk) { $null } else { "pull_failed" }
 $pendingRemaining = -1
-$cli = "sudo -u antifieldcloud -H /usr/local/bin/node /opt/antifieldcloud/current/scripts/backup.mjs"
+$cli = "sudo -n /usr/local/sbin/antifield-maint backup"
 try {
-  $after = Invoke-RemoteJson "$cli --pending --no-warnings"
+  $after = Invoke-RemoteJson "$cli --pending"
   $pendingRemaining = [int]$after.count
 } catch {
   Write-Log "警告：拉取后复查 pending 失败：$($_.Exception.Message)"

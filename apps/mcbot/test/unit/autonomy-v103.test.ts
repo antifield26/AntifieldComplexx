@@ -261,6 +261,26 @@ test('v1.0.3 equip only accepts known equipment categories', async () => {
   await f.service.stop('test')
 })
 
+test('装备食物期间停止并启动新会话，旧调用不能继续进食', async () => {
+  const f = fixture()
+  const { runId, token } = await startRun(f)
+  const equipped = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  f.bot.equip = async () => { equipped.resolve(); await release.promise }
+  const eating = call(f, token, 'eat', { run_id: runId, item: 'bread', reason: '补充饥饿' })
+  await equipped.promise
+  await f.service.stop('主人停止')
+  release.resolve()
+  const result = await eating as { ok: boolean, error: string }
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'autonomy_stopped')
+  assert.equal(f.consumed.count, 0)
+  f.session.prompts.length = 0
+  const restarted = await startRun(f)
+  assert.notEqual(restarted.runId, runId)
+  await f.service.stop('测试结束')
+})
+
 test('v1.0.3 action tools reject while a task is active', async () => {
   const f = fixture()
   const { runId, token } = await startRun(f)

@@ -73,6 +73,19 @@ function eventNames(rows: { event: string; status: string }[]): string[] {
   return rows.map((row) => `${row.event}:${row.status}`)
 }
 
+test('告警读取注入的超大状态统一降级为 unknown，不采信文件内的健康状态', async () => {
+  const fx = alertFixture({ deps: { unknownThreshold: 1, readFile: () => JSON.stringify({ secretsAttempted: true, secretsOk: true, lastSecretsAt: T0, lastRunAt: T0, ok: true, padding: '中'.repeat(32_768) }) } })
+  try {
+    await fx.alerts.evaluateOnce()
+    for (const name of ['backup_secrets', 'world_backup_stale', 'world_pull_stale', 'drill_stale']) {
+      assert.equal(fx.db.prepare('SELECT status FROM alert_state WHERE event=?').get(name)?.status, 'unknown', name)
+    }
+  } finally {
+    await fx.alerts.stop()
+    fx.close()
+  }
+})
+
 function enableQqTarget(fx: AlertFixture): void {
   fx.config.chatbotEnabled = true
   fx.db.prepare(
@@ -973,6 +986,7 @@ test('mcbot 进程不在时不等待轮询过期，直接进入 service_down', a
 
 function hostDeps(overrides: AlertDeps = {}): AlertDeps {
   return {
+    memory: () => ({ totalBytes: 100, usedBytes: 50 }),
     statfs: () => ({ availableBytes: 5, totalBytes: 100 }),
     readFile: (path) => {
       if (path.endsWith('backup-pull.json')) {

@@ -1,5 +1,15 @@
 # 备份与恢复
 
+## v1.2.2 加密与固定维护入口补充（实施中）
+
+整包加密已在本轮生产配置开启，应用进程仍是 v1.2.1。Pi 只持有独立备份公钥，私钥保留 PC 及第二份离线副本；失败不回落明文。历史明文仅保留在原本机受限目录，不上传，不以删除历史归档规避告警。异地检查要求存在完整密文恢复基线，`plaintextSkipped` 记录历史明文数量，不等同于外泄。
+
+Windows 异地任务可显式传入 `-RcloneBin` 和 `-RcloneConfig`，不依赖交互终端环境；配置目录 ACL 仅当前用户、Administrators 与 SYSTEM。OneDrive 根 ID 使用专用目录的 `driveID#itemID` 规范格式；此目录限制是客户端配置边界，OAuth 权限本身不是文件夹级授权。禁止为排障持久化扩大到整盘 remote。脚本仍只复制 `.tar.gz.age` 与 SHA／元数据旁文件，不上传历史明文或私钥。
+
+目标库一致性快照、任务状态和主世界记忆继续收录。新增 `world-memory.nether.json`、`world-memory.end.json`，每个文件独立 SHA／大小及 included／not_created／read_failed。历史清单缺少这两个字段时，仅在对应文件实际不存在时允许；已存在的未登记或损坏内容必须拒绝。隔离恢复验证维度侧文件，不在生产启动恢复副本。
+
+管理员先安装 `scripts/install-maintenance.sh`，再更新 Windows 任务。root 状态目的地固定；备份／世界／演练／异地状态由固定维护入口写入，来源为随机临时文件并受 64 KiB 上限约束。密钥包提权脚本是 release 外的 root 独立副本，快照业务代码以 mcbot 身份运行。实际云端回下载、密钥包解密及完整演练完成后，才可把本轮异地状态记为验收通过。
+
 ## v1.2.1 异地完整性与演练
 
 远端密文、SHA-256 与元数据三件套齐备才计入已上传集合和保留基线；残缺集合补传，checksum／immutable 防止覆盖同名冲突。任上传、大小校验或最终远端确认失败时本轮不删除。错误 remote_confirmation_failed／partial_failure_no_retention 保留诊断。

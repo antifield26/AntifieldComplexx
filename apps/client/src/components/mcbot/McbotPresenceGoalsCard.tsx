@@ -21,6 +21,7 @@ import { ProgressBar } from '../ProgressBar'
 import { useToast } from '../Toast'
 import { mcbotTaskNameLabel } from '../../lib/mcbot'
 import { usePolling } from '../../hooks/usePolling'
+import { McbotGoalDraftEditor } from './McbotGoalDraftEditor'
 
 const PRESENCE_LABELS: Record<McbotPresenceMode, string> = {
   auto: '自动在线',
@@ -167,8 +168,8 @@ export function McbotPresenceGoalsCard({
 
   usePolling(() => load(), 5000)
 
-  async function runAction (work: () => Promise<void>, success: string): Promise<void> {
-    if (!controlReady || busyRef.current) return
+  async function runAction (work: () => Promise<void>, success: string): Promise<boolean> {
+    if (!controlReady || busyRef.current) return false
     busyRef.current = true
     requestIdRef.current += 1
     setBusy(true)
@@ -177,8 +178,10 @@ export function McbotPresenceGoalsCard({
       toast.success(success)
       onChanged?.()
       await load(undefined, true)
+      return true
     } catch (failure) {
       if (!isAbortError(failure)) toast.error(isApiError(failure) ? toErrorMessage(failure) : '操作失败')
+      return false
     } finally {
       busyRef.current = false
       setBusy(false)
@@ -296,6 +299,10 @@ export function McbotPresenceGoalsCard({
           <div className="select-field"><select id="mcbot-goal-preset" className="select" value={planIndex} disabled={!controlReady || busy} onChange={(event) => setPlanIndex(Number(event.target.value))}>{PRESET_PLANS.map((plan, index) => <option key={plan.label} value={index}>{plan.label}</option>)}</select></div>
           <Button type="submit" variant="secondary" disabled={!controlReady || busy} loading={busy}>创建计划</Button>
         </form>
+
+        <McbotGoalDraftEditor disabled={!controlReady || busy} onCreate={draft => runAction(async () => {
+          await api.mcbot.createGoal(draft.objective, draft.steps)
+        }, '目标已创建，请确认后开始')} />
 
         <details className="mcbot-presence-details"><summary>在线模式<span>{presence ? PRESENCE_LABELS[presence.mode] : '尚未读取'}</span></summary>
         {error ? <InlineError message={error} /> : null}

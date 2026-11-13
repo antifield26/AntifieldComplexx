@@ -1,8 +1,9 @@
+/** 天然林采集复核土壤、树叶及保护范围，资源记忆仅收录当前维度真实观察到的树。 */
 import type { Bot } from 'mineflayer'
 import { Vec3 } from 'vec3'
 import type { Config } from '../config.ts'
 import { depositProduce } from './deposit.ts'
-import { readResourceMemory, rememberedCoordinates, rememberedProbes } from './memory-points.ts'
+import { readResourceMemory, rememberedCoordinates, rememberedProbes, rememberObservedResources } from './memory-points.ts'
 import { equipItem } from './inventory.ts'
 import { isExpired, requireBot, sleep, TaskError, TaskStopError, type TaskContext } from './types.ts'
 import { columnsWithinRadius, surveyRing } from './navigation.ts'
@@ -234,14 +235,14 @@ function pointKey (position: Vec3): string {
 }
 
 function rememberForest (bot: Bot, config: Config, skipped: Set<string>): NaturalTree[] {
-  return rememberedTrees(bot, config, readResourceMemory(config.dataDir))
+  return rememberedTrees(bot, config, readResourceMemory(config.dataDir, bot.game?.dimension))
     .filter(tree => !skipped.has(pointKey(tree.base)))
 }
 
 function nextTreeProbe (bot: Bot, config: Config, skipped: Set<string>, tried: Set<string>): Vec3 | null {
   const origin = bot.entity?.position
   if (!origin) return null
-  return rememberedProbes(bot, readResourceMemory(config.dataDir), 'tree', origin, config.scanRadius * 2)
+  return rememberedProbes(bot, readResourceMemory(config.dataDir, bot.game?.dimension), 'tree', origin, config.scanRadius * 2)
     .find(point => {
       const key = pointKey(point)
       return !skipped.has(key) && !tried.has(key)
@@ -301,6 +302,10 @@ export async function runForest (ctx: TaskContext): Promise<void> {
         })
       }
       trees = scanNaturalTrees(bot, config).filter(tree => !skipped.has(pointKey(tree.base)))
+      if (!ctx.signal.aborted) {
+        await rememberObservedResources(bot, config, 'tree', trees.map((tree) => ({ position: tree.base, name: `${tree.species}_log` })))
+          .catch(() => ctx.logger.warn('资源记忆保存失败，继续使用已观察的采集目标'))
+      }
       continue
     }
     const tree = trees.shift()

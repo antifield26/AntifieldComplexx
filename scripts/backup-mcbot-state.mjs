@@ -3,7 +3,7 @@
  */
 import { createHash } from 'node:crypto'
 import { constants, createReadStream, existsSync, lstatSync, mkdirSync, openSync, readFileSync, closeSync, fstatSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { DatabaseSync, backup } from 'node:sqlite'
 import { GoalStore } from '../apps/mcbot/src/goals/store.ts'
 import { parseTaskState } from '../apps/mcbot/src/tasks/store.ts'
@@ -12,7 +12,8 @@ import { parseWorldMemory } from '../apps/mcbot/src/autonomy/world-memory.ts'
 const GOALS = 'goals.db'
 const TASK = 'task-state.json'
 const MEMORY = 'world-memory.json'
-const FILES = [GOALS, TASK, MEMORY]
+const DIMENSION_MEMORIES = ['world-memory.nether.json', 'world-memory.end.json']
+const FILES = [GOALS, TASK, MEMORY, ...DIMENSION_MEMORIES]
 const MAX_JSON_BYTES = 1024 * 1024
 
 function readJsonFile(file) {
@@ -56,8 +57,12 @@ export async function captureMcbotState(directory, sources) {
   mkdirSync(directory, { mode: 0o700 })
   const files = {}
   for (const name of FILES) {
-    const from = sources[name]
+    const from = sources[name] ?? (DIMENSION_MEMORIES.includes(name) && sources[MEMORY] ? join(dirname(sources[MEMORY]), name) : undefined)
     const to = join(directory, name)
+    if (from === undefined && DIMENSION_MEMORIES.includes(name)) {
+      files[name] = { status: 'not_created' }
+      continue
+    }
     try {
       if (name === GOALS) {
         if (!lstatSync(from).isFile()) throw new Error('invalid_goals_database')
@@ -96,6 +101,8 @@ export async function verifyMcbotState(directory, { restore = false } = {}) {
     const entry = manifest.files?.[name]
     const file = join(directory, name)
     if (name !== GOALS && entry?.status === 'not_created' && !existsSync(file)) continue
+    // 历史备份没有维度侧文件；存在未登记内容则拒绝，不能用缺字段跳过校验。
+    if (DIMENSION_MEMORIES.includes(name) && entry === undefined && !existsSync(file)) continue
     if (entry?.status !== 'included' || !lstatSync(file).isFile() ||
         entry.size !== lstatSync(file).size || entry.sha256 !== await sha256(file)) {
       throw new Error('invalid_mcbot_archive_entry:' + name)
@@ -108,7 +115,11 @@ export async function verifyMcbotState(directory, { restore = false } = {}) {
         db.close()
       }
     } else {
-      Object.assign(details, validateJson(name, readJsonFile(file)))
+      const checked = validateJson(name, readJsonFile(file))
+      if (DIMENSION_MEMORIES.includes(name)) {
+        details.dimensionMemoryItems ??= {}
+        details.dimensionMemoryItems[name] = checked.worldMemoryItems
+      } else Object.assign(details, checked)
     }
   }
   if (restore) {

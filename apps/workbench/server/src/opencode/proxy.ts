@@ -1,5 +1,5 @@
 /**
- * opencode 反向代理：ai.example.com → http://127.0.0.1:4096
+ * AI 工作区的受认证 HTTP／WebSocket 反向代理；上游仅使用启动校验后的本机固定地址。
  * - 先校验应用会话（TOTP 登录后的 Cookie）
  * - 注入 Basic 认证，overwrite 客户端 Authorization/Cookie
  * - 支持 SSE/WebSocket 流式；不记录请求体与 Authorization
@@ -8,7 +8,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { STATUS_CODES } from 'node:http'
 import type { Socket } from 'node:net'
-import httpProxy from 'http-proxy'
+import { createProxyServer, type ProxyServer } from 'httpxy'
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify'
 import type { Config } from '../config.ts'
 import { hashUserAgent, isLoopbackAddress, type AuthService } from '../auth/service.ts'
@@ -98,7 +98,7 @@ export interface OpenCodeProxyOptions {
 type OriginKind = 'http' | 'websocket'
 
 export class OpenCodeProxy {
-  private readonly proxy: ReturnType<typeof httpProxy.createProxyServer>
+  private readonly proxy: ProxyServer<IncomingMessage, ServerResponse>
   private readonly config: Config
   private readonly auth: AuthService
   private readonly aiHost: string
@@ -130,7 +130,7 @@ export class OpenCodeProxy {
     this.dsh = Boolean(config.dshWebUrl)
     this.dshSession = options.dshSession ?? requestDshCookie
     this.basicAuth = `Basic ${Buffer.from(`${config.opencodeUsername}:${config.opencodePassword}`, 'utf8').toString('base64')}`
-    this.proxy = httpProxy.createProxyServer({
+    this.proxy = createProxyServer({
       target: config.dshWebUrl || config.opencodeUrl,
       ws: true,
       changeOrigin: !this.dsh,
@@ -435,7 +435,9 @@ export class OpenCodeProxy {
       reply.raw.once('close', stopCheck)
     }
     reply.hijack()
-    this.proxy.web(request.raw, reply.raw)
+    void this.proxy.web(request.raw, reply.raw).catch(() => {
+      writeRawJson(reply.raw, 502, JSON.stringify({ error: { code: this.dsh ? 'dsh_web_unavailable' : 'opencode_unavailable', message: 'AI 工作区暂时不可用' } }))
+    })
   }
 
   private dshTokenRequested(url: string | undefined): boolean {
@@ -644,8 +646,8 @@ export class OpenCodeProxy {
       forget()
       socket.destroy()
     })
-    if (this.dsh) this.proxy.ws(request, socket, head)
-    else this.proxy.ws(request, socket, head, { headers: { authorization: this.basicAuth } })
+    void this.proxy.ws(request, socket, this.dsh ? {} : { headers: { authorization: this.basicAuth } }, head)
+      .catch(() => socket.destroy())
   }
 
   close(): void {

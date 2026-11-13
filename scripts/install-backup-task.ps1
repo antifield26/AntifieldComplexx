@@ -10,6 +10,7 @@
   [string]$OffsiteTime = "13:00",
   [string]$OffsiteKeepDays = "30",
   [string]$RcloneBin = "rclone",
+  [string]$RcloneConfig = "",
   [switch]$DryRun
 )
 
@@ -134,7 +135,7 @@ if ($DryRun) {
   Write-Host "[DryRun] 世界拉取任务：AntifieldCloud-World-Pull 每周日 12:00"
   Write-Host "[DryRun] 世界拉取参数：$dryWorldArguments"
   if ($installOffsite) {
-    $dryOffsiteArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $base 'backup-offsite.ps1')`" -BackupRoot `"$BackupRoot`" -PiHost `"$PiHost`" -PiUser `"$PiUser`" -Remote `"$OffsiteRemote`" -RemotePath `"$OffsiteRemotePath`" -RemoteLabel `"$OffsiteRemoteLabel`" -NodeScriptPath `"$(Join-Path $base 'backup-offsite.mjs')`" -RcloneBin `"$RcloneBin`""
+    $dryOffsiteArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $base 'backup-offsite.ps1')`" -BackupRoot `"$BackupRoot`" -PiHost `"$PiHost`" -PiUser `"$PiUser`" -Remote `"$OffsiteRemote`" -RemotePath `"$OffsiteRemotePath`" -RemoteLabel `"$OffsiteRemoteLabel`" -NodeScriptPath `"$(Join-Path $base 'backup-offsite.mjs')`" -RcloneBin `"$RcloneBin`" -RcloneConfig `"$RcloneConfig`""
     Write-Host "[DryRun] 异地副本任务：AntifieldCloud-Backup-Offsite @ $OffsiteTime"
     Write-Host "[DryRun] 异地副本参数：$dryOffsiteArguments"
   } else {
@@ -234,7 +235,7 @@ if ($installOffsite) {
   Copy-Item -Force $offsiteNodeSource (Join-Path $base "backup-offsite.mjs")
   $offsiteScriptPath = Join-Path $base "backup-offsite.ps1"
   $offsiteNodeInstalled = Join-Path $base "backup-offsite.mjs"
-  $offsiteArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$offsiteScriptPath`" -BackupRoot `"$BackupRoot`" -PiHost `"$PiHost`" -PiUser `"$PiUser`" -Remote `"$OffsiteRemote`" -RemotePath `"$OffsiteRemotePath`" -RemoteLabel `"$OffsiteRemoteLabel`" -NodeScriptPath `"$offsiteNodeInstalled`" -RcloneBin `"$RcloneBin`" -KeepDays $OffsiteKeepDays"
+  $offsiteArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$offsiteScriptPath`" -BackupRoot `"$BackupRoot`" -PiHost `"$PiHost`" -PiUser `"$PiUser`" -Remote `"$OffsiteRemote`" -RemotePath `"$OffsiteRemotePath`" -RemoteLabel `"$OffsiteRemoteLabel`" -NodeScriptPath `"$offsiteNodeInstalled`" -RcloneBin `"$RcloneBin`" -RcloneConfig `"$RcloneConfig`" -KeepDays $OffsiteKeepDays"
   $offsiteAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $offsiteArguments
   $offsiteTrigger = New-ScheduledTaskTrigger -Daily -At $OffsiteTime
   $offsiteSettings = New-ScheduledTaskSettingsSet `

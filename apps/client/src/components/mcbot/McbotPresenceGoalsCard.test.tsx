@@ -36,6 +36,33 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('多步目标执行', () => {
+  it('草案生成和编辑不写 API，确认创建仅提交一次且不自动开始', async () => {
+    render(view())
+    const input = screen.getByLabelText('目标描述')
+    fireEvent.change(input, { target: { value: '先砍树，然后存箱，最后回家' } })
+    fireEvent.click(screen.getByRole('button', { name: '生成草案', hidden: true }))
+    expect(mocks.createGoal).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('第 1 步'), { target: { value: 'mining' } })
+    fireEvent.change(screen.getByLabelText('草案标题'), { target: { value: '修改后的计划' } })
+    const form = screen.getByRole('button', { name: '确认创建草案', hidden: true }).closest('form')!
+    act(() => { fireEvent.submit(form); fireEvent.submit(form) })
+    await waitFor(() => expect(mocks.createGoal).toHaveBeenCalledOnce())
+    expect(mocks.createGoal).toHaveBeenCalledWith('修改后的计划', [{ kind: 'task', taskName: 'mining' }, { kind: 'deposit' }, { kind: 'home' }])
+    expect(mocks.goalAction).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByLabelText('草案标题')).not.toBeInTheDocument())
+  })
+
+  it('修改原描述使旧草案失效，无法提交未识别要求', async () => {
+    render(view())
+    fireEvent.change(screen.getByLabelText('目标描述'), { target: { value: '回家' } })
+    fireEvent.click(screen.getByRole('button', { name: '生成草案', hidden: true }))
+    expect(screen.getByLabelText('草案标题')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('目标描述'), { target: { value: '不要回家' } })
+    expect(screen.queryByLabelText('草案标题')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '生成草案', hidden: true }))
+    expect(screen.getByText(/有未识别的要求/)).toBeInTheDocument()
+    expect(mocks.createGoal).not.toHaveBeenCalled()
+  })
   it('同一渲染周期重复提交只创建一个待开始计划', async () => {
     let finish: (value: { goal: McbotGoal }) => void = () => undefined
     mocks.createGoal.mockReturnValueOnce(new Promise<{ goal: McbotGoal }>((resolve) => { finish = resolve }))

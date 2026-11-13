@@ -139,7 +139,8 @@ test('远端路径校验：拒绝路径穿越与非法名', () => {
 })
 
 test('CLI 参数：未知参数报错，dry-run/解析数字生效', () => {
-  const options = parseArgs(['--backup-root', 'x', '--remote', 'offsite', '--keep-days', '7', '--dry-run'])
+  const options = parseArgs(['--backup-root', 'x', '--remote', 'offsite', '--keep-days', '7', '--dry-run', '--rclone-config', 'restricted config'])
+  assert.equal(options.rcloneConfig, 'restricted config')
   assert.equal(options.keepDays, 7)
   assert.equal(options.dryRun, true)
   assert.throws(() => parseArgs(['--evil', 'x']))

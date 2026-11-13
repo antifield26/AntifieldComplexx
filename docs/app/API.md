@@ -843,7 +843,7 @@ ChatbotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|proje
 
 ## 15. mcbot Bot 对接（v0.8.0 引入；v1.0.2 自主模式；v1.0.3 环境/动作工具；v1.0.5 在线模式/目标/自动生存；v1.0.6 寻路状态；v1.0.7 成功时间与兜底原因；v1.0.9 事件缺口；v1.0.10 活动范围；v1.0.11 反射、v1.0.12 世界记忆与 v1.0.13 记忆坐标不新增应用字段；默认关闭）
 
-mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。目标上游为 mcbot **v1.2.1**（契约 v2，兼容已声明契约 v1 的旧版本）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，v1.0.9 增加可空 `eventGap`，v1.0.10 至 v1.2.0 不新增应用字段，旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
+mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。目标上游为 mcbot **v1.2.2**（契约 v2，兼容已声明契约 v1 的旧版本）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，v1.0.9 增加可空 `eventGap`，v1.0.10 至 v1.2.0 不新增应用字段，旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
 
 ### 通用语义
 

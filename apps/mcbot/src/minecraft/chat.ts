@@ -1,3 +1,4 @@
+/** 游戏聊天解析与串行发送；限制文本长度并中和命令，单次发送失败不得阻塞后续消息。 */
 import type { Bot } from 'mineflayer'
 import type { Logger } from '../logger.ts'
 import { NotConnectedError } from '../errors.ts'
@@ -180,7 +181,7 @@ export class ChatSender {
     const lines = splitOutgoing(text, this.options.maxLineChars, this.options.maxLines)
     if (lines.length === 0) return []
     if (!this.isConnected()) throw new NotConnectedError()
-    this.tail = this.tail.then(async () => {
+    const delivery = this.tail.then(async () => {
       for (const line of lines) {
         const bot = this.getBot()
         if (!bot) throw new NotConnectedError()
@@ -191,8 +192,10 @@ export class ChatSender {
         this.logger.debug('chat sent', { source, length: line.length })
       }
     })
+    // 每次投递保留自身失败结果；串行队列必须在失败后仍可接收下一条消息。
+    this.tail = delivery.catch(() => undefined)
     try {
-      await this.tail
+      await delivery
       try {
         this.options.onSay?.({ text, lines, source })
       } catch {

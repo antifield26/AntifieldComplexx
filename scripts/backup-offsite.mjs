@@ -238,10 +238,11 @@ export function scanLocalArchives(backupRoot) {
 }
 
 /** rclone 运行器：execFile 参数数组，无 shell；测试可注入假 runner。 */
-export function createRcloneRunner(rcloneBin = 'rclone') {
+export function createRcloneRunner(rcloneBin = 'rclone', config = '') {
   return function run(args, { timeoutMs = 30 * 60 * 1000 } = {}) {
     return new Promise((resolvePromise) => {
-      execFile(rcloneBin, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
+      const commandArgs = config ? ['--config', config, ...args] : args
+      execFile(rcloneBin, commandArgs, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
         const code = error && typeof error.code === 'number' ? error.code : error ? 1 : 0
         resolvePromise({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') })
       })
@@ -267,7 +268,7 @@ export function remoteJoin(remote, remotePath, name) {
 
 /** 解析命令行参数（仅接受白名单参数）。 */
 export function parseArgs(argv) {
-  const options = { backupRoot: '', remote: '', remotePath: '', remoteLabel: '', keepDays: 30, maxDelete: 50, dryRun: false, jsonOut: '', rcloneBin: 'rclone', verify: true }
+  const options = { backupRoot: '', remote: '', remotePath: '', remoteLabel: '', keepDays: 30, maxDelete: 50, dryRun: false, jsonOut: '', rcloneBin: 'rclone', rcloneConfig: '', verify: true }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     const next = () => {
@@ -283,6 +284,7 @@ export function parseArgs(argv) {
     else if (arg === '--max-delete') options.maxDelete = Math.max(0, Number.parseInt(next(), 10) || 0)
     else if (arg === '--json-out') options.jsonOut = next()
     else if (arg === '--rclone-bin') options.rcloneBin = next()
+    else if (arg === '--rclone-config') options.rcloneConfig = next()
     else if (arg === '--dry-run') options.dryRun = true
     else if (arg === '--no-verify') options.verify = false
     else if (arg === '--help') options.help = true
@@ -305,7 +307,7 @@ export function parseLsfOutput(text) {
  * deps = { runRclone, sha256File, now, logger }
  */
 export async function runOffsite(options, deps = {}) {
-  const runRclone = deps.runRclone ?? createRcloneRunner(options.rcloneBin)
+  const runRclone = deps.runRclone ?? createRcloneRunner(options.rcloneBin, options.rcloneConfig)
   const hashFile = deps.sha256File ?? sha256File
   const now = deps.now ?? (() => Date.now())
   const log = deps.logger ?? ((message) => console.error(message))

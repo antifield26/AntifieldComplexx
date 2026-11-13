@@ -4,7 +4,7 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.2.1（2026-11-12 已部署）**。schema 21、mcbot 契约 v2。同 schema 回到 v1.2.0 仅还原 release 与配置，保留现行数据库及 WAL。退回 v1.1.1 必须恢复迁移前快照与 v1.1.1 release。Web、QQ 与 mcbot Agent 继续使用 DeepSeek Harness。OpenCode **v2.2.5** 仅用于恢复历史版本 v1.0.13（`1743323`）。
+**当前版本 v1.2.2（开发中；生产 v1.2.1 于 2026-11-12 部署）**。schema 21、mcbot 契约 v2。同 schema 回到 v1.2.0 仅还原 release 与配置，保留现行数据库及 WAL。退回 v1.1.1 必须恢复迁移前快照与 v1.1.1 release。Web、QQ 与 mcbot Agent 继续使用 DeepSeek Harness。OpenCode **v2.2.5** 仅用于恢复历史版本 v1.0.13（`1743323`）。
 
 生产 Workbench release 为 `20261112T115350Z`，mcbot 为 `20261112T115627Z`，DSH 为 `20261108T143448Z`。本次部署前快照 `db-predeploy-20261112T115510214Z.sqlite`（schema 21，sha256 `a04ae77571b118fa6b51b9d08fd4dde42852688ad5109ce28ee66bb0720c9202`）。最近演练 `20261112T115843Z`（schema 21，应用与世界隔离恢复）。公网界面开关保持默认开启。
 
@@ -13,6 +13,7 @@ schema **v21**（设备登记与请求签名）。客户端与 schema 21 绑定�
 **v1.0.7 基线（2026-11-04 已部署，commit `b17102b`）**：schema v19 为 `alert_events.dedupe_key`；mcbot 快照下发 `lastSuccessAt`；mcbot 进程不在或轮询过期走 `service_down`；寻路兜底进入自主重决策（不新增 MCP 工具，不挖掘/不放置/不跑酷）。OpenCode **v2.2.5** 已在树莓派运行，回滚备份 timestamp `20261104T062115Z`。v1.0.7 app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19）、mcbot `/opt/mcbot/releases/20261104T092858Z`。npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
 权威文档：
+- `docs/app/BACKLOG.md`：v1.2.2 当前 12 项进度，区分分支实现、生产启用与未完成验收；历史审计段落不重复计数。
 - `docs/app/PLAN.md`：范围、决策、阶段与验收
 - `docs/app/API.md`：HTTP 契约（服务端/前端共同遵守）
 - `docs/app/UI-SPEC.md`：界面与交互

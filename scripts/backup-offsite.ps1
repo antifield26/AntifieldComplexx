@@ -12,6 +12,7 @@
   [string]$NodeExe = "node",
   [string]$NodeScriptPath = (Join-Path $PSScriptRoot "backup-offsite.mjs"),
   [string]$RcloneBin = "rclone",
+  [string]$RcloneConfig = "",
   [string]$StatusPath = "/var/lib/antifieldcloud/backup-offsite-status.json",
   [int]$CommandTimeoutSec = 1800
 )
@@ -27,6 +28,7 @@
 # - 所有本地进程带硬超时（taskkill /T /F 杀进程树）；
 # - 未配置 -Remote 时默认不运行（exit 2 并写 ok=false 状态），避免计划任务误报成功。
 $ErrorActionPreference = "Stop"
+if ($StatusPath -ne "/var/lib/antifieldcloud/backup-offsite-status.json") { throw "固定维护入口不接受自定义状态路径" }
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 $target = "$PiUser@$PiHost"
@@ -115,8 +117,8 @@ function Write-PiStatus {
   $scpArguments = @("-o", "BatchMode=yes", "-o", "ConnectTimeout=10", $statusTmp, "$target`:$remoteTmp")
   $scpResult = Invoke-NativeWithTimeout -FilePath "scp.exe" -Arguments $scpArguments -TimeoutSeconds 60 -Label "scp offsite status"
   if ($scpResult.ExitCode -ne 0) { throw "scp 状态上传失败（exit=$($scpResult.ExitCode)）" }
-  Invoke-PiSsh "sudo install -o antifieldcloud -g antifieldcloud -m 0644 '$remoteTmp' '$StatusPath'" | Out-Null
-  Invoke-PiSsh "sudo rm -f '$remoteTmp'" | Out-Null
+  Invoke-PiSsh "sudo -n /usr/local/sbin/antifield-maint write-status offsite '$remoteTmp'" | Out-Null
+
 }
 
 # 兜底状态：node 未运行/输出异常/超时也写 ok=false，避免 Dashboard 显示“很久没跑”而不是失败。
@@ -167,6 +169,7 @@ try {
       "--json-out", $statusTmp
     )
     if (-not [string]::IsNullOrWhiteSpace($RemotePath)) { $nodeArguments += @("--remote-path", $RemotePath) }
+    if (-not [string]::IsNullOrWhiteSpace($RcloneConfig)) { $nodeArguments += @("--rclone-config", $RcloneConfig) }
     if ($DryRun) { $nodeArguments += "--dry-run" }
     Write-Log ("开始异地副本：remoteLabel={0} keepDays={1} maxDelete={2} dryRun={3}" -f $RemoteLabel, $KeepDays, $MaxDelete, [bool]$DryRun)
     $nodeResult = Invoke-NativeWithTimeout -FilePath $NodeExe -Arguments $nodeArguments -TimeoutSeconds $CommandTimeoutSec -Label "backup-offsite.mjs"

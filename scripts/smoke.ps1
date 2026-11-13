@@ -186,13 +186,13 @@ function ConvertFrom-JsonText {
 # 读取 Pi 上 /etc/antifieldcloud/env 的单个键（只读；值不用于日志，避免泄露密钥）。
 function Get-PiEnvValue {
   param([string]$Key)
-  $out = Invoke-PiSsh "sudo grep -E '^$Key=' /etc/antifieldcloud/env 2>/dev/null | tail -n 1 | cut -d= -f2-" -TimeoutSeconds 30
+  $out = Invoke-PiSsh "sudo -n /usr/local/sbin/antifield-maint env-value '$Key'" -TimeoutSeconds 30
   return ($out | Out-String).Trim()
 }
 
 # 读取 Pi 上 env 的键名列表（不含值）。
 function Get-PiEnvKeys {
-  $out = Invoke-PiSsh "sudo grep -E '^[A-Za-z_][A-Za-z0-9_]*=' /etc/antifieldcloud/env 2>/dev/null | cut -d= -f1 | sort -u" -TimeoutSeconds 30
+  $out = Invoke-PiSsh "sudo -n /usr/local/sbin/antifield-maint env-keys" -TimeoutSeconds 30
   return @(($out | Out-String) -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
 }
 
@@ -213,7 +213,7 @@ function Get-ManagedEnvKeys {
 
 function Get-PiJsonFile {
   param([string]$Path, [int]$TimeoutSeconds = 30)
-  $text = (Invoke-PiSsh "cat '$Path' 2>/dev/null || echo '__MISSING__'" -TimeoutSeconds $TimeoutSeconds | Out-String).Trim()
+  $text = (Invoke-PiSsh "if test -f '$Path'; then sudo -n /usr/local/sbin/antifield-maint read-status '$Path'; else echo '__MISSING__'; fi" -TimeoutSeconds $TimeoutSeconds | Out-String).Trim()
   if ($text -eq "__MISSING__" -or $text -eq "") { return $null }
   return (ConvertFrom-JsonText $text)
 }
@@ -455,9 +455,9 @@ if (-not $SkipFail2ban) {
     if ($installed -ne "YES") { return "SKIP: fail2ban 未安装" }
     $active = (Invoke-PiSsh "systemctl is-active fail2ban" -TimeoutSeconds 30 | Out-String).Trim()
     if ($active -ne "active") { throw "fail2ban 状态=$active" }
-    $status = (Invoke-PiSsh "sudo fail2ban-client status sshd 2>&1" -TimeoutSeconds 30 | Out-String)
+    $status = (Invoke-PiSsh "sudo -n /usr/local/sbin/antifield-maint fail2ban status 2>&1" -TimeoutSeconds 30 | Out-String)
     if ($status -notmatch 'Currently banned') { throw "sshd jail 不可用：$(($status -split "`n")[0])" }
-    $bantimeText = (Invoke-PiSsh "sudo fail2ban-client get sshd bantime 2>/dev/null" -TimeoutSeconds 30 | Out-String).Trim()
+    $bantimeText = (Invoke-PiSsh "sudo -n /usr/local/sbin/antifield-maint fail2ban bantime" -TimeoutSeconds 30 | Out-String).Trim()
     $bantime = 0
     if ([int]::TryParse($bantimeText, [ref]$bantime) -and $bantime -ne 86400) {
       throw "sshd bantime=$bantime，期望 86400（24h）"
@@ -484,7 +484,7 @@ if (-not $SkipUnitDrift) {
       $localPath = Join-Path $root $pair.Local
       if (-not (Test-Path -LiteralPath $localPath)) { throw "本地缺少 $($pair.Local)" }
       $localSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $localPath).Hash.ToLower()
-      $remoteSha = (Invoke-PiSsh "sudo sha256sum '$($pair.Remote)' 2>/dev/null | cut -d' ' -f1" -TimeoutSeconds 30 | Out-String).Trim().ToLower()
+      $remoteSha = (Invoke-PiSsh "sudo -n /usr/local/sbin/antifield-maint hash '$($pair.Remote)'" -TimeoutSeconds 30 | Out-String).Trim().ToLower()
       if ($remoteSha -eq "") { $missing += $pair.Remote; continue }
       if ($remoteSha -ne $localSha) { $mismatch += "$($pair.Remote)（远端 $remoteSha / 本地 $localSha）" }
     }
@@ -533,7 +533,7 @@ Check "内存 cgroup 控制器可用" {
 }
 
 Check "nftables 规则生效" {
-  $ruleset = (Invoke-PiSsh "sudo /usr/sbin/nft list ruleset" | Out-String)
+  $ruleset = (Invoke-PiSsh "sudo -n /usr/local/sbin/antifield-maint nft" | Out-String)
   if ($ruleset -notmatch '25575') { throw "nft 规则中未见 25575 相关规则" }
   foreach ($source in @($ExpectedSshSources)) {
     if ($source -and $ruleset -notmatch [regex]::Escape($source)) {
@@ -556,7 +556,7 @@ Check "Minecraft 25565 可达（直连）" {
 }
 
 Check "备份 CLI pending 可用" {
-  $out = Invoke-PiSsh "sudo -u antifieldcloud -H /usr/local/bin/node /opt/antifieldcloud/current/scripts/backup.mjs --pending --no-warnings"
+  $out = Invoke-PiSsh "sudo -n /usr/local/sbin/antifield-maint backup --pending"
   $json = ConvertFrom-JsonText ($out | Out-String)
   if (-not $json -or -not $json.ok) { throw "pending 查询失败：$($out | Out-String)" }
   foreach ($item in @($json.pending)) {
@@ -580,7 +580,9 @@ Check "备份拉取状态（含密钥包状态）" {
   if ($RequireMcbotState -and ($json.secretsOk -ne $true -or $json.secretsMcbotStateRequired -ne $true -or
       $json.secretsIncludesMcbotState -ne $true -or $json.secretsMcbotStateFiles.'goals.db' -ne "included" -or
       $json.secretsMcbotStateFiles.'task-state.json' -notin @("included", "not_created") -or
-      $json.secretsMcbotStateFiles.'world-memory.json' -notin @("included", "not_created"))) {
+      $json.secretsMcbotStateFiles.'world-memory.json' -notin @("included", "not_created") -or
+      $json.secretsMcbotStateFiles.'world-memory.nether.json' -notin @("included", "not_created") -or
+      $json.secretsMcbotStateFiles.'world-memory.end.json' -notin @("included", "not_created"))) {
     throw "未验证收录 mcbot 状态的密钥包实际拉取"
   }
   "lastPullAt=$($json.lastPullAt) age=$([math]::Round($ageHours,1))h secretsOk=$($json.secretsOk)"
@@ -660,7 +662,7 @@ if (-not $SkipScriptHash) {
       $localPath = Join-Path $root $pair.Local
       if (-not (Test-Path -LiteralPath $localPath)) { continue }
       $localSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $localPath).Hash.ToLower()
-      $remoteSha = (Invoke-PiSsh "sudo sha256sum '$($pair.Remote)' 2>/dev/null | cut -d' ' -f1" -TimeoutSeconds 30 | Out-String).Trim().ToLower()
+      $remoteSha = (Invoke-PiSsh "sudo -n /usr/local/sbin/antifield-maint hash '$($pair.Remote)'" -TimeoutSeconds 30 | Out-String).Trim().ToLower()
       if ($remoteSha -eq "") { $missing += $pair.Remote; continue }
       if ($remoteSha -ne $localSha) { $mismatch += "$($pair.Remote)（远端 $remoteSha / 本地 $localSha）" }
     }
@@ -677,19 +679,14 @@ if (-not $SkipEncryption) {
     if ($enabled -ne "true") { return "SKIP: BACKUP_ARCHIVE_ENCRYPTION=$enabled（默认关闭）" }
     $recipientFile = Get-PiEnvValue "BACKUP_AGE_RECIPIENT_FILE"
     if ([string]::IsNullOrWhiteSpace($recipientFile)) { $recipientFile = "/etc/antifieldcloud/backup-age.pub" }
-    $stat = (Invoke-PiSsh "sudo stat -c '%a %u %g' '$recipientFile' 2>/dev/null || echo MISSING" -TimeoutSeconds 30 | Out-String).Trim()
-    if ($stat -eq "MISSING") { throw "缺少 age 公钥文件：$recipientFile" }
-    $fields = $stat -split '\s+'
-    if ($fields.Count -ge 3) {
-      $mode = [Convert]::ToInt32($fields[0], 8)
-      if (($mode -band 0x12) -ne 0) { throw "age 公钥权限过宽（$($fields[0])，要求组/其他不可写）" }
-      if ($fields[1] -ne "0") { throw "age 公钥必须 root 所有（owner=$($fields[1])）" }
-    }
-    $recipient = (Invoke-PiSsh "sudo head -n 1 '$recipientFile'" -TimeoutSeconds 30 | Out-String).Trim()
+    if ($recipientFile -ne "/etc/antifieldcloud/backup-age.pub") { throw "固定维护入口要求独立公钥路径 /etc/antifieldcloud/backup-age.pub" }
+    $info = (Invoke-PiSsh "sudo -n /usr/local/sbin/antifield-maint encryption-info" -TimeoutSeconds 30 | Out-String) | ConvertFrom-Json
+    if ($info.owner -ne 0 -or ([Convert]::ToInt32($info.mode, 8) -band 0x12) -ne 0) { throw "age 公钥属主或权限不安全" }
+    $recipient = [string]$info.recipient
     if ($recipient -notmatch '^age1[0-9a-z]{16,}$') { throw "age 公钥格式非法" }
     $ageVersion = (Invoke-PiSsh "age --version 2>/dev/null || echo MISSING" -TimeoutSeconds 30 | Out-String).Trim()
     if ($ageVersion -eq "MISSING") { throw "Pi 上未安装 age" }
-    $plainTmp = (Invoke-PiSsh "sudo find /var/lib/antifieldcloud/backups -maxdepth 1 -name '*.plain.tmp' -mmin +1440 2>/dev/null | wc -l" -TimeoutSeconds 30 | Out-String).Trim()
+    $plainTmp = $info.oldTemps
     if ([int]$plainTmp -gt 0) { throw "存在超过 24h 的明文临时归档残留（$plainTmp 个），需人工检查" }
     "enabled，公钥/age/临时明文检查通过（age=$ageVersion）"
   }
@@ -709,7 +706,8 @@ if (-not $SkipOffsite) {
     $ageHours = Get-StampAgeHours $json.lastRunAt
     if ($null -eq $ageHours) { throw "lastRunAt 无法解析：$($json.lastRunAt)" }
     if ($ageHours -gt $threshold) { throw "异地副本已超过 $threshold 小时未成功（$([math]::Round($ageHours,1)) h）" }
-    if ([int]$json.plaintextSkipped -gt 0) { throw "检测到明文归档被跳过（plaintextSkipped=$($json.plaintextSkipped)），请检查是否误把明文放入备份根" }
+    # 启用加密前的本机历史明文允许保留，不上传；至少一份完整密文 full 才证明异地有恢复基线。
+    if ([int]$json.keptRemote -lt 1) { throw "异地未保留完整密文恢复基线" }
     "ok，age=$([math]::Round($ageHours,1))h，uploaded=$($json.uploaded) keptRemote=$($json.keptRemote)"
   }
 }

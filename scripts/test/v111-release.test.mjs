@@ -72,7 +72,7 @@ test('密钥包快照含 WAL 目标，隔离恢复暂停运行中目标并验证
     ] }))
     const directory = join(dir, 'capture')
     const files = await captureMcbotState(directory, { 'goals.db': source, 'task-state.json': task, 'world-memory.json': memory })
-    assert.deepEqual(Object.values(files).map(file => file.status), ['included', 'included', 'included'])
+    assert.deepEqual(Object.values(files).map(file => file.status), ['included', 'included', 'included', 'not_created', 'not_created'])
     const repo = resolve(import.meta.dirname, '../..')
     const current = process.platform === 'win32' ? repo : join(dir, 'current')
     if (current !== repo) symlinkSync(repo, current, 'dir')
@@ -93,7 +93,7 @@ test('密钥包快照含 WAL 目标，隔离恢复暂停运行中目标并验证
     const broken = await captureMcbotState(join(dir, 'broken'), {
       'goals.db': join(dir, 'absent.db'), 'task-state.json': task, 'world-memory.json': join(dir, 'absent.json')
     })
-    assert.deepEqual(Object.values(broken).map(file => file.status), ['read_failed', 'read_failed', 'not_created'])
+    assert.deepEqual(Object.values(broken).map(file => file.status), ['read_failed', 'read_failed', 'not_created', 'not_created', 'not_created'])
   } finally {
     store.close()
   }
@@ -133,4 +133,30 @@ test('发布包隔离 DSH 已安装依赖，校验拒绝额外文件和同长度
   assert.throws(() => verifyRelease('workbench', staged, version), /invalid_release_file/)
   writeFileSync(join(staged, 'extra'), '')
   assert.throws(() => verifyRelease('workbench', staged, version), /invalid_release_manifest/)
+})
+
+test('密钥包收录维度侧文件，历史清单缺字段仅在文件未产生时兼容', async t => {
+  const dir = temporary(t)
+  const source = join(dir, 'goals.db')
+  const store = new GoalStore(source)
+  store.init()
+  store.close()
+  const nether = join(dir, 'world-memory.nether.json')
+  const raw = JSON.stringify({ version: 1, items: [{ category: 'resource', key: 'coal', text: 'coal 1,64,1', updatedAt: new Date().toISOString() }] })
+  writeFileSync(nether, raw)
+  const directory = join(dir, 'capture')
+  const files = await captureMcbotState(directory, { 'goals.db': source, 'task-state.json': join(dir, 'absent-task'), 'world-memory.json': join(dir, 'world-memory.json') })
+  assert.equal(files['world-memory.nether.json'].status, 'included')
+  assert.equal(files['world-memory.end.json'].status, 'not_created')
+  assert.deepEqual((await verifyMcbotState(directory)).dimensionMemoryItems, { 'world-memory.nether.json': 1 })
+  const manifestFile = join(directory, 'manifest.json')
+  const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'))
+  delete manifest.files['world-memory.end.json']
+  writeFileSync(manifestFile, JSON.stringify(manifest))
+  await verifyMcbotState(directory)
+  writeFileSync(join(directory, 'world-memory.end.json'), raw)
+  await assert.rejects(verifyMcbotState(directory), /invalid_mcbot_archive_entry/)
+  rmSync(join(directory, 'world-memory.end.json'))
+  writeFileSync(join(directory, 'world-memory.nether.json'), raw.replace('coal', 'iron'))
+  await assert.rejects(verifyMcbotState(directory), /invalid_mcbot_archive_entry/)
 })

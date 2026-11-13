@@ -45,6 +45,53 @@ ws.on('connection', (socket) => {
 let child
 let harness
 
+/** 实际固定 QQ 插件面对本地假平台负路径，不得发布 ready 或触及真实平台。 */
+async function verifyQqFailures() {
+  for (const status of [401, 429, 503]) {
+    let tokenCalls = 0
+    let gatewayCalls = 0
+    const failed = createServer((req, res) => {
+      if (req.url === '/app/getAppAccessToken') tokenCalls += 1
+      else if (req.url === '/gateway') gatewayCalls += 1
+      res.writeHead(status, { 'content-type': 'application/json', ...(status === 429 ? { 'retry-after': '1' } : {}) })
+      res.end(JSON.stringify({ code: status, message: 'fixture unavailable' }))
+    })
+    failed.listen(0, '127.0.0.1')
+    await once(failed, 'listening')
+    const origin = `http://127.0.0.1:${failed.address().port}`
+    const overlay = join(temp, `qq-failure-${status}.yml`)
+    await writeFile(overlay, JSON.stringify([{ insert: [{ id: 'im-qqbot', name: join(root, 'node_modules/@tencent-connect/dsh-qqbot/lib/index.js'), config: {
+      appId: '__FROM_ENV__', appSecret: '__FROM_ENV__', provider: 'deepseek-official', model: 'deepseek-flash', cwd: temp,
+      access: { c2cMode: 'allowlist', c2cAllow: ['user'], groupMode: 'allowlist', groupAllow: ['group'] },
+      requireMention: true, historyLimit: 0, media: { enabled: false },
+    } }] }]))
+    const candidate = spawn(process.execPath, [bin, '--profile', 'sdk-minimal', '--patch', patch, '--patch', overlay], {
+      cwd: temp, env: { ...env, DSH_HOME: join(temp, `qq-failure-${status}`), DSH_QQ_MEMORY_DB: join(temp, `qq-failure-${status}.sqlite`), QQBOT_APPID: 'testappid', QQBOT_SECRET: 'qq-fixture-secret', QQBOT_BASE_URL: origin, QQBOT_TOKEN_BASE_URL: origin },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let output = ''
+    for (const stream of [candidate.stdout, candidate.stderr]) stream.setEncoding('utf8').on('data', chunk => { output = (output + chunk).slice(-8000) })
+    const exited = once(candidate, 'exit')
+    try {
+      const deadline = Date.now() + 12_000
+      while (!tokenCalls && candidate.exitCode === null && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50))
+      assert.ok(tokenCalls > 0, `QQ ${status} 夹具未收到实际插件请求：${output.replaceAll('qq-fixture-secret', '<fixture>').replaceAll('dsh-fixture-key', '<fixture>')}`)
+      await new Promise(resolve => setTimeout(resolve, 1200))
+      assert.equal(gatewayCalls, 0, `QQ ${status} 不应连接网关`)
+      assert.ok(tokenCalls <= 3, `QQ ${status} 不得密集重试`)
+      assert.ok(!output.includes('antifieldcomplexx-qq-ready'), `QQ ${status} 不得虚报就绪`)
+      assert.ok(!output.includes('qq-fixture-secret'), `QQ ${status} 日志不得包含凭据`)
+    } finally {
+      if (candidate.exitCode === null && candidate.signalCode === null) candidate.kill()
+      const force = setTimeout(() => candidate.kill('SIGKILL'), 4000)
+      try { await exited } finally { clearTimeout(force) }
+      failed.closeAllConnections()
+      await new Promise(resolve => failed.close(resolve))
+    }
+  }
+  console.log('固定 DSH QQ 已通过凭据拒绝、限流与平台不可用负路径，无真实平台请求')
+}
+
 async function verifyWorkspace() {
   const cwd = process.cwd()
   const directory = join(temp, 'workspace')
@@ -158,6 +205,7 @@ async function verifyWebBroker() {
 }
 
 try {
+  await verifyQqFailures()
   const binding = join(temp, 'tool-binding.json')
   const autonomy = join(temp, 'autonomy.yml')
   if (process.platform !== 'win32') {
