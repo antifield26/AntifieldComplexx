@@ -31,6 +31,7 @@
 # 约束：绝不修改/删除归档；只删除 drills 下超过 KeepDays 的历史报告。私钥路径/明文内容不写日志与状态。
 # 所有外部命令都有硬超时；无 -AgeIdentityPath 且链中存在加密归档时明确失败（不跳过、不误判通过）。
 $ErrorActionPreference = "Stop"
+if (-not $SkipRemoteStatus -and $RemoteStatusPath -ne "/var/lib/antifieldcloud/drill-status.json") { throw "固定维护入口不接受自定义状态路径" }
 # 远端/本地 JSON 统一 UTF-8；PS 5.1 默认 GBK 解码会导致中文 JSON 解析失败（OP-06）。
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -667,12 +668,12 @@ function Write-RemoteDrillStatus {
   $statusJson = ConvertTo-Json -InputObject $status -Compress -Depth 5
   Write-Utf8NoBom -Path $statusTmp -Content $statusJson
   try {
-    $remoteTemp = "/tmp/antifieldcloud-drill-status.json"
+    $remoteTemp = "/tmp/antifieldcloud-drill-{0}.json" -f ([guid]::NewGuid().ToString("N"))
     $upload = Invoke-NativeWithTimeout -FilePath "scp.exe" -Arguments @("-o", "BatchMode=yes", "-o", "ConnectTimeout=10", $statusTmp, "${target}:$remoteTemp") -TimeoutSeconds 60 -Label "scp upload: drill-status"
     if ($upload.ExitCode -ne 0) {
       throw (New-DrillException -Code "remote_status_write_failed" -Message "演练状态上传失败（exit=$($upload.ExitCode)）")
     }
-    $install = Invoke-NativeWithTimeout -FilePath "ssh.exe" -Arguments @("-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", $target, "sudo install -o root -g root -m 0644 '$remoteTemp' '$RemoteStatusPath' && rm -f '$remoteTemp'") -TimeoutSeconds 60 -Label "ssh install: drill-status"
+    $install = Invoke-NativeWithTimeout -FilePath "ssh.exe" -Arguments @("-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", $target, "sudo -n /usr/local/sbin/antifield-maint write-status drill '$remoteTemp'") -TimeoutSeconds 60 -Label "ssh install: drill-status"
     if ($install.ExitCode -ne 0) {
       throw (New-DrillException -Code "remote_status_write_failed" -Message "演练状态安装失败（exit=$($install.ExitCode)）：$($install.StdErr)")
     }

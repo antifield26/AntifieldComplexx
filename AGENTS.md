@@ -4,15 +4,16 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.2.1（2026-11-12 已部署）**。schema 21、mcbot 契约 v2。同 schema 回到 v1.2.0 仅还原 release 与配置，保留现行数据库及 WAL。退回 v1.1.1 必须恢复迁移前快照与 v1.1.1 release。Web、QQ 与 mcbot Agent 继续使用 DeepSeek Harness。OpenCode **v2.2.5** 仅用于恢复历史版本 v1.0.13（`1743323`）。
+**当前版本 v1.2.2（2026-11-13 已部署并验收）**。schema 21、mcbot 契约 v2。同 schema 回到 v1.2.0 仅还原 release 与配置，保留现行数据库及 WAL。退回 v1.1.1 必须恢复迁移前快照与 v1.1.1 release。Web、QQ 与 mcbot Agent 继续使用 DeepSeek Harness。OpenCode **v2.2.5** 仅用于恢复历史版本 v1.0.13（`1743323`）。
 
-生产 Workbench release 为 `20261112T115350Z`，mcbot 为 `20261112T115627Z`，DSH 为 `20261108T143448Z`。本次部署前快照 `db-predeploy-20261112T115510214Z.sqlite`（schema 21，sha256 `a04ae77571b118fa6b51b9d08fd4dde42852688ad5109ce28ee66bb0720c9202`）。最近演练 `20261112T115843Z`（schema 21，应用与世界隔离恢复）。公网界面开关保持默认开启。
+生产 Workbench release 为 `20261113T072133Z`，mcbot 为 `20261113T072417Z`（运行提交 `58b7693`），DSH 为 `20261113T080907Z`（QQ 包装器提交 `22103d8`，锁定依赖不变）。本次部署前快照 `db-predeploy-20261113T072147842Z.sqlite`（schema 21，sha256 `0f01b51bcc963eeef49216834ebf08d7dc775192ed2f0e406ec416bf0fa38651`）。最近演练 `20261113T081625Z`（schema 21，应用与世界隔离恢复）。公网界面开关保持默认开启。
 
 schema **v21**（设备登记与请求签名）。客户端与 schema 21 绑定。回到 v1.1.1 必须恢复 schema 20 快照 `db-predeploy-20261111T104848131Z.sqlite`（sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）、v1.1.1 release `/opt/antifieldcloud/releases/20261109T143755Z`、mcbot `/opt/mcbot/releases/20261110T022539Z`、当时的 Access 策略与公网界面。只恢复公网界面时把 `PUBLIC_APP_SHELL` 设为 true 并重启，不改 schema。
 
 **v1.0.7 基线（2026-11-04 已部署，commit `b17102b`）**：schema v19 为 `alert_events.dedupe_key`；mcbot 快照下发 `lastSuccessAt`；mcbot 进程不在或轮询过期走 `service_down`；寻路兜底进入自主重决策（不新增 MCP 工具，不挖掘/不放置/不跑酷）。OpenCode **v2.2.5** 已在树莓派运行，回滚备份 timestamp `20261104T062115Z`。v1.0.7 app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19）、mcbot `/opt/mcbot/releases/20261104T092858Z`。npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
 权威文档：
+- `docs/app/BACKLOG.md`：v1.2.2 当前 12 项进度，区分分支实现、生产启用与未完成验收；历史审计段落不重复计数。
 - `docs/app/PLAN.md`：范围、决策、阶段与验收
 - `docs/app/API.md`：HTTP 契约（服务端/前端共同遵守）
 - `docs/app/UI-SPEC.md`：界面与交互
@@ -180,6 +181,8 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 - 每个阶段结束给出「产出摘要 + 未决问题 + 验证证据」。
 
 ## 8. 已知环境事实（不要重复踩坑）
+
+- **v1.2.2（2026-11-13，已部署并验收）**：Workbench `20261113T072133Z`、mcbot `20261113T072417Z`（`58b7693`），DSH `20261113T080907Z`（QQ 监督器 `22103d8`，锁定版本不变）。双端保留数据升级，用户确认登录通过，MC 远程管理真机验收按用户要求跳过。整包 age 加密、PC 解密及 full＋3 inc／schema 21／世界隔离演练 `20261113T081625Z` 通过。Windows 任务 1.2.2，installedAt `2026-11-13T14:16:50.7758244Z`。无限免密 sudo 已撤销，日常使用 root 固定维护入口，管理员部署使用密码及已有全局 sudo 票据；不改 SSH。收权及异地启用后完整 Access smoke **39／0／0／0**。OneDrive 因 401 退役接入，Google Drive 独立 Production OAuth／drive.file／专用目录、32 MiB 分段、令牌刷新与 full＋3 inc 云端隔离恢复通过；每日异地任务 13:00，实际调度退出码 0，Pi 成功状态回写通过。版本以 `v1.2.2` Tag／Release 归档。当前状态以 BACKLOG／ACCEPTANCE 为准。
 
 - **v1.2.1（2026-11-12 已部署）**：Workbench `20261112T115350Z`、mcbot `20261112T115627Z`，运行提交 `0f7be18`；schema 21、契约 v2、DSH release 不变。部署前快照 `db-predeploy-20261112T115510214Z.sqlite`（schema 21）。完整 smoke **37／0／0／2**，演练 `20261112T115843Z` 通过。Windows 从正常下载目录运行 CI NSIS，避免工作区低完整性标签导致临时文件写入失败。Android 使用 Linux CI、SDK 36、原有兼容签名；五种密度和自适应 AC 图标由构建脚本同步，原生 WebView 禁用牵动固定导航的容器回弹。双端覆盖升级、功能及视觉经用户验收，Windows 最终重启自动恢复登录。备份任务 installedAt `2026-11-12T11:47:40.101391Z`。回退 v1.2.0 仅恢复 release 与配置，保留数据库及 WAL。已发布 annotated Tag `v1.2.1` 与 GitHub Release。Tag 指向 `26bcc70`，生产进程仍是 `0f7be18`。发布页附带 Windows x64 安装包、Android arm64 压缩包与 SHA256SUMS。
 

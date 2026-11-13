@@ -238,6 +238,11 @@ body {
   .native-titlebar-error { position: absolute; top: calc(var(--titlebar-height) + 6px); left: 10px; max-width: calc(100vw - 20px); margin-left: 0; padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--bg-elevated); box-shadow: var(--shadow-sm); }
 }
 
+.mcbot-goal-draft { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
+.mcbot-goal-draft > summary { min-height: 44px; cursor: pointer; color: var(--text); }
+.mcbot-goal-draft .input, .mcbot-goal-draft .select-field { width: 100%; margin-block: 6px 12px; }
+.mcbot-goal-draft ol { padding-left: 24px; }
+
 @media (max-width: 380px) {
   .launch-text strong { font-size: 15px; }
   .dashboard-launchpad-heading > span:last-child { display: none; }

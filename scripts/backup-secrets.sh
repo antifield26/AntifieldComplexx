@@ -156,7 +156,8 @@ case "${mcbot_enabled,,}" in
     task=$(read_setting /etc/mcbot/env TASK_STATE_FILE)
     mcbot_snapshot=$(mktemp -d "$snapshot_parent/mcbot.XXXXXX")
     chown mcbot:mcbot "$mcbot_snapshot"
-    helper=$(dirname -- "${BASH_SOURCE[0]}")/backup-mcbot-state.mjs
+    # 固定维护副本与 release 目录均使用这个非 root 快照入口；不得加载调用者指定脚本。
+    helper=/opt/antifieldcloud/current/scripts/backup-mcbot-state.mjs
     if ! result=$(runuser -u mcbot -- "$NODE_BIN" "$helper" capture "$mcbot_snapshot/mcbot-state" \
         "$data" "${goals:-$data/goals.db}" "${task:-$data/task-state.json}" 2>/dev/null); then
       printf '%s\n' "$result" >&2

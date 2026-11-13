@@ -1,3 +1,4 @@
+/** 露天采矿只处理配置内可达矿物，观察记忆按当前维度保存；不扩大挖掘和移动边界。 */
 import type { Bot } from 'mineflayer'
 import { Vec3 } from 'vec3'
 import type { Config } from '../config.ts'
@@ -5,7 +6,7 @@ import { surveyRing } from './navigation.ts'
 import { depositProduce } from './deposit.ts'
 import { equipItem } from './inventory.ts'
 import { isExpired, requireBot, sleep, TaskError, TaskStopError, type TaskContext } from './types.ts'
-import { readResourceMemory, rememberedOreTargets, rememberedProbes } from './memory-points.ts'
+import { readResourceMemory, rememberedOreTargets, rememberedProbes, rememberObservedResources } from './memory-points.ts'
 import { playerNear, scanExposedOres, type OreTarget } from './resources.ts'
 
 function freshPickaxe (bot: Bot): ReturnType<Bot['inventory']['items']>[number] | null {
@@ -106,6 +107,10 @@ export async function runMining (ctx: TaskContext): Promise<void> {
         })
       }
       targets = scanExposedOres(bot, config).filter(target => !skipped.has(pointKey(target.position)))
+      if (!ctx.signal.aborted) {
+        await rememberObservedResources(bot, config, 'ore', targets)
+          .catch(() => ctx.logger.warn('资源记忆保存失败，继续使用已观察的采集目标'))
+      }
       continue
     }
 
@@ -148,14 +153,14 @@ function pointKey (position: Vec3): string {
 }
 
 function rememberOres (bot: Bot, config: Config, skipped: Set<string>): OreTarget[] {
-  return rememberedOreTargets(bot, config, readResourceMemory(config.dataDir))
+  return rememberedOreTargets(bot, config, readResourceMemory(config.dataDir, bot.game?.dimension))
     .filter(target => !skipped.has(pointKey(target.position)))
 }
 
 function nextOreProbe (bot: Bot, config: Config, skipped: Set<string>, tried: Set<string>): Vec3 | null {
   const origin = bot.entity?.position
   if (!origin) return null
-  return rememberedProbes(bot, readResourceMemory(config.dataDir), 'ore', origin, config.scanRadius * 2)
+  return rememberedProbes(bot, readResourceMemory(config.dataDir, bot.game?.dimension), 'ore', origin, config.scanRadius * 2)
     .find(point => {
       const key = pointKey(point)
       return !skipped.has(key) && !tried.has(key)

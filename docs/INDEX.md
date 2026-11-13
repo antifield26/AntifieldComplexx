@@ -1,7 +1,7 @@
 # AntifieldComplexx 文档索引
 
-> 当前版本 v1.2.1（2026-11-12 已部署），schema 21 / mcbot 契约 v2 / DeepSeek Harness 0.2.2-rc.1。OpenCode 2.2.5 已从 Pi 退役。路径见 [ACCEPTANCE](app/ACCEPTANCE.md)。
-> 客户端与 schema 21 绑定。当前演练 `20261112T115843Z`（schema 21）。退回 v1.1.1 必须恢复迁移前快照、旧 release、Access 策略与公网界面。
+> 当前 v1.2.2 已部署并验收（2026-11-13），schema 21 / mcbot 契约 v2 / DeepSeek Harness 0.2.2-rc.1。当前事项见 [BACKLOG](app/BACKLOG.md)，生产证据见 [ACCEPTANCE](app/ACCEPTANCE.md)。
+> 客户端与 schema 21 绑定。当前应用／世界演练 `20261113T081625Z`（schema 21）。退回 v1.1.1 必须恢复迁移前快照、旧 release、Access 策略与公网界面。
 > 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区、主机监控与备份灾备。
 
 ## 应用（apps/workbench，Web 端）
@@ -14,11 +14,13 @@
 | [UI-SPEC](app/UI-SPEC.md) | 界面与交互 |
 | [DEPLOY](app/DEPLOY.md) | 部署、升级、回滚与主机配置 |
 | [BACKUP](app/BACKUP.md) | 应用归档、世界备份、恢复演练 |
+| [备份隐私说明](app/BACKUP-OAUTH-PRIVACY.md) | 自用 Google Drive 备份的授权范围、数据用途与撤销 |
 | [SECURITY](app/SECURITY.md) | 安全模型、边界与加固 |
 | [CHATBOT](app/CHATBOT.md) | QQ chatbot 子系统（原 bot，schema v18 更名） |
 | [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.1.1 与历史版本结果） |
 | [ROADMAP](app/ROADMAP.md) | 版本边界与后续路线 |
 | [AUDIT](app/AUDIT.md) | 审计与修复总记录（含 v1.1.1 至 v1.0.5、磁盘审计附录） |
+| [BACKLOG](app/BACKLOG.md) | 当前 12 项收口台账，区分分支、生产及未决验证 |
 
 ## Minecraft bot（apps/mcbot）
 

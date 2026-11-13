@@ -4,7 +4,7 @@ import test from 'node:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MAX_STATUS_FILE_BYTES, readStatusFile } from '../src/util/status.ts'
+import { MAX_STATUS_FILE_BYTES, readStatusFile, readStatusText } from '../src/util/status.ts'
 
 test('状态文件：合法对象读取，缺失/非对象/坏 JSON 降级 null', () => {
   const dir = mkdtempSync(join(tmpdir(), 'afc-status-'))
@@ -47,6 +47,19 @@ test(`状态文件超过 ${MAX_STATUS_FILE_BYTES} 字节降级 null（DATA-05）
     const oversized = join(dir, 'oversized.json')
     writeFileSync(oversized, `${prefix}${padding}x${suffix}`)
     assert.equal(readStatusFile(oversized), null, '超过上限应降级 null')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('状态文本按实际 UTF-8 字节限制，目录与过大文件拒绝读取', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'afc-status-bytes-'))
+  try {
+    const file = join(dir, 'state.json')
+    writeFileSync(file, JSON.stringify({ value: '中'.repeat(MAX_STATUS_FILE_BYTES / 2) }))
+    assert.throws(() => readStatusText(file), /status_file_invalid/)
+    assert.equal(readStatusFile(file), null)
+    assert.throws(() => readStatusText(dir))
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

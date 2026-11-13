@@ -1,8 +1,10 @@
+/** 原生登录登记使用当前产品版本，并保留设备签名与受限会话存储边界。 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AuthProvider, useAuth } from './AuthContext'
 import { setNativeBridgeForTests, type NativeBridge } from '../lib/native'
+import { APP_VERSION } from '../lib/app-version'
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -107,7 +109,7 @@ describe('客户端登录', () => {
     const init = loginCall?.[1]
     const body = JSON.parse(String(init?.body)) as { device: { publicKey: string; appVersion: string; name: string } }
     expect(body.device.publicKey).toBe('a'.repeat(43))
-    expect(body.device.appVersion).toBe('1.2.1')
+    expect(body.device.appVersion).toBe(APP_VERSION)
     expect(body.device.name).toBe('这台 Windows')
     expect(init?.credentials).toBe('omit')
     expect(bridge.storeSession).toHaveBeenCalledWith('session-1', 'device-1')

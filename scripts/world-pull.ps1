@@ -18,6 +18,7 @@
 # 所有 ssh/scp 都有硬超时，超时通过 taskkill /T /F 杀进程树，不会无限挂起。
 # 依赖：直连网线可达 $PiHost；SSH 公钥已配置；Pi 上已安装 antifieldcloud-world.timer 并至少生成过一份归档。
 $ErrorActionPreference = "Stop"
+if ($RemoteBackupDir -ne "/var/lib/antifieldcloud/world-backups" -or $RemoteStatusPath -ne "/var/lib/antifieldcloud/world-pull-status.json") { throw "固定维护入口不接受自定义备份或状态路径" }
 # OP-06：远端为 UTF-8；PS 5.1 默认按 GBK 解码 ssh 输出会让中文 JSON 解析失败，这里显式统一编码。
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -306,10 +307,8 @@ function Copy-FromPi {
 function Invoke-Ack {
   param([string]$Name)
   Assert-ArchiveName -Name $Name
-  $archive = "$RemoteBackupDir/$Name"
-  $sidecar = "$archive.sha256"
   # 只有本地 SHA-256 校验并原子改名成功后才删除远端归档（两阶段 ack）。
-  Invoke-PiSsh -Command "sudo rm -f -- '$archive' '$sidecar'" | Out-Null
+  Invoke-PiSsh -Command "sudo -n /usr/local/sbin/antifield-maint remove-archive world '$Name'" | Out-Null
 }
 
 function Invoke-PullArchive {
@@ -432,7 +431,7 @@ function Write-RemoteStatus {
   $statusJson = ConvertTo-Json -InputObject $status -Compress -Depth 5
   Write-Utf8NoBom -Path $statusTmp -Content $statusJson
   try {
-    $remoteTemp = "/tmp/antifieldcloud-world-pull.json"
+    $remoteTemp = "/tmp/antifieldcloud-world-pull-{0}.json" -f ([guid]::NewGuid().ToString("N"))
     $arguments = @(
       "-o", "BatchMode=yes",
       "-o", "ConnectTimeout=10",
@@ -443,7 +442,7 @@ function Write-RemoteStatus {
     if ($upload.ExitCode -ne 0) {
       Throw-PullError -Code "status_write_failed" -Message "状态 JSON 上传失败（exit=$($upload.ExitCode)）"
     }
-    Invoke-PiSsh -Command "sudo install -o root -g root -m 0644 '$remoteTemp' '$RemoteStatusPath' && rm -f '$remoteTemp'" | Out-Null
+    Invoke-PiSsh -Command "sudo -n /usr/local/sbin/antifield-maint write-status world '$remoteTemp'" | Out-Null
     Write-Log "已写入远端拉取状态：$RemoteStatusPath"
   } catch {
     Write-Log "错误：写入远端拉取状态失败：$($_.Exception.Message)"

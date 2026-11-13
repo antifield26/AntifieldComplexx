@@ -15,7 +15,7 @@
  */
 import { execFile } from 'node:child_process'
 import { createHmac } from 'node:crypto'
-import { readFileSync, statfsSync } from 'node:fs'
+import { statfsSync } from 'node:fs'
 import type { DatabaseSync } from 'node:sqlite'
 import os from 'node:os'
 import { promisify } from 'node:util'
@@ -23,6 +23,7 @@ import type { Config } from '../config.ts'
 import { transaction } from '../db.ts'
 import { readOutboundHealth } from '../chatbot/outbound.ts'
 import { nowIso } from '../util/time.ts'
+import { MAX_STATUS_FILE_BYTES, readStatusText } from '../util/status.ts'
 import { agentServiceUnits, dshReadiness, withDshReadiness } from '../dashboard/dsh.ts'
 import { ExternalAlertOutbox, type InsertPlan } from './outbox.ts'
 import { verifyWecomReply, wecomPayload } from './wecom.ts'
@@ -359,7 +360,7 @@ export class AlertService {
       now: deps.now ?? (() => new Date()),
       fetch: deps.fetch ?? ((input, init) => fetch(input, init)),
       sleep: deps.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))),
-      readFile: deps.readFile ?? ((path) => readFileSync(path, 'utf8')),
+      readFile: readStatusText,
       statfs: deps.statfs ?? defaultStatfs,
       memory: deps.memory ?? defaultMemory,
       log:
@@ -371,6 +372,13 @@ export class AlertService {
           else console.info(`[alerts] ${line}`)
         }),
       ...deps,
+    }
+    // 注入读取器同样遵守字节边界，避免测试或适配器绕开状态文件契约。
+    const read = deps.readFile ?? readStatusText
+    this.deps.readFile = (path) => {
+      const raw = read(path)
+      if (Buffer.byteLength(raw, 'utf8') > MAX_STATUS_FILE_BYTES) throw new Error('status_file_too_large')
+      return raw
     }
     this.memoryUsedPct = deps.memoryUsedPct ?? DEFAULT_MEMORY_USED_PCT
     this.unknownThreshold = Math.max(1, deps.unknownThreshold ?? UNKNOWN_DEGRADE_THRESHOLD)

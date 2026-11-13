@@ -1,8 +1,24 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.1）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.2）
+
+## v1.2.2 维护权限与回滚（已验收）
+
+应用生产版本已为 v1.2.2。首次由管理员运行 `sudo bash scripts/install-maintenance.sh`，安装 root 持有且不可由普通用户改写的独立维护脚本、密钥包脚本和 sudoers。安装动作不撤销旧规则。日常拉取、世界拉取、演练状态及 smoke 改用 `/usr/local/sbin/antifield-maint` 的固定动词；不接受任意命令、环境覆盖或自定义 root 路径。调用方环境清除，状态源要求普通文件、调用者属主及 64 KiB 上限。
+
+运行代码已更新为 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`（提交 `58b7693`），同 schema 回退使用各自的 v1.2.1 `20261112T115350Z`／`20261112T115627Z`，保留数据库及 WAL。DSH runtime `20261113T080907Z` 部署 QQ 监督器，依赖不变。无限免密 sudo 已撤销，Windows 任务已更新 1.2.2；完整 Access smoke 39／0／0／0。Google Drive 回下载、隔离恢复、无人值守令牌刷新及每日计划任务实跑均通过。
+
+部署、安装依赖、release 切换和配置修改继续使用管理员密码认证；不要把 bash、node、npm、install、tee 或通配路径加入免密规则。部署脚本需要已建立的管理员维护通道；固定入口无部署能力。每次更新独立维护脚本须重新由管理员安装并核对 SHA，不能仅依赖 release 指针变化。
+
+Pi 已有 `Defaults timestamp_type=global`，本版保持该设置。收权后，管理员先在交互终端运行 `ssh -t <user>@<pi> 'sudo -v'` 输入密码，再在票据有效期内运行 PC 部署脚本；长任务可在另一交互终端续票。密码不保存到脚本或环境文件。无人值守备份只使用固定入口，无需管理员票据。
+
+QQ 监督器变更通过新的独立 DSH release 切换，只替换包装器和监督模块，保留锁定依赖、账号、配置及会话／记忆数据。只重启 QQ，验证三路就绪与版本；失败恢复旧 runtime 指针并仅重启 QQ，不恢复旧数据库覆盖新写入。
+
+收权前记录原规则，安排 root 持有的定时回退；验证独立 SSH 下固定入口、每日／世界拉取和 smoke，临时撤销 `010_antifield-nopasswd` 后验证，通过才取消回退。密码管理权限保留，不改 SSH 配置。若验证失败，在回退计时内恢复原规则；不以恢复无限免密代替修复脚本。
+
+同 schema 回滚仅恢复 v1.2.1 release 与配置，保留数据库及 WAL。主世界记忆仍是 version 1 的原文件，下界／末地侧文件保留；旧运行时忽略侧文件。新 Windows 任务依赖固定维护入口，应用回滚不卸载该入口；回滚旧任务须先核对其提权要求。加密配置回滚需保全新密文链和受限配置，不删除既有归档。
 
 ## v1.2.1 构建与发布
 
-生产 v1.2.1 已于 2026-11-12 部署，当前 schema **v21**。Workbench `20261112T115350Z`，mcbot `20261112T115627Z`。同 schema 回到 v1.2.0：恢复部署前保存的配置及 Workbench `20261111T104738Z`／mcbot `20261111T105117Z` 指针，保留现行数据库及 WAL。本次一致性快照 `db-predeploy-20261112T115510214Z.sqlite`（schema 21，SHA-256 `a04ae77571b118fa6b51b9d08fd4dde42852688ad5109ce28ee66bb0720c9202`）用于数据库损坏恢复，不覆盖升级后的正常写入。
+历史 v1.2.1 于 2026-11-12 部署，schema **v21**。Workbench `20261112T115350Z`，mcbot `20261112T115627Z`。同 schema 回到 v1.2.0：恢复部署前保存的配置及 Workbench `20261111T104738Z`／mcbot `20261111T105117Z` 指针，保留现行数据库及 WAL。本次一致性快照 `db-predeploy-20261112T115510214Z.sqlite`（schema 21，SHA-256 `a04ae77571b118fa6b51b9d08fd4dde42852688ad5109ce28ee66bb0720c9202`）用于数据库损坏恢复，不覆盖升级后的正常写入。
 
 三个公开 HTTPS 源由未提交的 .local/client-build.env 或 CI 环境提供：VITE_API_ORIGIN、VITE_AI_ORIGIN、VITE_ACCESS_ORIGIN。npm run build:client:windows／build:client:android 同时注入 Vite 和 Cargo，缺失或非法即失败。
 
@@ -424,7 +440,7 @@ sudo -u opencode /var/lib/opencode/.opencode/bin/opencode --version   # 期望 v
 ### 3.3 Node.js 运行时安全更新（v26.13.0）
 
 生产应用使用 `/usr/local/bin/node`（systemd `ExecStart`）；npm/npx 仍指向 nvm（仅构建/部署工具）。
-当前生产为 **v26.13.0**（2026-11-07，官方 linux-arm64，SHA-256 校验通过）。相对 v26.12.1 只切换 Lithium LTS 标记，没有其它运行时改动。npm 仍是 nvm 12.2.0。`/usr/local/bin/node` 与 `/usr/local/lib/nodejs/node-v26.13.0-linux-arm64` 保留；`node.v26.12.1`、`node.v26.11.1` 和 `node-v26.12.1-linux-arm64` 已删除。Node 升级当时应用与 mcbot `/healthz` 为 1.0.13。当前应用与 mcbot `/healthz` 为 v1.2.1，schema 21，契约 v2。
+当前生产为 **v26.13.0**（2026-11-07，官方 linux-arm64，SHA-256 校验通过）。相对 v26.12.1 只切换 Lithium LTS 标记，没有其它运行时改动。npm 仍是 nvm 12.2.0。`/usr/local/bin/node` 与 `/usr/local/lib/nodejs/node-v26.13.0-linux-arm64` 保留；`node.v26.12.1`、`node.v26.11.1` 和 `node-v26.12.1-linux-arm64` 已删除。Node 升级当时应用与 mcbot `/healthz` 为 1.0.13。当前应用与 mcbot `/healthz` 为 v1.2.2，schema 21，契约 v2。
 
 下面是 2026-10-22 从 v26.11.1 升到 **v26.12.1** 的记录。未改动应用版本/schema。
 

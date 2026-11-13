@@ -1,6 +1,6 @@
 [package]
 name = "antifieldcomplexx-client"
-version = "1.2.1"
+version = "1.2.2"
 description = "AntifieldComplexx Windows 与 Android 客户端"
 edition = "2021"
 license = "MIT"

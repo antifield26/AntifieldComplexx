@@ -18,7 +18,7 @@
  * - rclone 通过 execFile 以参数数组调用（无 shell 拼接）。
  *
  * 用法（由 backup-offsite.ps1 调用）：
- *   node scripts/backup-offsite.mjs --backup-root <dir> --remote <rclone-remote:path> \
+ *   node scripts/backup-offsite.mjs --backup-root <dir> --remote <rclone-remote> \
  *     --remote-label <label> [--keep-days 30] [--max-delete 50] [--dry-run] [--json-out <file>]
  *
  * 退出码：0=成功（含“无新归档”）；1=失败（状态仍输出 ok=false）；2=参数错误。
@@ -238,10 +238,11 @@ export function scanLocalArchives(backupRoot) {
 }
 
 /** rclone 运行器：execFile 参数数组，无 shell；测试可注入假 runner。 */
-export function createRcloneRunner(rcloneBin = 'rclone') {
+export function createRcloneRunner(rcloneBin = 'rclone', config = '') {
   return function run(args, { timeoutMs = 30 * 60 * 1000 } = {}) {
     return new Promise((resolvePromise) => {
-      execFile(rcloneBin, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
+      const commandArgs = config ? ['--config', config, ...args] : args
+      execFile(rcloneBin, commandArgs, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
         const code = error && typeof error.code === 'number' ? error.code : error ? 1 : 0
         resolvePromise({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') })
       })
@@ -251,23 +252,25 @@ export function createRcloneRunner(rcloneBin = 'rclone') {
 
 /** 远端目录拼接（用于 lsf 列表）；校验 remote/remotePath 后返回目录路径。 */
 export function remoteBase(remote, remotePath) {
-  if (!/^[A-Za-z0-9_.:-]+$/.test(String(remote ?? ''))) throw new Error('invalid_remote')
+  const name = String(remote ?? '').replace(/:$/, '')
+  // 显式远端冒号避免 rclone 把配置名当本地目录；单字母会与 Windows 盘符冲突。
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(name) || /^[A-Za-z]$/.test(name)) throw new Error('invalid_remote')
   if (!/^[A-Za-z0-9_./-]*$/.test(String(remotePath ?? '')) || String(remotePath).includes('..')) throw new Error('invalid_remote_path')
-  const base = String(remote).replace(/\/+$/, '')
+  const base = `${name}:`
   const sub = String(remotePath).replace(/^\/+|\/+$/g, '')
-  return sub ? `${base}/${sub}` : base
+  return `${base}${sub}`
 }
 
 /** 远端 rclone 路径拼接：远端/<path>/<name>；拒绝路径穿越/控制字符。 */
 export function remoteJoin(remote, remotePath, name) {
   const base = remoteBase(remote, remotePath)
-  if (!/^[A-Za-z0-9_.-]+$/.test(String(name ?? ''))) throw new Error('invalid_remote_name')
-  return `${base}/${name}`
+  if (!/^[A-Za-z0-9_.-]+$/.test(String(name ?? '')) || name === '.' || name === '..') throw new Error('invalid_remote_name')
+  return `${base}${base.endsWith(':') ? '' : '/'}${name}`
 }
 
 /** 解析命令行参数（仅接受白名单参数）。 */
 export function parseArgs(argv) {
-  const options = { backupRoot: '', remote: '', remotePath: '', remoteLabel: '', keepDays: 30, maxDelete: 50, dryRun: false, jsonOut: '', rcloneBin: 'rclone', verify: true }
+  const options = { backupRoot: '', remote: '', remotePath: '', remoteLabel: '', keepDays: 30, maxDelete: 50, dryRun: false, jsonOut: '', rcloneBin: 'rclone', rcloneConfig: '', verify: true }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     const next = () => {
@@ -283,6 +286,7 @@ export function parseArgs(argv) {
     else if (arg === '--max-delete') options.maxDelete = Math.max(0, Number.parseInt(next(), 10) || 0)
     else if (arg === '--json-out') options.jsonOut = next()
     else if (arg === '--rclone-bin') options.rcloneBin = next()
+    else if (arg === '--rclone-config') options.rcloneConfig = next()
     else if (arg === '--dry-run') options.dryRun = true
     else if (arg === '--no-verify') options.verify = false
     else if (arg === '--help') options.help = true
@@ -305,7 +309,7 @@ export function parseLsfOutput(text) {
  * deps = { runRclone, sha256File, now, logger }
  */
 export async function runOffsite(options, deps = {}) {
-  const runRclone = deps.runRclone ?? createRcloneRunner(options.rcloneBin)
+  const runRclone = deps.runRclone ?? createRcloneRunner(options.rcloneBin, options.rcloneConfig)
   const hashFile = deps.sha256File ?? sha256File
   const now = deps.now ?? (() => Date.now())
   const log = deps.logger ?? ((message) => console.error(message))

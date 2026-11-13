@@ -149,7 +149,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
       - name: Shellcheck scripts
-        run: shellcheck -S warning scripts/*.sh deploy/*.sh deploy/dsh/*.sh apps/mcbot/deploy/*.sh
+        run: shellcheck -S warning scripts/*.sh deploy/*.sh deploy/dsh/*.sh apps/mcbot/deploy/*.sh deploy/host/antifield-maint
+      - name: 校验固定维护 sudoers
+        run: sudo visudo -cf deploy/host/020-antifield-maint.sudoers
 
   nftables:
     runs-on: ubuntu-latest

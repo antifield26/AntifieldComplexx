@@ -1,3 +1,4 @@
+/** AI 代理以本机假上游验证认证、流式连接及失败响应，不调用真实模型或平台。 */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -42,6 +43,42 @@ function get(
     req.end()
   })
 }
+
+test('代理保留上游限流与 Retry-After，连接失败返回脱敏业务错误', async () => {
+  const upstream = createServer((_req, res) => {
+    res.writeHead(429, { 'content-type': 'application/json', 'retry-after': '2' })
+    res.end('{"error":"rate_limited"}')
+  })
+  const port = await listen(upstream)
+  const dir = tempDataDir()
+  const db = testDb(dir)
+  const seeded = await seedAdmin(db)
+  const session = createSession(db, seeded.userId, 'csrf', 7, '127.0.0.1', 'fixture')
+  const context = await buildApp(testConfig(dir, { opencodeUrl: `http://127.0.0.1:${port}`, opencodePassword: 'never-expose-credential' }), db)
+  await context.app.listen({ host: '127.0.0.1', port: 0 })
+  const address = context.app.server.address()
+  assert.ok(address && typeof address === 'object')
+  try {
+    const headers = { host: 'ai.test', cookie: `af_session=${session.token}`, accept: 'application/json' }
+    const limited = await get(address.port, '/api/session', headers)
+    assert.equal(limited.status, 429)
+    assert.equal(limited.headers['retry-after'], '2')
+    assert.equal(limited.body, '{"error":"rate_limited"}')
+    upstream.closeAllConnections()
+    await new Promise<void>(resolve => upstream.close(() => resolve()))
+    const unavailable = await get(address.port, '/api/session', headers)
+    assert.equal(unavailable.status, 502)
+    assert.equal(JSON.parse(unavailable.body).error.code, 'opencode_unavailable')
+    assert.doesNotMatch(unavailable.body, /never-expose|127\.0\.0\.1|ECONNREFUSED/)
+  } finally {
+    context.proxy.close()
+    await context.app.close()
+    upstream.closeAllConnections()
+    upstream.close()
+    db.close()
+    cleanupDir(dir)
+  }
+})
 
 test('opencode 反代：会话校验、注入 Basic、剥离 Cookie', async () => {
   const upstreamRecords: UpstreamRecord[] = []

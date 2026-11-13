@@ -1,6 +1,6 @@
 {
   "name": "antifieldcomplexx",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "license": "MIT",
   "description": "AntifieldComplexx monorepo（apps/workbench + apps/client + apps/mcbot）",

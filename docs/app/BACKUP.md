@@ -1,5 +1,27 @@
 # 备份与恢复
 
+## v1.2.2 加密与固定维护入口补充（已验收）
+
+整包加密已在本轮生产配置开启，应用进程为 v1.2.2。Pi 只持有独立备份公钥，私钥保留 PC 及第二份离线副本；失败不回落明文。历史明文仅保留在原本机受限目录，不上传，不以删除历史归档规避告警。异地检查要求存在完整密文恢复基线，`plaintextSkipped` 记录历史明文数量，不等同于外泄。
+
+`-Remote`／`-OffsiteRemote` 接受 rclone 配置名（末尾冒号可省略），脚本统一补齐远端语法；子目录只通过 `-RemotePath` 传入。单字母盘符、本地路径、临时后端及嵌入子路径的名称被拒绝，避免把本地目录误报为异地副本。
+
+Windows 异地任务可显式传入 `-RcloneBin` 和 `-RcloneConfig`，不依赖交互终端环境；配置目录 ACL 仅当前用户、Administrators 与 SYSTEM。历史 OneDrive 接入的根 ID 使用专用目录的 `driveID#itemID` 规范格式；此目录限制是客户端配置边界，OAuth 权限本身不是文件夹级授权。禁止为排障持久化扩大到整盘 remote。脚本仍只复制 `.tar.gz.age` 与 SHA／元数据旁文件，不上传历史明文或私钥。
+
+OneDrive 已因分段上传与官方下载均返回 401 而停止本轮接入，既有密文保留核对，云端未通过恢复验收。用户选择的 Google Drive 已通过真实分段上传、回下载 SHA／解密和云端 full＋3 inc 隔离恢复；每日 13:00 异地任务已启用，实际调度退出 0 并写回成功状态。旧 OneDrive 既有密文仅保留核对，没有启用其任务。
+
+Google Drive 使用独立 OAuth 客户端、`drive.file` 最小范围和专用备份目录 root ID；备份程序只见其创建的文件／文件夹，目录限制是额外的客户端边界。rclone 共享客户端正在退役，不能作为长期备份依赖；自建 OAuth 应用应处于 Production，避免 Testing 授权七天失效。账号登录、条款与两步验证由账号持有人完成。凭据文件和刷新令牌只保存在受限 PC 配置目录，不进入 Pi 或状态文件。[rclone 官方配置说明](https://rclone.org/drive/#making-your-own-client-id)
+
+OAuth 公开首页与隐私说明使用独立静态站点，源文件在 `deploy/backup-info/`，隐私正文见 [BACKUP-OAUTH-PRIVACY](BACKUP-OAUTH-PRIVACY.md)。自有域名经 Google 所有权验证后登记到品牌配置，不使用无权验证的第三方平台根域名。实际账号验证标记只保留在部署副本，凭据不进入站点。
+
+当前异地任务只复制应用 `.tar.gz.age` 恢复链及其旁文件；世界归档和独立密钥包仍由 PC 拉取保留。云端应用恢复验收使用全新目录，只回下载云端文件，不混用原本地归档；应用／世界完整演练另行保留。
+
+目标库一致性快照、任务状态和主世界记忆继续收录。新增 `world-memory.nether.json`、`world-memory.end.json`，每个文件独立 SHA／大小及 included／not_created／read_failed。历史清单缺少这两个字段时，仅在对应文件实际不存在时允许；已存在的未登记或损坏内容必须拒绝。隔离恢复验证维度侧文件，不在生产启动恢复副本。
+
+目标库的隔离快照切为 DELETE journal 模式，再校验与计算 SHA，归档只依赖单个数据库文件。生产原库的 WAL 不修改。历史密钥包可能带空 WAL 与 SHM；在已验证整包密文 SHA 和 age 解密的隔离副本上，确认 WAL 为空后可去除辅助文件，再按 manifest 验证数据库；非空未登记 WAL 不得静默丢弃。
+
+管理员先安装 `scripts/install-maintenance.sh`，再更新 Windows 任务。root 状态目的地固定；备份／世界／演练／异地状态由固定维护入口写入，来源为随机临时文件并受 64 KiB 上限约束。密钥包提权脚本是 release 外的 root 独立副本，快照业务代码以 mcbot 身份运行。实际云端回下载、密钥包解密及完整演练完成后，才可把本轮异地状态记为验收通过。
+
 ## v1.2.1 异地完整性与演练
 
 远端密文、SHA-256 与元数据三件套齐备才计入已上传集合和保留基线；残缺集合补传，checksum／immutable 防止覆盖同名冲突。任上传、大小校验或最终远端确认失败时本轮不删除。错误 remote_confirmation_failed／partial_failure_no_retention 保留诊断。

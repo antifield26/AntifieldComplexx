@@ -1,9 +1,9 @@
 /**
- * 自主会话的结构化世界记忆。与聊天记忆分开，落在 dataDir/world-memory.json。
+ * 自主会话与资源观察共享的结构化世界记忆，按维度分文件，与聊天记忆分开。
  *
  * 边界：
  * - 分类只有 place、resource、food、danger、route、note。
- * - 最多 200 条；键 1–64，正文 1–240。已有键可更新，满额后拒绝新键。
+ * - 每维度最多 200 条；键 1–64，正文 1–240。已有键可更新，满额后拒绝新键。
  * - 文件 0600，先写临时文件再替换。损坏或超限文件隔离后按空记忆继续。
  * - 不启动任务，不写入 Workbench 数据库。提示词只使用索引，不携带正文。
  */
@@ -32,8 +32,27 @@ export interface WorldMemoryIndex {
   recentKeys: Array<{ category: WorldMemoryCategory, key: string }>
 }
 
-export function worldMemoryPath (dataDir: string): string {
-  return path.join(dataDir, 'world-memory.json')
+export function memoryDimension (dimension = 'minecraft:overworld'): 'overworld' | 'nether' | 'end' {
+  if (dimension === 'minecraft:overworld' || dimension === 'overworld') return 'overworld'
+  if (dimension === 'minecraft:the_nether' || dimension === 'the_nether' || dimension === 'nether') return 'nether'
+  if (dimension === 'minecraft:the_end' || dimension === 'the_end' || dimension === 'end') return 'end'
+  throw new WorldMemoryError('memory_dimension_invalid', 'dimension is not supported')
+}
+
+export function worldMemoryPath (dataDir: string, dimension?: string): string {
+  const scope = memoryDimension(dimension)
+  return path.join(dataDir, scope === 'overworld' ? 'world-memory.json' : `world-memory.${scope}.json`)
+}
+
+// 按文件共享写队列，避免自动观察与自主工具在同一进程互相覆盖；弱引用不延长运行实例寿命。
+const stores = new Map<string, WeakRef<WorldMemoryStore>>()
+export function sharedWorldMemory (dataDir: string, dimension?: string, logger?: Logger): WorldMemoryStore {
+  const file = path.resolve(worldMemoryPath(dataDir, dimension))
+  const existing = stores.get(file)?.deref()
+  if (existing) return existing
+  const store = new WorldMemoryStore(file, logger)
+  stores.set(file, new WeakRef(store))
+  return store
 }
 
 export class WorldMemoryError extends Error {
