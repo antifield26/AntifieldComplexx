@@ -1,6 +1,6 @@
 # AntifieldComplexx 文档索引
 
-> 当前候选 v1.2.2，生产应用 v1.2.1（2026-11-12 已部署），schema 21 / mcbot 契约 v2 / DeepSeek Harness 0.2.2-rc.1。当前事项见 [BACKLOG](app/BACKLOG.md)，生产证据见 [ACCEPTANCE](app/ACCEPTANCE.md)。
+> 当前 v1.2.2 已部署（2026-11-13，运维验收中，尚未发布），schema 21 / mcbot 契约 v2 / DeepSeek Harness 0.2.2-rc.1。当前事项见 [BACKLOG](app/BACKLOG.md)，生产证据见 [ACCEPTANCE](app/ACCEPTANCE.md)。
 > 客户端与 schema 21 绑定。当前演练 `20261112T115843Z`（schema 21）。退回 v1.1.1 必须恢复迁移前快照、旧 release、Access 策略与公网界面。
 > 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区、主机监控与备份灾备。
 

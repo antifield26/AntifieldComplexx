@@ -4,9 +4,9 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.2.2（开发中；生产 v1.2.1 于 2026-11-12 部署）**。schema 21、mcbot 契约 v2。同 schema 回到 v1.2.0 仅还原 release 与配置，保留现行数据库及 WAL。退回 v1.1.1 必须恢复迁移前快照与 v1.1.1 release。Web、QQ 与 mcbot Agent 继续使用 DeepSeek Harness。OpenCode **v2.2.5** 仅用于恢复历史版本 v1.0.13（`1743323`）。
+**当前版本 v1.2.2（2026-11-13 已部署；运维验收中，尚未发布）**。schema 21、mcbot 契约 v2。同 schema 回到 v1.2.0 仅还原 release 与配置，保留现行数据库及 WAL。退回 v1.1.1 必须恢复迁移前快照与 v1.1.1 release。Web、QQ 与 mcbot Agent 继续使用 DeepSeek Harness。OpenCode **v2.2.5** 仅用于恢复历史版本 v1.0.13（`1743323`）。
 
-生产 Workbench release 为 `20261112T115350Z`，mcbot 为 `20261112T115627Z`，DSH 为 `20261108T143448Z`。本次部署前快照 `db-predeploy-20261112T115510214Z.sqlite`（schema 21，sha256 `a04ae77571b118fa6b51b9d08fd4dde42852688ad5109ce28ee66bb0720c9202`）。最近演练 `20261112T115843Z`（schema 21，应用与世界隔离恢复）。公网界面开关保持默认开启。
+生产 Workbench release 为 `20261113T072133Z`，mcbot 为 `20261113T072417Z`（运行提交 `58b7693`），DSH 为 `20261108T143448Z`。本次部署前快照 `db-predeploy-20261113T072147842Z.sqlite`（schema 21，sha256 `0f01b51bcc963eeef49216834ebf08d7dc775192ed2f0e406ec416bf0fa38651`）。最近演练 `20261113T060053Z`（schema 21，应用与世界隔离恢复）。公网界面开关保持默认开启。
 
 schema **v21**（设备登记与请求签名）。客户端与 schema 21 绑定。回到 v1.1.1 必须恢复 schema 20 快照 `db-predeploy-20261111T104848131Z.sqlite`（sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）、v1.1.1 release `/opt/antifieldcloud/releases/20261109T143755Z`、mcbot `/opt/mcbot/releases/20261110T022539Z`、当时的 Access 策略与公网界面。只恢复公网界面时把 `PUBLIC_APP_SHELL` 设为 true 并重启，不改 schema。
 

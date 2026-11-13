@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { publishRuntimeStatus } from './runtime-status.mjs'
+import { createQqWatchdog } from './qq-watchdog.mjs'
 
 const runtime = fileURLToPath(new URL('.', import.meta.url))
 const id = /^[A-Za-z0-9_-]{1,128}$/
@@ -54,21 +55,22 @@ try {
   child.stdin.on('error', () => undefined)
   child.stderr.resume()
   let stopping = false
-  let ready = false
+  const watchdog = createQqWatchdog(child, (ready) => publishRuntimeStatus(DSH_STATUS_PATH, ready, '0.5.5'), {
+    report: (message) => console.warn(message),
+  })
   const lines = createInterface({ input: child.stdout })
   lines.on('line', (line) => {
     if (line === 'antifieldcomplexx-qq-ready' || line === 'antifieldcomplexx-qq-disconnected') {
-      ready = line === 'antifieldcomplexx-qq-ready'
-      publishRuntimeStatus(DSH_STATUS_PATH, ready, '0.5.5')
+      watchdog.status(line === 'antifieldcomplexx-qq-ready')
     }
   })
   const health = setInterval(() => {
-    if (!ready) console.warn('DSH QQ 网关尚未就绪')
+    if (!watchdog.ready) console.warn('DSH QQ 网关尚未就绪')
   }, 60_000)
   health.unref()
   const stop = () => {
     stopping = true
-    child.kill('SIGTERM')
+    watchdog.stop()
   }
   process.once('SIGTERM', stop)
   process.once('SIGINT', stop)
@@ -77,6 +79,7 @@ try {
     process.exitCode = 1
   })
   child.once('close', () => {
+    watchdog.close()
     clearInterval(health)
     publishRuntimeStatus(DSH_STATUS_PATH, false, '0.5.5')
     rmSync(policyDir, { recursive: true, force: true })

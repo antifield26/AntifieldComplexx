@@ -1,15 +1,19 @@
 # Bot 集成
 
+## v1.2.2 QQ 连接监督
+
+网关启动或断连后持续 90 秒未就绪时，包装器先请求子进程退出，5 秒宽限后强制收口，由现有 systemd `Restart=on-failure` 恢复。就绪事件撤销计时，重复断连事件不延后期限；手动停止先撤销监督计时。进程 active 与网关 ready 分别判断，长期未连接不能一直停留在存活但不可用状态。日志只增加固定连接诊断，不记录平台正文、身份或凭据。
+
 > **DSH QQ 管理**。管理员从独立 QQ profile 管理 AppID、私聊与群聊白名单，群聊要求 @Bot。角色和结构化记忆按平台确认的身份导入。群历史按成员分离。通过 `qq-memory-cli.mjs` 的 `pending`、`approve`、`reject` 管理候选。私聊发送 `/forget confirm` 清除同一 AppID 下与发送者身份精确匹配的私聊及群聊记忆和待审候选，同时轮换相关会话。迁移前备份含历史记录，仍受离线密钥保护。
 
-兼容性基于 OpenCode v2.2.5。
+历史回滚管线的兼容性基于 OpenCode v2.2.5。
 
 AntifieldComplexx 的生产 QQ 由 DeepSeek Harness QQ Agent 处理白名单私聊、群 @ 与图片。Workbench 在 `DSH_QQ_MANAGED=true` 时对旧回调返回 404，管理状态接口返回 410。
 平台仅 QQ：Telegram / Discord / Slack、Discord Gateway、只读按钮、媒体/多附件发布、群聊触发方式（`chatTrigger`）均不属于当前能力。
 生产图片由 DSH QQ Agent 交给模型。OpenCode prompt files 只属于已退役的回滚路径。
-企业微信/钉钉/飞书与多管理员审批未实现。
+企业微信/钉钉/飞书的 Bot 收发与多管理员审批未实现；企业微信告警中继属于独立通知通道。
 
-> 当前代码：v1.2.1 / schema 21，2026-11-12 已部署。生产 QQ 由 DSH 0.2.2-rc.1 与 QQ 插件 0.5.5 承担。OpenCode v2.2.5 已退役。生产应用 release 为 `/opt/antifieldcloud/releases/20261112T115350Z`，mcbot 为 `/opt/mcbot/releases/20261112T115627Z`，DSH release 为 `/opt/antifield-dsh/releases/20261108T143448Z`。回滚到 v1.2.0 的应用为 `20261111T104738Z`、mcbot 为 `20261111T105117Z`，保留现行数据库及 WAL。回滚到 v1.1.1 的应用为 `20261109T143755Z`、mcbot 为 `20261110T022539Z`，并恢复迁移前快照。回滚到 v1.1.0 的应用与 mcbot 均为 `20261108T080545Z`。退回 v1.1.1 还必须恢复当时的 Access 策略与公网界面。下文 OpenCode 管线描述更早的回滚路径。Bot 默认关闭，Webhook 关闭时返回 404；mcbot 对接已启用。
+> 当前代码：v1.2.2 / schema 21，2026-11-13 已部署，剩余运维验收中。生产 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`；DSH 0.2.2-rc.1／QQ 插件 0.5.5，runtime `20261108T143448Z`（QQ 监督器待独立部署）。同 schema 回退 v1.2.1 仅还原应用 `20261112T115350Z`／Bot `20261112T115627Z` 与配置，保留现行数据库及 WAL。退回 v1.1.1 必须恢复 schema 20 快照，详见 DEPLOY。下文 Webhook、凭据数据库、发布队列与 OpenCode 管线仅描述历史回滚路径；生产 `DSH_QQ_MANAGED=true` 禁用这些入口。
 > 安全边界：QQ AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台 Ed25519 签名/时间戳鉴权；
 > 除自助命令（`/help`、`/memory`、`/role` 仅私聊；`/reset`、`/forget confirm` 全用户）外，斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；
 > 发布必须 TOTP + `PUBLISH` 二次确认，且仅文本；通知/命令/Chat 输出不包含内部路径或 URL；私聊角色/记忆正文不通过 API/UI 暴露，群聊角色正文仅管理员在 Web 编辑；
