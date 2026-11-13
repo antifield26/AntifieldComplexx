@@ -2,9 +2,13 @@
 
 ## v1.2.2 加密与固定维护入口补充（实施中）
 
-整包加密已在本轮生产配置开启，应用进程仍是 v1.2.1。Pi 只持有独立备份公钥，私钥保留 PC 及第二份离线副本；失败不回落明文。历史明文仅保留在原本机受限目录，不上传，不以删除历史归档规避告警。异地检查要求存在完整密文恢复基线，`plaintextSkipped` 记录历史明文数量，不等同于外泄。
+整包加密已在本轮生产配置开启，应用进程为 v1.2.2。Pi 只持有独立备份公钥，私钥保留 PC 及第二份离线副本；失败不回落明文。历史明文仅保留在原本机受限目录，不上传，不以删除历史归档规避告警。异地检查要求存在完整密文恢复基线，`plaintextSkipped` 记录历史明文数量，不等同于外泄。
 
-Windows 异地任务可显式传入 `-RcloneBin` 和 `-RcloneConfig`，不依赖交互终端环境；配置目录 ACL 仅当前用户、Administrators 与 SYSTEM。OneDrive 根 ID 使用专用目录的 `driveID#itemID` 规范格式；此目录限制是客户端配置边界，OAuth 权限本身不是文件夹级授权。禁止为排障持久化扩大到整盘 remote。脚本仍只复制 `.tar.gz.age` 与 SHA／元数据旁文件，不上传历史明文或私钥。
+Windows 异地任务可显式传入 `-RcloneBin` 和 `-RcloneConfig`，不依赖交互终端环境；配置目录 ACL 仅当前用户、Administrators 与 SYSTEM。历史 OneDrive 接入的根 ID 使用专用目录的 `driveID#itemID` 规范格式；此目录限制是客户端配置边界，OAuth 权限本身不是文件夹级授权。禁止为排障持久化扩大到整盘 remote。脚本仍只复制 `.tar.gz.age` 与 SHA／元数据旁文件，不上传历史明文或私钥。
+
+OneDrive 已因分段上传与官方下载均返回 401 而停止本轮接入，既有密文保留核对，云端未通过恢复验收。用户选择 Google Drive，替换完成前维持失败状态，不安装失效的异地计划任务。
+
+Google Drive 使用独立 OAuth 客户端、`drive.file` 最小范围和专用备份目录 root ID；备份程序只见其创建的文件／文件夹，目录限制是额外的客户端边界。rclone 共享客户端正在退役，不能作为长期备份依赖；自建 OAuth 应用应处于 Production，避免 Testing 授权七天失效。账号登录、条款与两步验证由账号持有人完成。凭据文件和刷新令牌只保存在受限 PC 配置目录，不进入 Pi 或状态文件。[rclone 官方配置说明](https://rclone.org/drive/#making-your-own-client-id)
 
 目标库一致性快照、任务状态和主世界记忆继续收录。新增 `world-memory.nether.json`、`world-memory.end.json`，每个文件独立 SHA／大小及 included／not_created／read_failed。历史清单缺少这两个字段时，仅在对应文件实际不存在时允许；已存在的未登记或损坏内容必须拒绝。隔离恢复验证维度侧文件，不在生产启动恢复副本。
 
