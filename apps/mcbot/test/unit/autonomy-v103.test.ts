@@ -1,10 +1,15 @@
+/** 自主工具在假 Bot 上验证权限、动作取消、事件和当前维度的记忆边界。 */
 import assert from 'node:assert/strict'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import type { Bot } from 'mineflayer'
 import { Vec3 } from 'vec3'
 import type { AuditLogger } from '../../src/audit.ts'
 import type { AutonomySessionClient, SessionPermission } from '../../src/ai/session.ts'
 import { AutonomyService } from '../../src/autonomy/service.ts'
+import { sharedWorldMemory } from '../../src/autonomy/world-memory.ts'
 import { EventBus } from '../../src/events/bus.ts'
 import type { ChatSender } from '../../src/minecraft/chat.ts'
 import type { MovementManager } from '../../src/minecraft/movement.ts'
@@ -91,7 +96,7 @@ interface Fixture {
   moved: { teleports: boolean, allowTeleport: boolean | null }
 }
 
-function fixture (env: Record<string, string | undefined> = {}): Fixture {
+function fixture (env: Record<string, string | undefined> = {}, disconnected?: { value: boolean }): Fixture {
   const config = makeConfig({}, {
     ...baseEnv(),
     AI_ENABLED: 'true',
@@ -186,7 +191,7 @@ function fixture (env: Record<string, string | undefined> = {}): Fixture {
       start: (name: string) => tasks.start(name as TaskName)
     } as unknown as TaskController,
     opencode: session,
-    getBot: () => bot
+    getBot: () => disconnected?.value ? null : bot
   })
   return { config, state, tasks, session, events, service, bot, opened, equipped, consumed, moved }
 }
@@ -212,6 +217,28 @@ async function call (f: Fixture, token: string, name: string, args: Record<strin
   const text = body.result?.content?.[0]?.text ?? ''
   return JSON.parse(text)
 }
+
+test('记忆工具只读取当前维度，断线时不回退主世界', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'mcbot-tool-dimension-'))
+  const disconnected = { value: false }
+  const f = fixture({ DATA_DIR: dir }, disconnected)
+  try {
+    await sharedWorldMemory(dir).write('note', 'scope', '主世界记录')
+    await sharedWorldMemory(dir, 'nether').write('note', 'scope', '下界记录')
+    f.bot.game.dimension = 'the_nether'
+    const { runId, token } = await startRun(f)
+    const args = { run_id: runId, category: 'note', key: 'scope' }
+    assert.match(JSON.stringify(await call(f, token, 'memory_read', args)), /下界记录/)
+    assert.doesNotMatch(JSON.stringify(await call(f, token, 'memory_read', args)), /主世界记录/)
+    f.bot.game.dimension = 'overworld'
+    assert.match(JSON.stringify(await call(f, token, 'memory_read', args)), /主世界记录/)
+    disconnected.value = true
+    assert.deepEqual(await call(f, token, 'memory_read', args), { ok: false, error: 'memory_dimension_unavailable', message: 'current dimension is unavailable' })
+  } finally {
+    await f.service.stop('test')
+    await rm(dir, { recursive: true, force: true })
+  }
+})
 
 test('v1.0.3 exposes observe and guarded action tools', async () => {
   const f = fixture()

@@ -936,7 +936,9 @@ export class AutonomyService {
   }
 
   private currentWorldMemory (): WorldMemoryStore {
-    const dimension = this.deps.getBot()?.game?.dimension ?? 'minecraft:overworld'
+    const bot = this.deps.getBot()
+    if (!bot) throw new WorldMemoryError('memory_dimension_unavailable', 'current dimension is unavailable')
+    const dimension = bot.game?.dimension ?? 'minecraft:overworld'
     return memoryDimension(dimension) === 'overworld'
       ? this.worldMemory
       : sharedWorldMemory(this.deps.config.dataDir, dimension, this.logger)

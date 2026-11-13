@@ -533,6 +533,8 @@ v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱
 
 每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码、容器类型/摘要计数，不记录 prompt/Token/完整容器内容。记忆工具只记分类和键，不记正文。世界记忆与聊天记忆分开，按当前维度选取 `world-memory.json`／`world-memory.nether.json`／`world-memory.end.json`（均 0600，每文件最多 200 条），历史主世界 version 1 格式兼容。提示词只带当前维度、分类计数和最近 8 个键，`observe` 返回半径内方块和容器。挖矿／天然林可记录已扫描并复核的 resource 坐标；到场继续复核，失效时回退扫描。工具表仍是上面 13 个，不新增环境变量、参数或跨维度移动。
 
+断线时无法确认当前维度，记忆工具返回 `memory_dimension_unavailable`，不会回退读取主世界记录；未知维度返回 `memory_dimension_invalid`。
+
 ### 12.8 v1.0.5 在线模式、长期目标与自动生存
 
 **GET /presence（读 Token）**：返回 `{ mode, source, updatedAt, connected, lastDecision }`；`mode ∈ auto|always|off`，`source ∈ default|env|persisted`。

@@ -73,6 +73,8 @@ test('密钥包快照含 WAL 目标，隔离恢复暂停运行中目标并验证
     const directory = join(dir, 'capture')
     const files = await captureMcbotState(directory, { 'goals.db': source, 'task-state.json': task, 'world-memory.json': memory })
     assert.deepEqual(Object.values(files).map(file => file.status), ['included', 'included', 'included', 'not_created', 'not_created'])
+    assert.equal(existsSync(join(directory, 'goals.db-wal')), false)
+    assert.equal(existsSync(join(directory, 'goals.db-shm')), false)
     const repo = resolve(import.meta.dirname, '../..')
     const current = process.platform === 'win32' ? repo : join(dir, 'current')
     if (current !== repo) symlinkSync(repo, current, 'dir')

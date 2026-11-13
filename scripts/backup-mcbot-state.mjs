@@ -73,8 +73,10 @@ export async function captureMcbotState(directory, sources) {
         } finally {
           db.close()
         }
-        const copy = new DatabaseSync(to, { readOnly: true })
+        const copy = new DatabaseSync(to)
         try {
+          // 隔离快照使用独立数据库文件，不把 SQLite 自动生成的未登记 WAL／SHM 带进密钥包。
+          copy.exec('PRAGMA journal_mode=DELETE')
           inspectGoals(copy)
         } finally {
           copy.close()

@@ -8,6 +8,8 @@ Windows 异地任务可显式传入 `-RcloneBin` 和 `-RcloneConfig`，不依赖
 
 目标库一致性快照、任务状态和主世界记忆继续收录。新增 `world-memory.nether.json`、`world-memory.end.json`，每个文件独立 SHA／大小及 included／not_created／read_failed。历史清单缺少这两个字段时，仅在对应文件实际不存在时允许；已存在的未登记或损坏内容必须拒绝。隔离恢复验证维度侧文件，不在生产启动恢复副本。
 
+目标库的隔离快照切为 DELETE journal 模式，再校验与计算 SHA，归档只依赖单个数据库文件。生产原库的 WAL 不修改。历史密钥包可能带空 WAL 与 SHM；在已验证整包密文 SHA 和 age 解密的隔离副本上，确认 WAL 为空后可去除辅助文件，再按 manifest 验证数据库；非空未登记 WAL 不得静默丢弃。
+
 管理员先安装 `scripts/install-maintenance.sh`，再更新 Windows 任务。root 状态目的地固定；备份／世界／演练／异地状态由固定维护入口写入，来源为随机临时文件并受 64 KiB 上限约束。密钥包提权脚本是 release 外的 root 独立副本，快照业务代码以 mcbot 身份运行。实际云端回下载、密钥包解密及完整演练完成后，才可把本轮异地状态记为验收通过。
 
 ## v1.2.1 异地完整性与演练
