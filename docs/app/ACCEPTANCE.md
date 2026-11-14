@@ -2,7 +2,7 @@
 
 ### v1.2.3 生产部署（2026-11-14）
 
-当前版本 v1.2.3 已部署到生产。schema 21、契约 v2、DSH 0.2.2-rc.1 不变。OpenCode v2.2.5 仅用于历史回滚。完整 Access smoke、真实插件安装与卸载、客户端安装包和 Windows 计划任务重装尚未做。
+当前版本 v1.2.3 已部署到生产。schema 21、契约 v2 不变。DSH 运行时目标为 0.2.2-rc.3，QQ 插件 0.5.5。下面这条记录的是升运行时之前的切换。OpenCode v2.2.5 仅用于历史回滚。完整 Access smoke、真实插件安装与卸载、客户端安装包和 Windows 计划任务重装尚未做。
 
 - 运行提交 `ebeb44f`。Workbench `/opt/antifieldcloud/releases/20261114T042643Z`，包 SHA-256 `0e2729b88c78145f49b782117e89c3bc901a4a9edb8fbbe0a0d335aeaac26308`。部署前 schema 21 快照 `db-predeploy-20261114T042801428Z.sqlite`，SHA-256 `dc05d00bebc5f56628a07c61b884ece2a0e2882cbe079a6cab5231cf41f02ee0`。部署内 smoke **28／0／0／0**。`/healthz` 为 1.2.3、schema 21、`db=ok`。
 - mcbot `/opt/mcbot/releases/20261114T043045Z`，包 SHA-256 `72d06e967bfed7cff22b60bba23a0bf016990abd9cdff279ff3fcf89053bc3cf`。切换前状态为空闲。健康检查为 1.2.3、契约 v2、空闲、未连接。没有在真实世界触发 Bot 动作。

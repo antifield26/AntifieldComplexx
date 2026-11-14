@@ -6,7 +6,7 @@
 
 **当前版本 v1.2.3（2026-11-14 已部署）**。schema 21、mcbot 契约 v2。同 schema 回到 v1.2.2 仅还原 release 与配置，保留现行数据库及 WAL。再退到 v1.2.1 同样保留数据库及 WAL。再退到 v1.2.0 同样保留数据库及 WAL。退回 v1.1.1 必须恢复迁移前快照与 v1.1.1 release。Web、QQ 与 mcbot Agent 继续使用 DeepSeek Harness。OpenCode **v2.2.5** 仅用于恢复历史版本 v1.0.13（`1743323`）。
 
-生产 Workbench release 为 `20261114T042643Z`（提交 `ebeb44f`），mcbot 为 `20261114T043045Z`，DSH 为 `20261114T043420Z`。QQ 单元未重启，启动时间仍是 2026-11-14 12:07:28 CST；锁定依赖仍是 DSH 0.2.2-rc.1 与 QQ 插件 0.5.5。本次部署前快照 `db-predeploy-20261114T042801428Z.sqlite`（schema 21，sha256 `dc05d00bebc5f56628a07c61b884ece2a0e2882cbe079a6cab5231cf41f02ee0`）。最近演练 `20261113T081625Z`（schema 21，应用与世界隔离恢复）。公网界面开关保持默认开启。Windows 计划任务仍是 1.2.2，installedAt `2026-11-13T14:16:50.7758244Z`。
+生产 Workbench release 为 `20261114T042643Z`（提交 `ebeb44f`），mcbot 为 `20261114T043045Z`，DSH 为 `20261114T043420Z`。QQ 单元未重启，启动时间仍是 2026-11-14 12:07:28 CST；锁定依赖为 DSH 0.2.2-rc.3 与 QQ 插件 0.5.5。已切换的 DSH release 仍是升运行时之前的目录，切换后更新。本次部署前快照 `db-predeploy-20261114T042801428Z.sqlite`（schema 21，sha256 `dc05d00bebc5f56628a07c61b884ece2a0e2882cbe079a6cab5231cf41f02ee0`）。最近演练 `20261113T081625Z`（schema 21，应用与世界隔离恢复）。公网界面开关保持默认开启。Windows 计划任务仍是 1.2.2，installedAt `2026-11-13T14:16:50.7758244Z`。
 
 schema **v21**（设备登记与请求签名）。客户端与 schema 21 绑定。回到 v1.1.1 必须恢复 schema 20 快照 `db-predeploy-20261111T104848131Z.sqlite`（sha256 `e7eb8486f0158f0002e9bccad7ea0b6699f657581c3d9e64cd16ecfd838518bd`）、v1.1.1 release `/opt/antifieldcloud/releases/20261109T143755Z`、mcbot `/opt/mcbot/releases/20261110T022539Z`、当时的 Access 策略与公网界面。只恢复公网界面时把 `PUBLIC_APP_SHELL` 设为 true 并重启，不改 schema。
 
@@ -182,7 +182,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 ## 8. 已知环境事实（不要重复踩坑）
 
-- **v1.2.3（2026-11-14 已部署）**：Minecraft Bot 面板只通过管理员对话决定行动。模型可调用现有 13 个 mcbot 工具，并按需使用 DSH goal 与 todo。应用上的任务开始、目标写、自主开始、移动和游戏发言返回 409，不调用上游。在线模式、只读状态和急停保留。急停不经过模型。游戏内口令保留。对话不进 SQLite。DSH Web 重新启用插件页与清单插件；无连字符的 `/api/pluginManager/`、上传、设置写入和凭据写入仍拒绝。模型侧 `tool-plugin-manager` 保持关闭。已登录管理员经 Access 与应用会话可以安装或移除 DSH Web 进程中的插件。schema 21、契约 v2、DSH 0.2.2-rc.1 不变。Workbench `20261114T042643Z`，mcbot `20261114T043045Z`，DSH `20261114T043420Z`，运行提交 `ebeb44f`。部署内 smoke 28／0／0／0。只重启了 Workbench、mcbot、DSH Web 和 Minecraft Agent。完整 Access smoke 与真实插件安装尚未做。没有打 Tag，也没有合并到 main。
+- **v1.2.3（2026-11-14 已部署）**：Minecraft Bot 面板只通过管理员对话决定行动。模型可调用现有 13 个 mcbot 工具，并按需使用 DSH goal 与 todo。应用上的任务开始、目标写、自主开始、移动和游戏发言返回 409，不调用上游。在线模式、只读状态和急停保留。急停不经过模型。游戏内口令保留。对话不进 SQLite。DSH Web 重新启用插件页与清单插件；无连字符的 `/api/pluginManager/`、上传、设置写入和凭据写入仍拒绝。模型侧 `tool-plugin-manager` 保持关闭。已登录管理员经 Access 与应用会话可以安装或移除 DSH Web 进程中的插件。schema 21、契约 v2 不变。DSH 运行时为 0.2.2-rc.3，QQ 插件 0.5.5。Workbench `20261114T042643Z`，mcbot `20261114T043045Z`，DSH `20261114T043420Z`，运行提交 `ebeb44f`。部署内 smoke 28／0／0／0。只重启了 Workbench、mcbot、DSH Web 和 Minecraft Agent。完整 Access smoke 与真实插件安装尚未做。没有打 Tag，也没有合并到 main。
 
 - **v1.2.2（2026-11-13，已部署并验收）**：Workbench `20261113T072133Z`、mcbot `20261113T072417Z`（`58b7693`），DSH `20261113T080907Z`（QQ 监督器 `22103d8`，锁定版本不变）。双端保留数据升级，用户确认登录通过，MC 远程管理真机验收按用户要求跳过。整包 age 加密、PC 解密及 full＋3 inc／schema 21／世界隔离演练 `20261113T081625Z` 通过。Windows 任务 1.2.2，installedAt `2026-11-13T14:16:50.7758244Z`。无限免密 sudo 已撤销，日常使用 root 固定维护入口，管理员部署使用密码及已有全局 sudo 票据；不改 SSH。收权及异地启用后完整 Access smoke **39／0／0／0**。OneDrive 因 401 退役接入，Google Drive 独立 Production OAuth／drive.file／专用目录、32 MiB 分段、令牌刷新与 full＋3 inc 云端隔离恢复通过；每日异地任务 13:00，实际调度退出码 0，Pi 成功状态回写通过。已发布 annotated Tag `v1.2.2`，指向 `e2ec493`；生产进程仍是 `58b7693`。发布页附带 `AntifieldComplexx_1.2.2_x64-setup.exe`（3,401,307 字节）、`AntifieldComplexx-1.2.2-arm64.zip`（6,160,540 字节）与 `SHA256SUMS`。当前状态以 BACKLOG／ACCEPTANCE 为准。
 

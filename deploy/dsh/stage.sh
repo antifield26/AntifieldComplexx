@@ -25,7 +25,7 @@ done
   umask 022
   PATH="/usr/local/bin:$PATH" npm ci --ignore-scripts --no-audit --no-fund
   /usr/local/bin/node ./patch-qq.mjs
-  test "$(/usr/local/bin/node ./node_modules/@deepseek-ai/dsh/lib/bin.js --version)" = 0.2.2-rc.1
+  test "$(/usr/local/bin/node ./node_modules/@deepseek-ai/dsh/lib/bin.js --version)" = 0.2.2-rc.3
 )
 # 专用 socket 组和无登录系统账号。
 getent passwd antifieldcloud >/dev/null

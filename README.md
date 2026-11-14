@@ -156,7 +156,7 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC，本版 v1.2.3，2026-11-14 已部署，证据见 ACCEPTANCE）：OpenCode 2.2.5 已退役，安装与回滚见 [DSH-MIGRATION](docs/app/DSH-MIGRATION.md)。应用部署 `.\scripts\deploy.ps1 -PiHost <直连 IP>`。部署之后的冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.2.3 -ExpectedSchemaVersion 21 -ExpectedMcbotVersion 1.2.3 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.1 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`（最低兼容 mcbot v0.6.0；配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 mcbot 时用 `-SkipMcbot`）。生产 `/healthz` 回答 1.2.3 / schema 21。
+部署（PC，本版 v1.2.3，2026-11-14 已部署，证据见 ACCEPTANCE）：OpenCode 2.2.5 已退役，安装与回滚见 [DSH-MIGRATION](docs/app/DSH-MIGRATION.md)。应用部署 `.\scripts\deploy.ps1 -PiHost <直连 IP>`。部署之后的冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.2.3 -ExpectedSchemaVersion 21 -ExpectedMcbotVersion 1.2.3 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.3 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`（最低兼容 mcbot v0.6.0；配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 mcbot 时用 `-SkipMcbot`）。生产 `/healthz` 回答 1.2.3 / schema 21。
 Pi 上同步/校验 mcbot Token（root，本版 mcbot v1.2.3，最低 v0.6.0）：`sudo bash scripts/sync-mcbot-tokens.sh`、`sudo bash scripts/sync-mcbot-tokens.sh --check`（只比较不写盘，不回显 Token；失败会原子替换 env）。
 
 ## 目录

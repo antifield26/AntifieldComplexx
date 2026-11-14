@@ -22,7 +22,7 @@ export function dshReadiness(config: Config) {
   const enabled = agentServiceUnits(config)
   return Object.fromEntries((Object.keys(UNITS) as DshService[]).filter((id) => id in enabled).map((id) => {
     const status = readStatusFile(`/run/${UNITS[id]}-status/status.json`)
-    return [id, status?.ready === true && status.version === '0.2.2-rc.1'
+    return [id, status?.ready === true && status.version === '0.2.2-rc.3'
       && (id !== 'dsh_qq' || status.pluginVersion === '0.5.5')]
   })) as Partial<Record<DshService, boolean>>
 }

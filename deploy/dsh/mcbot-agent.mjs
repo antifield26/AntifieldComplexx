@@ -145,7 +145,7 @@ export function startAgent(config) {
   let probe
   const server = createServer({ requestTimeout: 8000, headersTimeout: 4000 }, async (req, res) => {
     if (req.method === 'GET' && req.url === '/healthz') {
-      send(res, ready && !stopping ? 200 : 503, { ready: ready && !stopping, version: '0.2.2-rc.1' })
+      send(res, ready && !stopping ? 200 : 503, { ready: ready && !stopping, version: '0.2.2-rc.3' })
       return
     }
     if (req.method !== 'POST' || !ready || stopping) {
