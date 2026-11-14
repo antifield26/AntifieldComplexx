@@ -12,8 +12,6 @@ import { readFileSync } from 'node:fs'
 
 const EXEMPT = [
   /^docs\/legacy\//,
-  /^docs\/app\/AUDIT\.md$/, // 审计归档保留历史服务名与迁移记录
-  /^docs\/app\/RESOURCE-AUDIT-/, // 资源审计报告需要记录旧 release 路径
   /^apps\/mcbot\/data-local/,
   /^node_modules\//,
   /^coverage\//,
@@ -35,7 +33,7 @@ const RULES = [
   [/sync-lofii-tokens\.sh/, '旧脚本 sync-lofii-tokens.sh → sync-mcbot-tokens.sh'],
   [/\bBotService\b/, '旧类名 BotService → ChatbotService'],
   [/(?<![A-Za-z])bot_[a-z]/, '旧表/列/键前缀 bot_ → chatbot_'],
-  [/docs\/(?:BOT|DEPLOY|API|BACKUP|SECURITY|ACCEPTANCE|ARCHITECTURE|PLAN|ROADMAP|AUDIT|UI-SPEC)\.md/, '旧文档路径 docs/*.md → docs/app/*.md'],
+  [/docs\/(?:app|mcbot|legacy)\//, '文档已合并，不再使用 docs/app、docs/mcbot、docs/legacy'],
 ]
 
 // 允许的行级例外（不是旧项目标识符）。

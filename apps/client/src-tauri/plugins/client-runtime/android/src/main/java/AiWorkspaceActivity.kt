@@ -14,6 +14,9 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import java.lang.ref.WeakReference
 import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicBoolean
@@ -113,12 +116,20 @@ class AiWorkspaceActivity : AppCompatActivity() {
         super.onCreate(state)
         active = WeakReference(this)
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(16, 18, 20)) }
+        // 页面铺到系统栏下面。返回条只占用状态栏和刘海的插入量，其余插入量继续交给页面。
+        ViewCompat.setOnApplyWindowInsetsListener(layout) { view, insets ->
+            val types = WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.displayCutout()
+            val bars = insets.getInsets(types)
+            view.setPadding(bars.left, bars.top, bars.right, 0)
+            WindowInsetsCompat.Builder(insets).setInsets(types, Insets.NONE).build()
+        }
         val back = Button(this).apply { text = "返回 AntifieldComplexx"; setOnClickListener { closeWorkspace() } }
         layout.addView(back)
         val view = WebView(this)
         web = view
         layout.addView(view, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(layout)
+        ViewCompat.requestApplyInsets(layout)
         view.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true

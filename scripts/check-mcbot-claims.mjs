@@ -1,7 +1,7 @@
 /**
  * mcbot 文档-实现一致性检查。
  *
- * 以代码常量为真相，校验 README / docs/mcbot / AGENTS / app API 的关键声明与 env 模板；
+ * 以代码常量为真相，校验 README、docs/MCBOT.md、docs/API.md 与 env 模板的关键声明；
  * 只读仓库文件，不修改任何内容。失败时输出逐条错误并以 1 退出。
  */
 import { readFileSync } from 'node:fs'
@@ -42,13 +42,13 @@ const permissionPrefix = toolsModule.AUTONOMY_PERMISSION_PREFIX
 if (autonomyTools.length !== 13) errors.push(`工具数量应为 13，实际 ${autonomyTools.length}`)
 if (taskNames.length !== 11) errors.push(`任务数量应为 11，实际 ${taskNames.length}`)
 
-const toolDocs = ['docs/mcbot/README.md', 'docs/mcbot/API.md']
+const toolDocs = ['docs/MCBOT.md', 'docs/API.md']
 for (const file of toolDocs) {
   for (const tool of autonomyTools) requireText(file, tool, `tool:${tool}`)
   requireText(file, permissionPrefix, `permission:${permissionPrefix}`)
 }
-for (const taskName of taskNames) requireText('docs/mcbot/README.md', taskName, `task:${taskName}`)
-for (const section of readOnlyContextSections) requireText('docs/mcbot/README.md', section, `ai-context:${section}`)
+for (const taskName of taskNames) requireText('docs/MCBOT.md', taskName, `task:${taskName}`)
+for (const section of readOnlyContextSections) requireText('docs/MCBOT.md', section, `ai-context:${section}`)
 
 const envKeys = [
   'AUTONOMY_ENABLED',
@@ -92,33 +92,33 @@ const envKeys = [
 for (const key of envKeys) {
   requireText('apps/mcbot/deploy/env.example', key, `env:${key}`)
   requireText('apps/mcbot/deploy/bootstrap-env.sh', key, `bootstrap:${key}`)
-  requireText('docs/mcbot/API.md', key, `doc-env:${key}`)
+  requireText('docs/API.md', key, `doc-env:${key}`)
 }
 
-requireText('docs/mcbot/CONSISTENCY-AUDIT.md', '文档声明', 'audit-matrix')
-requireText('docs/mcbot/CONSISTENCY-AUDIT.md', '代码', 'audit-code-column')
-requireText('docs/mcbot/CONSISTENCY-AUDIT.md', '状态', 'audit-status-column')
+requireText('docs/AUDIT.md', '文档声明', 'audit-matrix')
+requireText('docs/AUDIT.md', '代码', 'audit-code-column')
+requireText('docs/AUDIT.md', '状态', 'audit-status-column')
 const rootPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
 const version = rootPackage.version
 requireText('README.md', `v${version}`, 'readme-version')
-requireText('docs/mcbot/README.md', `v${version}`, 'mcbot-readme-version')
-requireText('docs/app/API.md', `mcbot **v${version}**`, 'app-api-upstream-version')
+requireText('docs/MCBOT.md', `v${version}`, 'mcbot-readme-version')
+requireText('docs/API.md', `mcbot **v${version}**`, 'app-api-upstream-version')
 requireText('CHANGELOG.md', `## [v${version}]`, 'changelog-version')
-requireText('docs/app/ACCEPTANCE.md', `v${version}`, 'acceptance-version')
-requireText('docs/app/DEPLOY.md', `v${version}`, 'deploy-title')
+requireText('docs/ACCEPTANCE.md', `v${version}`, 'acceptance-version')
+requireText('docs/DEPLOY.md', `v${version}`, 'deploy-title')
 requireText('deploy/tool-versions.json', `"mcbotVersion": "${version}"`, 'tool-version')
 requireText('deploy/env.example', `APP_VERSION=${version}`, 'app-version')
 
 const stalePatterns = [
-  ['docs/app/API.md', '生产当前 v1.0.1', '旧生产版本'],
+  ['docs/API.md', '生产当前 v1.0.1', '旧生产版本'],
   ['README.md', 'mcbot **v1.0.0**', '旧 mcbot 版本'],
-  ['docs/mcbot/README.md', 'AI 没有任何工具/命令执行能力', 'AI 无工具旧声明'],
-  ['docs/mcbot/README.md', 'AI 输出只用于聊天；不会触发任何游戏操作', 'AI 只聊天旧声明']
+  ['docs/MCBOT.md', 'AI 没有任何工具/命令执行能力', 'AI 无工具旧声明'],
+  ['docs/MCBOT.md', 'AI 输出只用于聊天；不会触发任何游戏操作', 'AI 只聊天旧声明']
 ]
 for (const [file, needle, label] of stalePatterns) forbidText(file, needle, label)
 
-if (read('docs/mcbot/README.md').includes('只读受控工具 `status/inventory/task_status`')) {
-  errors.push('docs/mcbot/README.md: 仍把提示词上下文段称为"只读受控工具"')
+if (read('docs/MCBOT.md').includes('只读受控工具 `status/inventory/task_status`')) {
+  errors.push('docs/MCBOT.md: 仍把提示词上下文段称为"只读受控工具"')
 }
 
 if (errors.length > 0) {

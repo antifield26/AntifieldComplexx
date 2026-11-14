@@ -1,52 +1,35 @@
 # 架构
 
-## v1.2.1 客户端结构
-
-apps/client 的共享 React 界面采用数据路由处理离开确认，主窗口管理浏览状态和网络恢复。原生桥负责系统密钥、签名、流式保存和短期 loopback 预览。Windows 隔离 AI 窗口、Android 可追踪本地插件的 AI Activity 均不拥有主窗口 IPC。产物仍写入 Workbench web/dist，schema 21、契约 v2 不变。
-
-
-> 项目定位：**个人综合交互平台**。`apps/workbench` 只是 Web 端技术名；平台统一承载个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
+项目是个人综合交互平台。`apps/workbench` 是 Web 端技术名。`apps/client` 是 Windows 与 Android 共用的 Tauri 界面，产物写入 `apps/workbench/web/dist`。`apps/mcbot` 保持独立进程。
 
 ## 1. 总览
 
 ```text
 Internet
- ├─ app.example.com ─┐
- ├─ ai.example.com  ─┼─ Cloudflare Edge ── cloudflared(tunnel `pi`, 出站) ── 127.0.0.1:3000
- └─ mc.example.com:11798 ── SakuraFRP（现状保留，不走 antifieldcloud）
+ ├─ app.<domain> ─┐
+ ├─ ai.<domain>  ─┼─ Cloudflare Edge ── cloudflared ── 127.0.0.1:3000
+ └─ mc.<domain> ──── SakuraFRP（现状保留，不走应用）
 
-Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
- ├─ antifieldcloud.service (User=antifieldcloud, 127.0.0.1:3000)
- │   ├─ Host app.* → React SPA + /api（含 /api/metrics、/api/shares、/api/storage、/api/chatbots、/api/mcbot）
- │   ├─ Host ai.*  → 会话校验 + Origin 校验 + 反向代理 → 127.0.0.1:4096 (opencode)
- │   ├─ 公开 Bot Webhook /api/chatbot/webhook/:botId → QQ Ed25519 验签 + 去重 + 命令/Chat（只读/AI）/入队
- │   ├─ mcbot 对接 v0.8.0（v0.8.1 安全加固）→ 127.0.0.1:3010（mcbot v1.0.9，契约 v2，最低 v0.6.0，仅 loopback）：每 5s 轮询 /status + /events/recent?limit=200；
- │   │   快照/最近 100 条（≤512 KiB）事件仅内存；任务/移动/聊天控制代理（聊天需控制 Token）；上游 alert → 本应用告警 status='event'
- │   ├─ QQ 入站图片（默认开启）→ 固定域名后缀下载（.qpic.cn/.qq.com/.qq.com.cn/.gtimg.cn，实际图床如 multimedia.nt.qq.com.cn）→ OpenCode prompt files → 模型 provider（不落盘）
- │   ├─ Bot 出站 → chatbots.qq.com / api.sgroup.qq.com（固定上游，15s 超时）
- │   ├─ Bot AI → 127.0.0.1:4096 OpenCode 本地 API（仅普通消息 Chat，默认关闭；无 /ask）
- │   ├─ Bot 记忆 → SQLite chatbot_memory_items/chatbot_memory_state（7 类结构化条目）；legacy chatbot_ai_memories + DATA_DIR/bot-memory/memory-<uuid>.md（0700/0600）
- │   ├─ SQLite /var/lib/antifieldcloud/db.sqlite（schema v20）
- │   ├─ 文件   /var/lib/antifieldcloud/files/<xx>/<id>（files.origin=user|note|system）
- │   ├─ 应用备份 /var/lib/antifieldcloud/backups（pending/acked/imports/secrets/db-predeploy-*）
- │   ├─ 世界备份 /var/lib/antifieldcloud/world-backups（world-<UTC>.tar.gz，保留 4 份）
- │   ├─ 只读状态 world-backup/world-pull/drill-status.json（脚本写入，应用只读）
- │   ├─ SLP    → 127.0.0.1:25565
- │   ├─ RCON   → 127.0.0.1:25575（只读状态 + 白名单增删）
- │   └─ 主机指标 /proc、/sys、statfs、systemctl is-active（60s 采样）
- ├─ Cloudflare Access（app.* 页面策略；/api 到达应用；bypass：/healthz、/s/*、/api/public/shares/*、/api/chatbot/webhook/*）
- ├─ antifieldcloud-world.service/.timer（root，周日 12:00，flock，4h 超时，沙箱）
- ├─ antifieldcloud-health.service/.timer（root，60s 写 /run/antifieldcloud/pi-health.json）
- ├─ mcbot.service（独立附属服务，仅 127.0.0.1:3010，契约 v2；不对外、不进入 Cloudflare ingress）
- ├─ opencode.service / minecraft.service / cloudflared.service（现有）
- └─ nftables（默认拒绝；22/25565 限网段，22 限速；25575 仅 loopback）
+Raspberry Pi 5
+ ├─ antifieldcloud.service（127.0.0.1:3000，schema v21）
+ │   ├─ app 主机：React 与 /api
+ │   ├─ ai 主机：会话校验后反代 DSH Web（127.0.0.1:3080）
+ │   ├─ DSH_QQ_MANAGED 时，旧 QQ Webhook 返回 404
+ │   └─ mcbot 对接：127.0.0.1:3010，契约 v2，只轮询只读接口并代理对话、在线模式和急停
+ ├─ antifield-dsh-web / qq / mcbot-agent（0.2.2-rc.3，QQ 插件 0.5.5）
+ ├─ mcbot.service（仅 loopback）
+ ├─ minecraft.service / cloudflared.service
+ ├─ antifieldcloud-world.timer（周日 12:00）
+ ├─ antifieldcloud-health.timer（60 秒）
+ └─ nftables：默认拒绝；22 与 25565 限网段；25575 仅 loopback
 ```
 
+SQLite 在 `/var/lib/antifieldcloud/db.sqlite`。文件在 `files/<id 前两位>/<id>`。mcbot 的聊天和事件只留在内存。
 ## 2. 进程与请求路径
 
-- 单 Node 进程；Fastify 监听 `127.0.0.1:3000`。`main.ts` 在 listen 后启动告警评估与指标采样器，并依次 `context.alerts.start()` → `startMetrics()` → `startBots()` → `startmcbot()`；mcbot 未启用时为空操作、无定时器/网络请求。关闭时 `lofii.stop()` 先于 `app.close()`，`onClose` 也会再次调用（幂等）。
+- 单 Node 进程；Fastify 监听 `127.0.0.1:3000`。`main.ts` 在 listen 后启动告警评估与指标采样器，并依次 `context.alerts.start()` → `startMetrics()` → `startBots()` → `startmcbot()`；mcbot 未启用时为空操作、无定时器/网络请求。关闭时 mcbot 客户端先于 `app.close()` 停止，`onClose` 也会再次调用（幂等）。
 - `onRequest` 先按 `Host` 分流：
-  - `ai.<域名>`：校验 `af_session` 与 `Origin`，注入 `Authorization: Basic` 后交给 `http-proxy` 反代 opencode；未登录 HTML 302 到登录页，API/WS 401，Origin 非法 403 并审计。
+  - `ai.<域名>`：校验应用会话与 `Origin`，经 Workbench 单点登录进入 loopback 上的 DSH Web。未登录 HTML 302 到登录页，API 与 WebSocket 返回 401，非法 Origin 返回 403 并审计。
   - `app.<域名>` 或 loopback：进入应用路由；附加上下文（不强制登录）。
   - 其它 Host：404。
 - 应用路由：`/healthz` 公开（返回 `version`，生产由 `APP_VERSION` 注入）；`/api/*` 需要会话（登录/健康检查除外）；写操作额外校验 CSRF。
@@ -249,8 +232,8 @@ SQLite（WAL）核心表（schema v20）：
   可选 `-IncludeWorld`（先查临时盘 ≥3× 归档空间再解包验证 `world/level.dat`）并回写 `drill-status.json`。
 - **Web 恢复**：只做归档导入/校验/文件级恢复到新目录（TOTP + typed confirmation）；恢复链按来源隔离；
   归档内 `origin!='user'` 的文件不进入用户目录；`skippedMissing` 文件从选择中剔除并报告；解包/落盘按选择字节 ×2 预检空间，
-  staging 上限 2 GiB 且不超过可用空间 20%；归档内容浏览按 IP 限流（30 次/分钟）；整库恢复走离线 root 手工流程（停服 + pre-restore 快照 + 回滚，见 `docs/app/BACKUP.md` §8.1）。
-- **旧世界 cron**：验收后已从 `crontab` 移除 `minecraft-backups` 行；旧归档不自动删除，按 `docs/app/BACKUP.md`/`docs/app/DEPLOY.md` 手动清理。
+  staging 上限 2 GiB 且不超过可用空间 20%；归档内容浏览按 IP 限流（30 次/分钟）；整库恢复走离线 root 手工流程（停服 + pre-restore 快照 + 回滚，见 `docs/BACKUP.md` §8.1）。
+- **旧世界 cron**：验收后已从 `crontab` 移除 `minecraft-backups` 行；旧归档不自动删除，按 `docs/BACKUP.md`/`docs/DEPLOY.md` 手动清理。
 
 ## 9. 部署与运行
 
@@ -302,7 +285,7 @@ SQLite（WAL）核心表（schema v20）：
 
 ## 11. 明确残余与长期限制
 
-以下为明确保留、不强行改造的架构性/已接受项（逐条理由见 `docs/app/AUDIT.md` 与 `docs/app/SECURITY.md` §4）：
+以下为明确保留、不强行改造的架构性/已接受项（逐条理由见 `docs/AUDIT.md` 与 `docs/SECURITY.md` §4）：
 
 1. **单进程单点**：服务端与 Bot 队列、限流、诊断计数均在单进程内存态；进程重启会清零限流计数，无多实例/高可用。审计失败计数已持久化，限流仍为内存态。
 2. **同步维护与 SQLite 模式**：小时维护任务同步执行可能短暂阻塞请求；`synchronous=NORMAL` 不抗突然断电最后若干毫秒写入。
@@ -311,13 +294,11 @@ SQLite（WAL）核心表（schema v20）：
 4. **物理孤儿/导入异常路径**：孤儿文件回收仅限“超期 + DB 无行 + id 形状”；导入归档按 90 天保留并清理无 DB 记录导入文件，恢复锁/临时目录的极端残留仍需人工核对。
 5. **备份加密残余**：SIGKILL/断电/ENOSPC 的 `*.plain.tmp` 窗口（>24h 清理）、2× 空间峰值、孤儿密文只报告；私钥丢失不可恢复；
    预部署 DB 快照继续明文 0600（自动回滚需要）。
-6. **异地副本残余**：默认关闭、单远端、依赖 PC/rclone/凭据；状态文件可信度取决于管理员 PC 边界。
+6. **异地副本残余**：模板默认关闭。生产使用一个 Google Drive 远端，依赖 PC、rclone 和凭据。状态文件的可信度取决于管理员 PC。
 7. **ChatbotService 拆分（ARCH-01）**：`targets.ts`（目标 CRUD）、`roles-admin.ts`（用户/群角色卡）、`memory-admin.ts`（记忆管理）已抽出，`service.ts` 保留 facade/依赖装配；后续可继续拆状态机与投递编排。
-8. **既有环境限制**：单管理员、`antifield` NOPASSWD sudo、RCON 监听 0.0.0.0、单 SD/无 LUKS、Cloudflare 明文、`http-proxy` 弃用警告、
-   内存态限流、`Intl` 开销、迁移无校验和、健康检查为轻量就绪（非全量依赖探测）等按 `docs/app/SECURITY.md` §4 管理。
+8. **既有环境限制**：单管理员、无限免密 sudo 已撤销、RCON 监听 0.0.0.0、单 SD、无 LUKS、Cloudflare 明文、
+   内存态限流、`Intl` 开销、迁移无校验和、健康检查为轻量就绪（非全量依赖探测）等按 `docs/SECURITY.md` §4 管理。
 9. **已收口项**：审计失败计数持久化、Bot 镜像孤儿清理、导入归档保留、告警 24h 重通知、备份锁心跳、DR-1 `clockSkew` 状态。
 10. **mcbot 事件告警语义（v0.8.0，v0.8.1 仍保持）**：外部 `alert` 仅以 `status='event'` 记录，不进入 firing/resolved 状态机，无恢复通知/冷却/去重（由上游负责）；告警只在轮询时发现，最多滞后一个 `MCBOT_POLL_MS` 周期；告警写入失败停游标重试。v1.0.7 的 schema v19 为这些事件增加可空 `dedupe_key`，同一键不重复写入。
 11. **mcbot 聊天/事件不持久化（v0.8.0）**：事件与聊天只存在服务端内存（≤100 条且 ≤512 KiB），应用/mcbot 重启即丢失；不提供历史查询、导出或搜索。
 12. **mcbot 单实例与轮询延迟（v0.8.0）**：单进程内存缓存、单 mcbot 上游；控制结果最终一致，状态/事件最多滞后一个轮询周期；mcbot 不可达时仅展示缓存并降级；`stop()` 仍不取消在途轮询。v1.0.7 起 mcbot 进程不在或轮询快照过期走 `service_down`。
-13. **v0.8.0 生产验收边界**：生产部署与只读/API 验收已完成（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`，当时任务标记未重装），mcbot token 匹配、`meta.lofii.event_cursor` 已建立、patrol start/stop 已验证）；生产 UI 视觉确认已完成（Edge headless 经 SSH 隧道截图、mcbot 面板正常渲染、临时会话已清理；用户仍可自行复核）；真实 mcbot 告警联动未触发（单元/集成覆盖）；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldComplexx v0.8.0：mcbot Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**。
-14. **v0.8.1 安全补丁与生产验收（2026-10-27）**：本地实现与门禁完成（`npm run check` 通过；`npm test` 572、`test:web` 256；服务端覆盖率 93.04/78.77/88.67、前端 55.83/51.29/48.66；build 通过）；**生产已于 2026-10-27 部署 v0.8.1 并完成只读/API/安全回归验收**（release `20261027T113055Z`/commit `5405a8d`，smoke 26/0/0/2 + 完整 Access **36/0/0/2**（含任务标记检查），`/say` 任意 `/` 与 C0 均 400，mcbot v0.6.1 已部署且 Token match）；**v0.8.1 已发布：annotated Tag `v0.8.1` + GitHub Release `AntifieldComplexx v0.8.1：mcbot 安全补丁与稳定性修复`（2026-10-27）**；Windows 备份任务已重装并验证（appVersion=0.8.1、installedAt 2026-10-27T12:11:23Z、scriptSha256 一致、任务 Ready）；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效），只读 `/say` 503 仅单测/集成覆盖；残余见 `docs/app/AUDIT.md` v0.8.0 Minor 补审计节。

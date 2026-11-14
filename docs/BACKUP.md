@@ -1,41 +1,24 @@
 # 备份与恢复
 
-## v1.2.3
+目标是在 SD 卡损坏、误删、升级失败或世界损坏时恢复 `/var/lib/antifieldcloud` 与 Minecraft 世界。
 
-v1.2.3 未改备份格式。整包加密与 Google Drive 异地副本保持 v1.2.2 的生产配置。应用进程为 v1.2.3。演练仍是 `20261113T081625Z`。
+四条链路是：应用数据归档、age 密钥包、Minecraft 世界归档，以及 PC 上的异地副本。归档和密钥包只落在 Pi、PC 备份目录或离线介质。Web 不持有私钥。加密归档只能在 PC 上用离线私钥解密、校验和恢复。
 
-## v1.2.2 加密与固定维护入口补充（已验收）
+## 现行加密与异地副本
 
-整包加密已在本轮生产配置开启，应用进程为 v1.2.2。Pi 只持有独立备份公钥，私钥保留 PC 及第二份离线副本；失败不回落明文。历史明文仅保留在原本机受限目录，不上传，不以删除历史归档规避告警。异地检查要求存在完整密文恢复基线，`plaintextSkipped` 记录历史明文数量，不等同于外泄。
+生产已开启整包加密。模板默认仍是关闭。Pi 只持有独立备份公钥，私钥留在 PC 和第二份离线副本。失败不回落明文。历史明文留在本机受限目录，不上传。
 
-`-Remote`／`-OffsiteRemote` 接受 rclone 配置名（末尾冒号可省略），脚本统一补齐远端语法；子目录只通过 `-RemotePath` 传入。单字母盘符、本地路径、临时后端及嵌入子路径的名称被拒绝，避免把本地目录误报为异地副本。
+异地远端只接受 rclone 配置名。单字母盘符、本地路径和嵌在名称里的子路径会被拒绝。子目录只通过 `-RemotePath` 传入。Windows 任务可以显式传入 `-RcloneBin` 和 `-RcloneConfig`。配置目录只给当前用户、Administrators 和 SYSTEM。
 
-Windows 异地任务可显式传入 `-RcloneBin` 和 `-RcloneConfig`，不依赖交互终端环境；配置目录 ACL 仅当前用户、Administrators 与 SYSTEM。历史 OneDrive 接入的根 ID 使用专用目录的 `driveID#itemID` 规范格式；此目录限制是客户端配置边界，OAuth 权限本身不是文件夹级授权。禁止为排障持久化扩大到整盘 remote。脚本仍只复制 `.tar.gz.age` 与 SHA／元数据旁文件，不上传历史明文或私钥。
+生产异地副本是 Google Drive：独立 OAuth 客户端、`drive.file`、专用目录，以及 Production 状态。脚本只复制 `.tar.gz.age` 和 SHA、元数据旁文件。远端密文、SHA-256 和元数据三件套齐备才计入保留基线。任一上传或确认失败时，这一轮不删除旧链。
 
-OneDrive 已因分段上传与官方下载均返回 401 而停止本轮接入，既有密文保留核对，云端未通过恢复验收。用户选择的 Google Drive 已通过真实分段上传、回下载 SHA／解密和云端 full＋3 inc 隔离恢复；每日 13:00 异地任务已启用，实际调度退出 0 并写回成功状态。旧 OneDrive 既有密文仅保留核对，没有启用其任务。
+每日 13:00 的异地任务已启用。世界归档和独立密钥包仍由 PC 拉取，不进这条云端链。隐私说明见 [BACKUP-OAUTH-PRIVACY](BACKUP-OAUTH-PRIVACY.md)。
 
-Google Drive 使用独立 OAuth 客户端、`drive.file` 最小范围和专用备份目录 root ID；备份程序只见其创建的文件／文件夹，目录限制是额外的客户端边界。rclone 共享客户端正在退役，不能作为长期备份依赖；自建 OAuth 应用应处于 Production，避免 Testing 授权七天失效。账号登录、条款与两步验证由账号持有人完成。凭据文件和刷新令牌只保存在受限 PC 配置目录，不进入 Pi 或状态文件。[rclone 官方配置说明](https://rclone.org/drive/#making-your-own-client-id)
+密钥包收录 mcbot 目标库、任务状态，以及主世界、下界和末地的世界记忆。每个文件单独记录 SHA-256 和大小。目标库快照使用 DELETE journal。生产原库的 WAL 不改。非空且未登记的 WAL 不能丢掉。
 
-OAuth 公开首页与隐私说明使用独立静态站点，源文件在 `deploy/backup-info/`，隐私正文见 [BACKUP-OAUTH-PRIVACY](BACKUP-OAUTH-PRIVACY.md)。自有域名经 Google 所有权验证后登记到品牌配置，不使用无权验证的第三方平台根域名。实际账号验证标记只保留在部署副本，凭据不进入站点。
+状态文件由固定维护入口写入。来源是随机临时文件，并受 64 KiB 上限约束。最近一次应用与世界隔离演练是 `20261113T081625Z`。
 
-当前异地任务只复制应用 `.tar.gz.age` 恢复链及其旁文件；世界归档和独立密钥包仍由 PC 拉取保留。云端应用恢复验收使用全新目录，只回下载云端文件，不混用原本地归档；应用／世界完整演练另行保留。
-
-目标库一致性快照、任务状态和主世界记忆继续收录。新增 `world-memory.nether.json`、`world-memory.end.json`，每个文件独立 SHA／大小及 included／not_created／read_failed。历史清单缺少这两个字段时，仅在对应文件实际不存在时允许；已存在的未登记或损坏内容必须拒绝。隔离恢复验证维度侧文件，不在生产启动恢复副本。
-
-目标库的隔离快照切为 DELETE journal 模式，再校验与计算 SHA，归档只依赖单个数据库文件。生产原库的 WAL 不修改。历史密钥包可能带空 WAL 与 SHM；在已验证整包密文 SHA 和 age 解密的隔离副本上，确认 WAL 为空后可去除辅助文件，再按 manifest 验证数据库；非空未登记 WAL 不得静默丢弃。
-
-管理员先安装 `scripts/install-maintenance.sh`，再更新 Windows 任务。root 状态目的地固定；备份／世界／演练／异地状态由固定维护入口写入，来源为随机临时文件并受 64 KiB 上限约束。密钥包提权脚本是 release 外的 root 独立副本，快照业务代码以 mcbot 身份运行。实际云端回下载、密钥包解密及完整演练完成后，才可把本轮异地状态记为验收通过。
-
-## v1.2.1 异地完整性与演练
-
-远端密文、SHA-256 与元数据三件套齐备才计入已上传集合和保留基线；残缺集合补传，checksum／immutable 防止覆盖同名冲突。任上传、大小校验或最终远端确认失败时本轮不删除。错误 remote_confirmation_failed／partial_failure_no_retention 保留诊断。
-
-本版不自动启用生产异地副本。发布门禁需要 schema 21 应用及世界归档隔离恢复，schema 20 演练不能替代。
-
-2026-11-12 已更新 Windows 每日／世界拉取任务为 1.2.1 并实拉 `snapshot-20261112T115806170Z-inc.tar.gz`、`secrets-20261112T115807Z.tar.age`。演练 `20261112T115843Z` 验证 full + 23 个增量、schema 21 完整性／外键及世界隔离解包后的 `level.dat`。密钥包离线副本的 6 个目标可读、无运行中目标。明文临时 tar 随校验清理；完整验收见 ACCEPTANCE。
-
-
-> v1.1.1 起，`MCBOT_ENABLED=true` 时，age 密钥包在 `mcbot-state/` 收录目标库 SQLite 一致性快照、手动任务状态及世界记忆。清单逐项记录 SHA-256 和大小，状态为 `included`、`not_created` 或 `read_failed`。目标库必须已初始化。读取或校验失败时密钥包失败。Windows 拉取和 `smoke.ps1 -RequireMcbotState` 检查收录状态。
+>`MCBOT_ENABLED=true` 时，age 密钥包在 `mcbot-state/` 收录目标库 SQLite 一致性快照、手动任务状态及世界记忆。清单逐项记录 SHA-256 和大小，状态为 `included`、`not_created` 或 `read_failed`。目标库必须已初始化。读取或校验失败时密钥包失败。Windows 拉取和 `smoke.ps1 -RequireMcbotState` 检查收录状态。
 
 在 PC 私有临时目录解密密钥包后，仅解出 `mcbot-state/`。先执行 `node scripts/backup-mcbot-state.mjs verify <隔离目录>/mcbot-state` 核对清单与内容，再在该副本上执行 `restore`。恢复检查只输出计数与是否有待恢复任务。启动时在途目标转入暂停，已完成步骤保留。核对目标、任务和记忆后清理临时明文。
 
@@ -337,16 +320,13 @@ sudo rm -rf /home/antifield/minecraft-backups
 
 ## 7. 恢复演练（自动化 + 记录）
 
-演练校验 PC 上已拉取的真实归档，只读、不修改/删除归档；建议每季度或升级前执行一次。本机实际备份根为 **`D:\Backups`**（2026-10-30 任务重装后），执行 drill/smoke 时显式传 `-BackupRoot "D:\Backups"`。
+演练校验 PC 上已拉取的真实归档，只读、不修改、不删除归档。每季度或升级前执行一次。备份根以本机计划任务为准，写在 `.local`，不写入公开文档。schema 期望值默认来自 `deploy/tool-versions.json`。最近一次应用与世界隔离演练是 `20261113T081625Z`。更早的演练记录见 CHANGELOG。
 
 ```powershell
-# 应用归档链 + DB + manifest + 可选世界归档
 cd "$env:USERPROFILE\projects\AntifieldComplexx"
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 14
-# 需要解包验证世界（先确认临时盘 ≥3× 世界归档体积）
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 14 -IncludeWorld
-# 将 ASCII 状态回写 Pi（可选；默认不写）
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -PiHost 192.0.2.10
+.\scripts\drill.ps1 -BackupRoot <备份根>
+.\scripts\drill.ps1 -BackupRoot <备份根> -IncludeWorld
+.\scripts\drill.ps1 -BackupRoot <备份根> -PiHost 192.0.2.10
 ```
 
 - 检查项：最新 full + 其后全部 inc、每份 `.sha256` 旁文件与 SHA-256、tar 条目安全（拒绝绝对路径/`..`/反斜杠/控制字符/
@@ -357,19 +337,7 @@ cd "$env:USERPROFILE\projects\AntifieldComplexx"
 - 可选写回 `/var/lib/antifieldcloud/drill-status.json`（0644），字段
   `lastRunAt/ok/report/fullArchive/incCount/latestDb/schemaVersion/worldArchive/worldChecked/error/warnings`；
   Dashboard 与 `drill_stale` 告警读取。未安装/未运行时状态为 unknown，不误报“已通过”。
-- 手工演练记录表（每次演练后补充；自动化报告路径一并记录）：
-
-| 日期 | 操作人 | 全量归档 | 增量数量 | 最新 DB schema | 世界归档 | 结果 | 报告/备注 |
-|---|---|---|---|---|---|---|---|
-| 2026-10-25 | 自动演练 | snapshot-20261025T133725908Z-full.tar.gz | 0 | 17 | 通过 | 通过 | drill 报告 `20261025T133743Z`；链连续性/SHA/解包/DB integrity/FK/schema |
-| 2026-10-27 | 自动演练 | snapshot-20261025T133725908Z-full.tar.gz | 5 | 17 | 通过 | 通过 | drill 报告 `20261027T061319Z`；首次 `20261027T061021Z` 因 drill-verify 未返回 `details.since` 误报断链，修复后本报告通过；链连续性/SHA/解包/DB integrity/FK/schema/世界归档 |
-| 2026-10-30 | 自动演练 | snapshot-20261025T133725908Z-full.tar.gz | 14 | 18 | 通过 | 通过 | drill 报告 `20261030T145445Z`；BackupRoot=`D:\Backups`；链连续性/SHA/解包/DB integrity/FK/schema18/世界归档；最新 DB `db-20261030T145409822Z.sqlite`；已回写 Pi `drill-status.json` |
-| 2026-11-04 | 自动演练 | snapshot-20261102T014632977Z-full.tar.gz | 7 | 19 | 通过（SHA/`level.dat` 名，未解包） | 通过 | drill 报告 `20261104T103202Z`；BackupRoot=`D:\Backups`；耗时 18818 ms；链连续性/SHA/解包/DB integrity/FK/schema19；最新 DB `db-20261104T103144405Z.sqlite`；世界归档 `world-20261101T040001Z.tar.gz`；新增量 `snapshot-20261104T103144405Z-inc.tar.gz`（576694 bytes，secrets=ok）；已回写 Pi `drill-status.json`（ok，schemaVersion 19）；未用 `-IncludeWorld` |
-| 2026-11-05 | 升级前复核 | snapshot-20261102T014632977Z-full.tar.gz | 8 | 19 | 通过（SHA 与完整隔离解包） | 通过 | 报告 `20261105T015503Z`；文件哈希 1/1、缺失 0、异常 0；生产状态未回写 |
-| 2026-11-05 | 升级后复核 | snapshot-20261102T014632977Z-full.tar.gz | 9 | 20 | 通过（SHA 与完整隔离解包） | 通过 | 报告 `20261105T022152Z`；文件哈希 1/1、缺失 0、异常 0；已回写 Pi `drill-status.json` |
-|  |  |  |  |  |  |  | （下一次演练填写） |
-
-- 未填写记录的“演练通过”声明无效；报告文件与 `.local/DR-DRILL.md` 作为证据保存。
+- 演练报告写在备份根的 `drills\<UTC>\`，并回写 Pi 的 `drill-status.json`。未运行时状态为 unknown。证据留在报告和 `.local/DR-DRILL.md`。
 
 ## 8. 恢复（实际命令）
 

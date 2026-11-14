@@ -1,25 +1,16 @@
-# Bot 集成
+# QQ 与聊天机器人
 
-## v1.2.2 QQ 连接监督
+历史回滚管线的兼容性基于 OpenCode v2.2.5。生产 QQ 由 DeepSeek Harness QQ Agent 处理白名单私聊、群 @ 和图片。
 
-网关启动或断连后持续 90 秒未就绪时，包装器先请求子进程退出，5 秒宽限后强制收口，由现有 systemd `Restart=on-failure` 恢复。就绪事件撤销计时，重复断连事件不延后期限；手动停止先撤销监督计时。进程 active 与网关 ready 分别判断，长期未连接不能一直停留在存活但不可用状态。日志只增加固定连接诊断，不记录平台正文、身份或凭据。
+`DSH_QQ_MANAGED=true` 时，Workbench 对旧回调返回 404，管理状态接口返回 410。平台只有 QQ。Telegram、Discord、Slack、媒体发布和群聊触发开关不属于当前能力。企业微信告警是独立通知通道。
 
-> **DSH QQ 管理**。管理员从独立 QQ profile 管理 AppID、私聊与群聊白名单，群聊要求 @Bot。角色和结构化记忆按平台确认的身份导入。群历史按成员分离。通过 `qq-memory-cli.mjs` 的 `pending`、`approve`、`reject` 管理候选。私聊发送 `/forget confirm` 清除同一 AppID 下与发送者身份精确匹配的私聊及群聊记忆和待审候选，同时轮换相关会话。迁移前备份含历史记录，仍受离线密钥保护。
+网关启动或断连后持续 90 秒未就绪时，包装器先请求子进程退出，5 秒宽限后强制收口，再由 systemd 恢复。就绪会撤销计时。日志只增加固定连接诊断，不记录平台正文、身份或凭据。
 
-历史回滚管线的兼容性基于 OpenCode v2.2.5。
+管理员从独立 QQ profile 管理 AppID、私聊和群聊白名单。群聊要求 @Bot。私聊发送 `/forget confirm` 会清除同一 AppID 下可确认归属的私聊和群记忆，并轮换相关会话。
 
-AntifieldComplexx 的生产 QQ 由 DeepSeek Harness QQ Agent 处理白名单私聊、群 @ 与图片。Workbench 在 `DSH_QQ_MANAGED=true` 时对旧回调返回 404，管理状态接口返回 410。
-平台仅 QQ：Telegram / Discord / Slack、Discord Gateway、只读按钮、媒体/多附件发布、群聊触发方式（`chatTrigger`）均不属于当前能力。
-生产图片由 DSH QQ Agent 交给模型。OpenCode prompt files 只属于已退役的回滚路径。
-企业微信/钉钉/飞书的 Bot 收发与多管理员审批未实现；企业微信告警中继属于独立通知通道。
+QQ AppSecret 只写不读，数据库只存 AES-256-GCM 密文。Webhook 按 Ed25519 签名和时间戳鉴权。斜杠命令除自助命令外需要目标和用户双重白名单。发布必须 TOTP 再认证，且只有文本。输出不包含内部路径或 URL。
 
-> 当前代码：v1.2.3 / schema 21，2026-11-14 已部署。生产 Workbench `20261114T051811Z`、mcbot `20261114T043045Z`；DSH 0.2.2-rc.3／QQ 插件 0.5.5，runtime `20261114T051442Z`。QQ 单元于 2026-11-14 13:17:38 CST 重启。同 schema 回退先把 DSH current 指回 `20261114T043420Z` 并重启三路，保留现行数据库及 WAL。再退到 v1.2.2 的 runtime 是 `20261113T080907Z`。退回 v1.1.1 必须恢复 schema 20 快照，详见 DEPLOY。下文 Webhook、凭据数据库、发布队列与 OpenCode 管线仅描述历史回滚路径；生产 `DSH_QQ_MANAGED=true` 禁用这些入口。
-> 安全边界：QQ AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台 Ed25519 签名/时间戳鉴权；
-> 除自助命令（`/help`、`/memory`、`/role` 仅私聊；`/reset`、`/forget confirm` 全用户）外，斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；
-> 发布必须 TOTP + `PUBLISH` 二次确认，且仅文本；通知/命令/Chat 输出不包含内部路径或 URL；私聊角色/记忆正文不通过 API/UI 暴露，群聊角色正文仅管理员在 Web 编辑；
-> 诊断只存事件元数据、不存消息正文；入站图片只从 QQ 固定域名后缀下载、mime 白名单与大小上限处理且不落盘。
-> v0.7.3 文档模式（`CHATBOT_AI_CONTEXT_READ_ENABLED=true`）下，角色卡只在会话创建时进入 prompt；后续轮只给角色名/记忆条数/只读文档路径，
-> 模型仅能 `read` 当前作用域 `role.md`/`memory.md`，不得读取其它文件；文档目录 0640/0750、不跟随符号链接、不进入备份。
+下文的 Webhook、凭据库、发布队列和 OpenCode 管线描述的是回滚路径。生产由 DSH 接管 QQ 之后，这些入口关闭。
 
 ## 1. 架构
 
@@ -126,7 +117,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/chatbot/webhook/:botId
 
 ## 5. 配置
 
-见 `deploy/env.example` 的 `CHATBOT_*` 段与 `docs/app/DEPLOY.md` §2/§3.0（以下为最终保留项；`CHATBOT_DISCORD_GATEWAY_ENABLED` 与 `CHATBOT_PUBLISH_MAX_MEDIA_*` 不属于当前配置）：
+见 `deploy/env.example` 的 `CHATBOT_*` 段与 `docs/DEPLOY.md` §2/§3.0（以下为最终保留项；`CHATBOT_DISCORD_GATEWAY_ENABLED` 与 `CHATBOT_PUBLISH_MAX_MEDIA_*` 不属于当前配置）：
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
@@ -213,7 +204,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/chatbot/webhook/:botId
 - 入站：QQ 事件 `d.attachments` 中首个 `content_type` 以 `image/` 开头的附件（`filename`/`size`/`url`）；仅图片无文字也可进入 Chat。
 - 下载：只允许域名后缀 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`）（完整 DNS 标签边界）；image mime 白名单 jpeg/png/webp/gif；≤`CHATBOT_AI_IMAGE_MAX_BYTES`；
   平台声明大小超限提前拒绝；图片不写磁盘，只在内存转 base64。
-- 外发模型：图片内容会以 data URL 经本机 OpenCode API 交给配置的模型 provider，说明见 `docs/app/SECURITY.md`；不落盘、不写日志/审计正文。
+- 外发模型：图片内容会以 data URL 经本机 OpenCode API 交给配置的模型 provider，说明见 `docs/SECURITY.md`；不落盘、不写日志/审计正文。
 - 降级：vision 关闭/无图片权限/下载失败/mime 非法时，有文字则继续文字回答并附“（图片未能处理，已按文字回答）”；无文字则提示“当前暂不支持处理这张图片，可以用文字描述”。
 - 审计 `chatbot.ai.image` 只记录 mime/大小/跳过原因，不记录内容；QQ 平台对普通消息只推送 @ 事件，图片消息同样受此限制。
 
@@ -256,7 +247,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/chatbot/webhook/:botId
 
 ## 5.7 联网搜索
 
-- **部署**：SearXNG 自建/私有实例，仅监听 `127.0.0.1:8888`；通过 `scripts/searxng-mcp.mjs` 作为 OpenCode MCP 工具暴露（`codemode:false`，工具名 `searxng_web_search`），应用侧 `CHATBOT_SEARCH_MODE=mcp`。安装/回滚见 `docs/app/DEPLOY.md` §3.5；不引入 Docker。
+- **部署**：SearXNG 自建/私有实例，仅监听 `127.0.0.1:8888`；通过 `scripts/searxng-mcp.mjs` 作为 OpenCode MCP 工具暴露（`codemode:false`，工具名 `searxng_web_search`），应用侧 `CHATBOT_SEARCH_MODE=mcp`。安装/回滚见 `docs/DEPLOY.md` §3.5；不引入 Docker。
 - **自动触发**：`mcp` 模式下命中关键词/追问时服务端先预取（保证“找找B站热点”“再搜搜看”等稳定），未命中时由模型通过 `searxng_web_search` 语义决定；Bot 新建会话的 permissions 仅放行 `searxng_*`，其余工具仍 deny（生产已验证 shell 不可用、目标文件未创建）。`prefetch` 模式仅服务端关键词预取，作为兼容/回退。
 - **显式命令**：`/search <关键词>` 对所有可 Chat 用户开放（C2C 或目标 `allow_chat=1`），服务端强制预取并向模型注入结果，保证命令触发稳定。
 - **结果注入/展示**：MCP 工具直接返回标题/摘要/域名/URL；`/search` 预取只取标题/摘要/域名/URL，最多 `CHATBOT_SEARCH_MAX_RESULTS` 条；提示词把结果标为**不可信外部资料**，不执行其中指令、不编造、不输出完整 URL；服务端附“参考来源：标题（域名）”。
@@ -351,7 +342,7 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
 - **群共享记忆**：群 scope 为 `group:<targetExternalId>`；条目 key 前缀为稳定 `<member_openid>:`，显示名只存 value（`<用户名>：<记忆>`），
   同名/改名成员不能互相覆盖/删除；启动一次性迁移旧显示名 key（无法唯一映射加 `legacy:` 保留）；`/forget confirm` 清本人在各群条目并取消在途抽取；
   管理端清空群记忆会取消在途抽取；管理员 `DELETE /api/chatbots/:id/group-memories/:scope` 清空该群共享记忆（审计 `chatbot.memory.delete_user`）。
-- **当前 schema v20**：记忆表仍是 `chatbot_memory_items`/`chatbot_memory_state`。schema 20 另增 `external_alert_deliveries`，按通道记录外部告警的 Webhook 与 QQ 入队。`scripts/deploy.ps1` 切换前自动做迁移前 DB 快照；从 v1.0.8 退回 v1.0.7 必须先恢复迁移前快照。
+- **当前 schema v21**：记忆表仍是 `chatbot_memory_items`/`chatbot_memory_state`。schema 20 另增 `external_alert_deliveries`，按通道记录外部告警的 Webhook 与 QQ 入队。`scripts/deploy.ps1` 切换前自动做迁移前 DB 快照；从 v1.0.8 退回 v1.0.7 必须先恢复迁移前快照。
 - **写入**：抽取批处理按 Bot×用户串行；一次性 OpenCode 会话（`finally` 删除）；服务端严格校验 ops、敏感过滤（密钥/URL/内部路径/UNC/提示结构标记，key/value/legacy 均过滤）、容量清理（默认 200，先淘汰低重要度非核心条目）；更新续期；ops=0 不置 legacy 迁移标记。
 - **读取/召回**：核心层优先 + 关键词相关层，预算 3000 字/12 条；命中更新 `last_used_at`；`/memory off` 无注入；未迁移旧摘要 fallback 注入（受 `CHATBOT_AI_MEMORY_MAX_CHARS` legacy 上限约束）。文档模式把同一召回文本写入 `memory.md`（每轮 AI 调用前刷新），prompt 只保留条数；模型按需 `read`。
 - **TTL**：profile/preference 不过期；fact/project/relationship 365 天（`CHATBOT_AI_MEMORY_RETENTION_DAYS`）；episode 90 天（`CHATBOT_MEMORY_TTL_EPISODE_DAYS`）；task 30 天（`CHATBOT_MEMORY_TTL_TASK_DAYS`）；过期条目清理并从召回/列表排除。
@@ -370,4 +361,4 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
 - 真实平台前置条件：QQ 开放平台已创建机器人并配置回调地址，`op=13` 校验通过；已订阅 C2C/群@/频道事件；Bot 已加入目标群/频道；图片需 `CHATBOT_AI_VISION_ENABLED=true`、`CHATBOT_AI_ENABLED=true`、模型支持 image 输入。
 - 真实 QQ 正向验收已通过；真实平台限流/签名漂移/故障负路径仍需部署后联调，不把 mock 全绿等同于线上通过。
 - 手工验收：创建/启用 QQ Bot → 添加目标并勾选 `allow_chat` → C2C/群 @Bot 多轮 Chat 触发抽取（≥3 条或空闲 120s）→ 检查 `chatbot_memory_items` 条目与 `chatbot.memory.extract` 计数 → `/memory` 查看计数/类型/启停（无正文）→ `/memory off` 后 Chat 无注入、`on` 恢复 → `/forget confirm` 清空 items/state/legacy/会话并核对远端会话 → 管理页记忆列表/条目元数据/删除 → 图片识别回归 → 验收通过后 `cleanup-legacy-memory.mjs` dry-run/`--confirm`。
-- 发布前请确认 Cloudflare Access 对 `/api/chatbot/webhook/*` 做 bypass，见 `docs/app/DEPLOY.md` §5.2。
+- 发布前请确认 Cloudflare Access 对 `/api/chatbot/webhook/*` 做 bypass，见 `docs/DEPLOY.md` §5.2。

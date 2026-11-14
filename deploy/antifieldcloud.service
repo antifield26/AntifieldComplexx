@@ -1,6 +1,6 @@
 [Unit]
 Description=AntifieldComplexx comprehensive interaction platform
-Documentation=file:///opt/antifieldcloud/current/docs/app/DEPLOY.md
+Documentation=file:///opt/antifieldcloud/current/docs/DEPLOY.md
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=60

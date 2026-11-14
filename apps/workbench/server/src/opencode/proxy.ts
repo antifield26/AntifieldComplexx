@@ -450,8 +450,9 @@ export class OpenCodeProxy {
     const decoded = decodeURIComponent(raw).replace(/\\/g, '/').replace(/\/{2,}/g, '/').toLowerCase()
     if (!decoded.startsWith('/api/')) return false
     if (raw.includes('%')) return true
-    // 无连字符的 /api/pluginManager/ 保持拒绝。插件页走 /api/remote.mux 与 /api/plugin-manager/detail-file。
-    if (decoded.startsWith('/api/session/upload') || decoded.startsWith('/api/pluginmanager/')) return true
+    // rc.3 插件页用 /api/pluginManager/ 与 /api/pluginInventory/ 读取、安装和卸载。
+    // 上传、设置写入和凭据写入仍不经过公网代理。
+    if (decoded.startsWith('/api/session/upload')) return true
     return (decoded.startsWith('/api/settings/') || decoded.startsWith('/api/credentials/'))
       && decoded !== '/api/settings/describe' && decoded !== '/api/credentials/describe'
   }

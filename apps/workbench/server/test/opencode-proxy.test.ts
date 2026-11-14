@@ -178,14 +178,14 @@ test('DSH Web 换票剥离应用及 Access 凭据，拒绝公开启动令牌和�
     assert.equal((await get(address.port, '/?%74oken=private', headers)).status, 403)
     assert.equal((await get(address.port, '/', { ...headers, origin: 'https://other.test' })).status, 403)
     const apiHeaders = { host: 'ai.test', cookie: `${headers.cookie}; ${dshCookie}`, accept: 'application/json' }
-    for (const path of ['/api/session/uploadFileBinary', '/api/%73ession/uploadFileBinary', '/api/settings/update', '/api/credentials/set', '/api/pluginManager/install']) {
+    for (const path of ['/api/session/uploadFileBinary', '/api/%73ession/uploadFileBinary', '/api/settings/update', '/api/credentials/set']) {
       const denied = await get(address.port, path, apiHeaders)
       assert.equal(denied.status, 403)
       assert.match(denied.body, /dsh_route_restricted/)
     }
-    assert.equal((await get(address.port, '/api/settings/describe', apiHeaders)).status, 200)
-    assert.equal((await get(address.port, '/api/plugin-manager/detail-file', apiHeaders)).status, 200)
-    assert.equal((await get(address.port, '/api/remote.mux', apiHeaders)).status, 200)
+    for (const path of ['/api/settings/describe', '/api/plugin-manager/detail-file', '/api/remote.mux', '/api/pluginInventory/list', '/api/pluginManager/listBundles', '/api/pluginManager/listPlugins', '/api/pluginManager/install']) {
+      assert.equal((await get(address.port, path, apiHeaders)).status, 200, path)
+    }
     let resolveStreamClosed = (): void => {}
     const streamClosed = new Promise<void>((resolve) => { resolveStreamClosed = resolve })
     const stream = await new Promise<number>((resolve, reject) => {
@@ -212,6 +212,10 @@ test('DSH Web 换票剥离应用及 Access 凭据，拒绝公开启动令牌和�
       '/api/settings/describe',
       '/api/plugin-manager/detail-file',
       '/api/remote.mux',
+      '/api/pluginInventory/list',
+      '/api/pluginManager/listBundles',
+      '/api/pluginManager/listPlugins',
+      '/api/pluginManager/install',
       '/api/stream',
     ])
   } finally {

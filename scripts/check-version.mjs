@@ -2,8 +2,8 @@
 /**
  * 版本一致性检查脚本（已接入 CI check job）。
  *
- * 比对 package.json 的 version 与 README / CHANGELOG / docs/app/ACCEPTANCE.md / AGENTS.md（缺失只警告），
- * 以及 lock 根版本、deploy/env.example 的 APP_VERSION、docs/app/DEPLOY.md 标题；输出单行 JSON，
+ * 比对 package.json 的 version 与 README / CHANGELOG / docs/ACCEPTANCE.md / AGENTS.md（缺失只警告），
+ * 以及 lock 根版本、deploy/env.example 的 APP_VERSION、docs/DEPLOY.md 标题；输出单行 JSON，
  * 任一必需项不一致时退出码 1。
  *
  * 用法：`node scripts/check-version.mjs [--json] [--quiet] [--help]`
@@ -176,9 +176,9 @@ export async function checkVersions(root = process.cwd()) {
   const checks = [
     checkFile(resolve(resolvedRoot, 'README.md'), /状态[：:]\s*v?(\d+\.\d+\.\d+)/, packageVersion),
     checkFile(resolve(resolvedRoot, 'CHANGELOG.md'), /^##\s*\[?v?(\d+\.\d+\.\d+)\]?/m, packageVersion),
-    checkFile(resolve(resolvedRoot, 'docs/app/ACCEPTANCE.md'), /当前版本\s*v?(\d+\.\d+\.\d+)/, packageVersion),
+    checkFile(resolve(resolvedRoot, 'docs/ACCEPTANCE.md'), /当前版本\s*v?(\d+\.\d+\.\d+)/, packageVersion),
     checkFile(resolve(resolvedRoot, 'deploy/env.example'), /APP_VERSION=(\d+\.\d+\.\d+)/, packageVersion),
-    checkFile(resolve(resolvedRoot, 'docs/app/DEPLOY.md'), /^# 部署手册[^\n]*v(\d+\.\d+\.\d+)/m, packageVersion),
+    checkFile(resolve(resolvedRoot, 'docs/DEPLOY.md'), /^# 部署手册[^\n]*v(\d+\.\d+\.\d+)/m, packageVersion),
     // AGENTS.md 不是严格必需项：缺失/未声明只记警告。
     checkFile(resolve(resolvedRoot, 'AGENTS.md'), /当前版本\s*v?(\d+\.\d+\.\d+)/, packageVersion, false),
   ]
@@ -275,14 +275,14 @@ export async function checkVersions(root = process.cwd()) {
     if (!allowStaleTools) {
       // 文档“当前事实”版本检查：只校验当前版本的头部/当前事实句，历史记录由人工判断。
       const docChecks = [
-        ['docs/app/DEPLOY.md', /^##\s*3\.2\s+OpenCode v(\d+\.\d+\.\d+)/m, toolVersions.opencodeVersion, 'opencode'],
-        ['docs/app/DEPLOY.md', /当前 schema \*\*v(\d+)\*\*/, String(toolVersions.schemaVersion), 'schema'],
+        ['docs/DEPLOY.md', /^##\s*3\.2\s+OpenCode v(\d+\.\d+\.\d+)/m, toolVersions.opencodeVersion, 'opencode'],
+        ['docs/DEPLOY.md', /当前 schema \*\*v(\d+)\*\*/, String(toolVersions.schemaVersion), 'schema'],
         ['AGENTS.md', /OpenCode\s*(?:服务端\s*)?(?:\*\*)?v(\d+\.\d+\.\d+)/, toolVersions.opencodeVersion, 'opencode'],
         ['README.md', /OpenCode\s*\*\*v(\d+\.\d+\.\d+)\*\*/, toolVersions.opencodeVersion, 'opencode'],
-        ['docs/app/SECURITY.md', /当前生产\s*\*\*v(\d+\.\d+\.\d+)\*\*/, toolVersions.opencodeVersion, 'opencode'],
-        ['docs/app/CHATBOT.md', /兼容性基于 OpenCode v(\d+\.\d+\.\d+)/, toolVersions.opencodeVersion, 'opencode'],
-        ['docs/app/ACCEPTANCE.md', /OpenCode v(\d+\.\d+\.\d+)/, toolVersions.opencodeVersion, 'opencode'],
-        ['docs/mcbot/README.md', /当前版本[：:]\s*\*{0,2}v(\d+\.\d+\.\d+)/, packageVersion, 'app'],
+        ['docs/SECURITY.md', /当前生产\s*\*\*v(\d+\.\d+\.\d+)\*\*/, toolVersions.opencodeVersion, 'opencode'],
+        ['docs/CHATBOT.md', /兼容性基于 OpenCode v(\d+\.\d+\.\d+)/, toolVersions.opencodeVersion, 'opencode'],
+        ['docs/ACCEPTANCE.md', /OpenCode v(\d+\.\d+\.\d+)/, toolVersions.opencodeVersion, 'opencode'],
+        ['docs/MCBOT.md', /当前版本[：:]\s*\*{0,2}v(\d+\.\d+\.\d+)/, packageVersion, 'app'],
       ]
       for (const [file, pattern, expected, kind] of docChecks) {
         const text = readText(resolve(resolvedRoot, file))

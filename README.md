@@ -1,13 +1,11 @@
 # AntifieldComplexx · 个人综合交互平台
 
-面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台：统一登录与单一入口，整合云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、mcbot Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、DeepSeek Harness AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
+面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台：统一登录与单一入口，整合云盘、知识库、多文件分享、Minecraft 状态与白名单、mcbot（只读状态、在线模式、急停、管理员对话、事件流与告警）、DeepSeek Harness AI 工作区、QQ 官方机器人、主机指标与告警，以及应用归档、世界备份和恢复演练。生产已开启整包加密和 Google Drive 异地副本；模板默认关闭。
 
-> 状态：v1.2.3 已于 2026-11-14 部署。schema **v21**，mcbot 契约 v2。Minecraft Bot 面板以管理员对话决定行动，并保留在线模式与急停。远程 DSH 插件页可查看、安装和卸载。Web、QQ 与 mcbot Agent 使用 DeepSeek Harness。OpenCode **v2.2.5** 已从 Pi 退役，离线档供历史回滚。验收与发布门禁见 [ACCEPTANCE](docs/app/ACCEPTANCE.md)。
-> 客户端与 schema 21 绑定。退回 v1.1.1 的迁移前快照是 `db-predeploy-20261111T104848131Z.sqlite`。当前应用／世界演练是 `20261113T081625Z`（schema 21），云端应用链恢复为 `20261113T135356Z`。退回 v1.1.1 必须恢复该快照、旧 release、Access 策略与公网界面。
-> v1.2.1 本地门禁：2026-11-12 全量检查为服务端／脚本 670（669 pass、1 skip）、前端 343、mcbot 183。Access smoke 37/0/0/2。
-> 命名：2026-10-27 起项目更名为 **AntifieldComplexx**（原 AntifieldCloud）；GitHub 仓库为 [antifield26/AntifieldComplexx](https://github.com/antifield26/AntifieldComplexx)，旧仓库地址由 GitHub 自动重定向。生产运行时标识符（服务用户、systemd 单元、数据路径、Windows 计划任务）保持不变，详见 [AGENTS.md](AGENTS.md) §0.1。
-> 部署与运维见 [docs/app/DEPLOY.md](docs/app/DEPLOY.md)，备份/恢复见 [docs/app/BACKUP.md](docs/app/BACKUP.md)，契约见 [docs/app/API.md](docs/app/API.md)，路线与验收记录见 [docs/app/ROADMAP.md](docs/app/ROADMAP.md) 与 [docs/app/ACCEPTANCE.md](docs/app/ACCEPTANCE.md)。
-> 当前修复、特性和运维的 12 项进度统一见 [BACKLOG](docs/app/BACKLOG.md)，历史版本段落不重复计入当前待办。整包 age 已开启并完成本地隔离恢复，OneDrive 已停止接入，Google Drive 的应用密文链回下载、隔离恢复及每日任务实跑通过；世界与密钥包仍由 PC 拉取保留，详见 BACKUP。
+> 状态：v1.2.3 已于 2026-11-14 部署。schema **v21**，mcbot 契约 v2。Minecraft Bot 面板以管理员对话决定行动，并保留在线模式与急停。远程 DSH 插件页可查看、安装和卸载。Web、QQ 与 mcbot Agent 使用 DeepSeek Harness。OpenCode **v2.2.5** 已从 Pi 退役，离线档供回滚。当前状态见 [ACCEPTANCE](docs/ACCEPTANCE.md)。
+> 客户端与 schema 21 绑定。退回 v1.1.1 的迁移前快照和现行回滚指针见 [DEPLOY](docs/DEPLOY.md)。
+> 部署与运维见 [DEPLOY](docs/DEPLOY.md)，备份与恢复见 [BACKUP](docs/BACKUP.md)，契约见 [API](docs/API.md)，版本边界见 [ROADMAP](docs/ROADMAP.md)。
+> 未完成事项见 [BACKLOG](docs/BACKLOG.md)。整包 age 与 Google Drive 异地副本已开启。世界归档和密钥包仍由 PC 拉取。
 
 ## 项目定位
 
@@ -29,7 +27,7 @@
 - `apps/workbench`：Web 端与 API（Fastify + React/Vite，默认 127.0.0.1:3000）
 - `apps/mcbot`：Minecraft AI 陪伴 bot（mineflayer，默认 127.0.0.1:3010，服务 `mcbot.service`）
 - `scripts/`、`deploy/`：部署、备份、迁移与运维脚本
-- `docs/INDEX.md`：文档分区索引（`docs/app` / `docs/mcbot` / `docs/legacy`）
+- `docs/INDEX.md`：文档索引
 ## 功能
 
 ### 认证与账号
@@ -97,7 +95,7 @@
 - **平台接入**：仅 QQ 官方 Bot；QQ 用 AppSecret 派生 Ed25519（`op=13` 回调地址校验、`op=0` 事件验签，回复 `{opcode:12}`）；公开入口为 `POST /api/chatbot/webhook/:botId`，原始 body 验签后按事件 ID 去重。
 - **普通消息 Chat**：非斜杠消息在目标 `allow_chat=1` 时进入 AI 对话；C2C 私聊直接进入；QQ 群/频道默认只有 @Bot 事件进入，群目标可设为 `groupReplyMode=all` 并在 QQ 后台开启“接收所有消息”；模型通过 `botmsg_send_message` 工具发送（私聊/@ 至少 1 条、可连续 1–5 条，全量群聊不调用即静默）；群聊/频道不执行斜杠命令，命令仅在 C2C 私聊可用；C2C 管理员命令由目标 `allow_commands` + user 白名单双校验；Chat 只读。限速：每 Bot×用户 Chat 每分钟默认 **30** 次、AI 每小时默认 **120** 次（`CHATBOT_CHAT_RATE_PER_MINUTE`/`CHATBOT_AI_RATE_PER_HOUR`）。
 - **回复形态（QQ 纯文本）**：AI 回答经清洗、去 Markdown 标记后按 QQ 单条 2000 字符分段（最多 4 段，续段前缀“（续 n/m）”，超限截断）；partial 失败 `partial_text_sent` 不自动重试；QQ 不支持媒体/附件/按钮/引用回复。
-- **图片理解（默认开启）**：`CHATBOT_AI_VISION_ENABLED=true` 时 QQ `d.attachments` 的 image/* 附件经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`）域名后缀白名单下载（image mime 白名单、≤`CHATBOT_AI_IMAGE_MAX_BYTES`、不落盘）交给 AI；失败/关闭/非法图片时降级为纯文字回答；图片会经 OpenCode 交给模型 provider（见 `docs/app/SECURITY.md`）。需模型支持 image 输入（`opencode-go/deepseek-v4.1-flash` 已完成生产只读验证）。
+- **图片理解（默认开启）**：`CHATBOT_AI_VISION_ENABLED=true` 时 QQ `d.attachments` 的 image/* 附件经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`）域名后缀白名单下载（image mime 白名单、≤`CHATBOT_AI_IMAGE_MAX_BYTES`、不落盘）交给 AI；失败/关闭/非法图片时降级为纯文字回答；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。需模型支持 image 输入（`opencode-go/deepseek-v4.1-flash` 已完成生产只读验证）。
 - **结构化长期记忆**：`chatbot_memory_items` 7 类（资料/偏好/事实/项目/任务/关系/事件），key/value/confidence/importance/source/时间/`expires_at`，唯一 `(bot,user,kind,key)`；`chatbot_memory_state` 保存启停与 legacy 迁移标记；`chatbot_ai_memories` 仅作 legacy 来源/fallback。`/chatbots`「角色与记忆」将长期记忆分为**用户记忆/群聊记忆**左右两栏；群聊记忆按群目标聚合，群共享记忆按群目标归属。
   抽取沿用累计 **3** 条或空闲 **120s**（`CHATBOT_AI_MEMORY_BATCH_MESSAGES`/`CHATBOT_AI_MEMORY_IDLE_FLUSH_SECONDS`）+ 同用户串行，一次性 OpenCode 会话（用后删除）；模型 JSON ops 经服务端校验/敏感过滤（密钥/URL/内部路径跳过）/容量清理（默认 **200** 条）；TTL：资料/偏好不过期，事实/项目/关系 **365 天**、事件 **90 天**、任务 **30 天**（更新续期）；召回核心层优先 + 关键词相关层，预算 **3000 字/12 条**（`CHATBOT_MEMORY_PROMPT_MAX_CHARS`/`CHATBOT_MEMORY_PROMPT_MAX_ITEMS`），`/memory off` 时无注入；审计 `chatbot.memory.extract` 只记计数。
 - **AI 仅普通消息 Chat**：默认（`CHATBOT_AI_CONTEXT_READ_ENABLED=false`）提示词为「角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息」；开启文档模式后首轮发送角色卡正文，后续轮只给角色名/记忆条数/只读文档路径，模型通过 OpenCode `read` 按需读取，记忆正文不再每轮进入 prompt；安全边界始终追加；全量群消息追加 `NO_REPLY` 决策段；不存在 `CHATBOT_AI_TASK_PROMPT`/`CHATBOT_AI_CHAT_PROMPT`；AI 仅在 `allow_chat=1` 的目标/C2C 私聊中调用；`chatbot_ai_sessions.mode` 只写 `chat`；`/reset`、私聊/群聊角色变更清理对应会话映射；审计 `chatbot.ai.chat` 不记录正文/路径。QQ C2C 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性），群/频道仍按目标登记。
@@ -127,7 +125,7 @@
 - 应用归档两阶段：Pi `--prepare` 生成 pending → PC 拉取并校验 SHA-256 → `--ack` 才推进游标；pending 未确认不删除，已确认在 Pi 保留 2 个、PC 每天/每周保留 30 天/56 天。
 - 备份整包加密（默认关闭）：`BACKUP_ARCHIVE_ENCRYPTION=true` 时用独立备份 age 公钥生成 `*.tar.gz.age`，明文 tar 只在 `*.plain.tmp` 短暂存在；明文 SHA-256/大小写在归档外 `<archive>.meta.json` 与 DB `manifest_json`；失败关闭（age/公钥/加密失败即 prepare 失败，不回退明文），空间按 2× 明文预算。Pi 只存公钥，私钥离线 ≥2 份；启用前必须用私钥完成一次解密演练。
 - 异地副本（默认关闭，PC 端）：`backup-offsite.mjs/.ps1` 只上传 `.age`（拒绝明文），链感知保留（最新 full + 其后全部 inc + 最近 N 天，绝不删最新 full），`rclone copyto --checksum` 上传并校验，状态写 Pi `backup-offsite-status.json`；Dashboard 只读展示，超期触发告警。当前未配置 remote，任务未安装。
-- Web 备份管理：归档列表、手动 prepare（长任务 3300s 超时）、导入/校验、文件级恢复到新目录（TOTP + typed confirmation）；加密归档在 Web 不可校验/恢复（`409 archive_encrypted`），恢复目标自动跳过；整库恢复只走离线 root 手工流程（`docs/app/BACKUP.md` §8.1）。
+- Web 备份管理：归档列表、手动 prepare（长任务 3300s 超时）、导入/校验、文件级恢复到新目录（TOTP + typed confirmation）；加密归档在 Web 不可校验/恢复（`409 archive_encrypted`），恢复目标自动跳过；整库恢复只走离线 root 手工流程（`docs/BACKUP.md` §8.1）。
 - 世界备份：`antifieldcloud-world.timer` 每周日 12:00（Asia/Shanghai，Persistent）以 root 生成 gzip 归档（`/var/lib/antifieldcloud/world-backups`），SHA-256 旁文件，保留 4 份；PC 周度 `world-pull.ps1` 校验后 ack 并保留 4 份。
 - 恢复演练：`drill.ps1` 自动校验 full+inc 链（含 `since` 连续性与 1–9 位小数秒时间戳）、旁文件 SHA、tar 安全、最新 DB integrity/FK/schema、manifest，报告保留 180 天；加密归档需 `-AgeIdentityPath` 先解密再校验；可选 `-IncludeWorld` 解包验证 `level.dat`。
 - 密钥包：age 加密 env/cloudflared/Minecraft/opencode 配置与 opencode DB 快照；明文临时目录优先用 `/run/antifieldcloud/secrets-tmp`（tmpfs），Pi 保留 2 份、PC 90 天；`--include-host-config` 可把 sshd/fail2ban/cloudflared/journald 等主机配置一并打包。
@@ -156,7 +154,7 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC，本版 v1.2.3，2026-11-14 已部署，证据见 ACCEPTANCE）：OpenCode 2.2.5 已退役，安装与回滚见 [DSH-MIGRATION](docs/app/DSH-MIGRATION.md)。应用部署 `.\scripts\deploy.ps1 -PiHost <直连 IP>`。部署之后的冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.2.3 -ExpectedSchemaVersion 21 -ExpectedMcbotVersion 1.2.3 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.3 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`（最低兼容 mcbot v0.6.0；配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 mcbot 时用 `-SkipMcbot`）。生产 `/healthz` 回答 1.2.3 / schema 21。
+部署（PC，本版 v1.2.3，2026-11-14 已部署，证据见 ACCEPTANCE）：OpenCode 2.2.5 已退役，安装与回滚见 [DEPLOY](docs/DEPLOY.md)。应用部署 `.\scripts\deploy.ps1 -PiHost <直连 IP>`。部署之后的冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.2.3 -ExpectedSchemaVersion 21 -ExpectedMcbotVersion 1.2.3 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.3 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`（最低兼容 mcbot v0.6.0；配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 mcbot 时用 `-SkipMcbot`）。生产 `/healthz` 回答 1.2.3 / schema 21。
 Pi 上同步/校验 mcbot Token（root，本版 mcbot v1.2.3，最低 v0.6.0）：`sudo bash scripts/sync-mcbot-tokens.sh`、`sudo bash scripts/sync-mcbot-tokens.sh --check`（只比较不写盘，不回显 Token；失败会原子替换 env）。
 
 ## 目录
@@ -199,28 +197,28 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - SSH 密码登录已关闭（仅公钥，`00-` drop-in；旧回滚备份已归档）；`antifield` 的 `NOPASSWD ALL` sudo 属既有残留（用户选择保留）；`fail2ban` 已启用 `sshd` jail（nftables 后端，24h ban），dbfile 持久化与 nftables 启动后恢复 drop-in 已安装。
 - RCON 仍监听所有接口（Paper 无 bind 配置），仅由 nftables 限制为 loopback；Cloudflare Access 主应用仍保护页面；`/api` 到达应用，并由密码、TOTP 与设备签名认证。健康检查、公开分享、Webhook bypass 与 service token 已配置，`ai` 主机另有 Access 应用（Owner allow + Smoke service token），Free 套餐无自定义 WAF 规则集，保留应用侧限流；service token 只保存在 PC gitignored `.local/cf-access.env`，应定期轮换。
 - Cloudflare 终止 TLS，可见明文；单 SD 卡、无全盘加密。
-- 限流状态在内存中，应用重启清零；`http-proxy` 在 Node 26 有弃用警告，Node 27 前需评估替换；scrypt 仍为 N=2^15；单进程单点，`synchronous=NORMAL` 不抗突然断电最后若干毫秒写入。
+- 限流状态在内存中，应用重启清零。AI 反代使用 httpxy 0.5.6。scrypt 仍为 N=2^15。单进程单点，`synchronous=NORMAL` 不抗突然断电最后若干毫秒写入。
 - 分享不支持目录打包，多文件分享不提供服务端 zip；下载次数为会话级近似限制；无公开笔记分享。
 - 不支持 WebDAV、Minecraft 启停/控制台、多用户/权限分离；Cloudflare 约 100 MiB/100s 请求限制仍约束单请求上传。
 - 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取周任务（周日 12:00）已安装并手动验证成功；恢复演练保持手动/季度。异地副本已启用 Google Drive，每日 13:00，只上传 `.age`。
 - **备份整包加密生产已开启，Web 仍不可恢复**：模板默认 `BACKUP_ARCHIVE_ENCRYPTION=false`。加密归档（`.age`）只能在 PC 用离线私钥解密/校验/恢复；私钥丢失即无法恢复明文，Pi 不持私钥也无法代解密。预部署 DB 快照继续明文（0600、保留 2 份，供自动回滚），属威胁模型明确豁免项。
 - **加密失败关闭的残余窗口**：SIGKILL/断电/ENOSPC 可能残留 `*.plain.tmp`（正常路径立即删除，>24h 由下次 prepare 清理）；崩溃只允许产生可清理临时文件或“有密文无 DB 行”孤儿（只报告、不自动删除），后者需人工核对。
 - **异地副本**：只上传 `.age`；状态由 PC 写回 Pi，缺失视为未配置、不告警；远端保留策略按链感知（最新 full + 其后 inc + 最近 N 天），不做跨远端多副本。生产已配置 Google Drive（drive.file、专用目录），每日 13:00。模板默认关闭，新环境需先配置 rclone remote 与凭据。
-- **明确残余**：服务端单进程/同步维护任务；平台适配与模型路径仍需 mock + 部署后真实验收；物理孤儿文件只回收 id 形状且超期者；`/api/version` 诊断不含历史；预部署快照与旧归档保留策略见 `docs/app/BACKUP.md` §11。
+- **明确残余**：服务端单进程/同步维护任务；平台适配与模型路径仍需 mock + 部署后真实验收；物理孤儿文件只回收 id 形状且超期者；`/api/version` 诊断不含历史；预部署快照与旧归档保留策略见 `docs/BACKUP.md` §11。
 - Bot 已知限制：仅 QQ 官方 Bot（单平台）；QQ 仅文本、不支持出站媒体/附件/按钮/引用；群/频道只有 @Bot 事件（或显式开启全量消息后由模型决定是否回复）；C2C 私聊开放 Chat；命令严格只读；企业微信/钉钉/飞书与多管理员审批未支持。
 - **v0.7.3 文档模式属于已退役的 OpenCode 回滚路径**：启用前需完成读范围矩阵；失败即保持关闭；上下文目录为派生数据、不进入备份。
 - 图片理解默认开启：生产由 DSH QQ Agent 处理。QQ `d.attachments` 图片仅从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`）后缀、image mime 白名单、≤`CHATBOT_AI_IMAGE_MAX_BYTES` 下载，不落盘。
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，需 QQ 后台开启接收所有消息并由群主授权获取全部消息。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量按清单覆盖，同毫秒写入会进入下一次增量；时钟回拨仍记 `clockSkew`，归档时间不早于最近一份本机归档。Web 导入归档按 90 天保留；告警持续 firing 每 24h 重通知；`.backup.lock` 有 30s 心跳续租。
-- **发布状态**：v1.2.3 已于 2026-11-14 部署。生产运行提交 `b5990e8`。annotated Tag `v1.2.3` 指向本发布记录。发布页附带 `AntifieldComplexx_1.2.3_x64-setup.exe`（3,401,982 字节）、`AntifieldComplexx-1.2.3-arm64.zip`（5,943,514 字节）与 SHA256SUMS。上一已部署版本 v1.2.2 的 Tag 指向 `e2ec493`，当时生产进程是 `58b7693`。再上一版本是 v1.2.1（2026-11-12），然后是 v1.2.0（2026-11-11）。5 格垂直墙在禁止挖掘/放置时只做明确兜底。历史发布记录见 [CHANGELOG.md](CHANGELOG.md) 与 [AUDIT](docs/app/AUDIT.md)。
+- **发布状态**：annotated Tag `v1.2.3` 指向 2026-11-14 的发布记录。发布页附带 Windows x64 安装包、Android arm64 压缩包和 SHA256SUMS。运行中的 Workbench 在该发布之后包含插件列表代理。沿革见 [CHANGELOG](CHANGELOG.md)。
 - **mcbot 告警只有事件语义**：上游 `alert` 映射为 `status='event'` 历史事件，不参与 firing/resolved 状态机，也没有恢复通知/冷却；上游告警状态需在 mcbot 侧查看（本应用只记录与转发）。
 - **mcbot 聊天/事件不持久化**：事件流与聊天只存在进程内存（最多 100 条且序列化 ≤512 KiB），应用或 mcbot 重启即丢失；历史接口只返回 mcbot 自己的 samples/alerts，不保存聊天正文。
 - **mcbot 轮询延迟与单实例**：状态/事件最多滞后一个轮询周期（默认 5s），控制结果最终一致；单进程内存缓存，不支持多实例/多副本；mcbot 不可达/数据过期/部分轮询失败时展示缓存与可见警告并降级。
 - **mcbot 依赖独立服务**：需部署 mcbot **v1.2.3**（最低 v0.6.0，仅 loopback、契约 v2）并同步 Token；应用不管理 mcbot 生命周期、不读取其 RCON 或 DSH 凭据；旧版无 `/events/recent` 时事件流显示升级提示。生产进程是 v1.2.3（`/opt/mcbot/releases/20261114T043045Z`）。
-- **mcbot 控制面可写**：启用控制 Token 后本应用可让 mcbot 开始/停止任务、移动与游戏内发言（`/say` 自 v0.8.1 起同样需要控制 Token；真实 Minecraft 操作，仍受 mcbot 自身预算、锚点和权限限制）；误操作需人工在游戏内纠正，控制 Token 应按需配置/轮换。
+- **mcbot 控制面**：应用上的任务开始、目标写、自主开始、移动和游戏发言返回 409，由管理员对话决定是否调用现有工具。在线模式、只读状态和急停仍走应用。急停不经过模型。控制 Token 仍需按需轮换。
 
-详细设计与验收标准见 `docs/app/ARCHITECTURE.md`、`docs/app/SECURITY.md`、`docs/app/DEPLOY.md`、`docs/app/BACKUP.md`、`docs/app/CHATBOT.md`、`docs/app/API.md`、`docs/app/UI-SPEC.md`。
+详细设计与验收标准见 `docs/ARCHITECTURE.md`、`docs/SECURITY.md`、`docs/DEPLOY.md`、`docs/BACKUP.md`、`docs/CHATBOT.md`、`docs/API.md`、`docs/UI-SPEC.md`。
 
 ## License
 

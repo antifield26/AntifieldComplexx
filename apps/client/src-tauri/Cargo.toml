@@ -35,3 +35,7 @@ rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "t
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-keyring = { version = "0.2", features = ["ndk-context"] }
+
+[features]
+# 发行构建必须打开。否则壳把主页指到开发服务器，手机上无法进入主页。
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,19 +1,16 @@
-# AntifieldComplexx HTTP API 契约
+# HTTP 契约
 
-## v1.2.1 兼容增量
+Workbench 与前端共同遵守本文前半部分。Minecraft Bot 的本机 HTTP 契约在后半部分。占位域名是 `app.example.com` 与 `ai.example.com`。
 
-- 应用 Cookie 仅接受未绑定设备的浏览器会话。设备 sessionToken 改放 Cookie 返回 401，不能获取 CSRF 绕过签名；AI 主机专用 SSO Cookie 保留独立入口。
-- 签名时钟偏差仍为 ±120 秒；nonce 保留到末个有效秒结束。
-- 新增 POST /api/notes/:id/attachments/from-upload，JSON 为 {uploadId:string}，认证与其他笔记写接口相同，成功 200 {items:[NoteAttachment]}。
-- 仅接管当前 actor 已完成会话对应的活动根目录 user 文件。origin 变更及附件关联同事务提交，不重复扣配额。同笔记重试幂等，跨笔记、目录或分享引用拒绝。multipart 兼容。
-- 错误包括 404 upload_not_found，409 upload_not_completed、attachment_upload_used、attachment_file_in_use，以及原有笔记、数量和大小错误。
-- 原生文件 IPC 仅 main 本地源可调用，内容端点限定 /api/files/:id/content；固定 API 源、重定向拒绝、系统选择器和流式落盘。预览句柄限 loopback、可撤销并支持 Range，令牌不进入 URL。
-- AI 顶层导航只允许固定 AI／Access HTTPS 源，SSO 入口仅固定 AI 源及合法 next。保持实际 User-Agent；Access 登录后最多由主窗口重新换票一次，服务端票据时限不变。
+## 会话、附件与原生客户端
 
+- 应用 Cookie 只接受未绑定设备的浏览器会话。把设备 sessionToken 放进 Cookie 返回 401，不能借此跳过签名。AI 主机的 SSO Cookie 仍是独立入口。
+- 签名时钟偏差是 ±120 秒。nonce 保留到该秒结束。
+- `POST /api/notes/:id/attachments/from-upload` 的 JSON 是 `{ "uploadId": string }`。它只接管当前用户已完成的上传，并在同一事务里改 origin、挂上附件。同笔记重试幂等。跨笔记、目录或分享引用会拒绝。multipart 仍然可用。
+- 原生文件 IPC 只允许 main 的本地来源。内容端点限定 `/api/files/:id/content`。预览句柄限 loopback，可撤销，支持 Range，令牌不进入 URL。
+- AI 顶层导航只允许固定的 AI 与 Access HTTPS 源。Access 登录后最多由主窗口再换票一次。
 
-> **DSH 契约**。生产已启用 DSH Web。`GET /api/dashboard` 增加 `dsh.webUrl` 和 `dsh.readiness`。就绪键为 `dsh_web`、`dsh_qq`、`dsh_mcbot`，只出现已配置服务。既有 `opencode` 字段保留用于兼容，DSH Web 启用后停止旧探测。AI 主机沿用 Workbench SSO 和会话校验。  启用 `DSH_QQ_MANAGED` 后，已登录的 `GET /api/chatbots/status` 返回 `410 chatbot_managed_by_dsh`。旧发布、通知管理、工具和公开 QQ Webhook 路由返回 404。告警历史仍包含已存在的 QQ 投递详情，新事件由 Webhook 投递。mcbot HTTP 契约保持 v2。
-
-服务端与前端共同遵守本文件。所有路径除特别说明外均以 `https://app.example.com` 为源（占位域名；实际见 `.local/DEPLOYMENT.md`）。
+生产启用 DSH Web 后，`GET /api/dashboard` 给出 `dsh.webUrl` 与 `dsh.readiness`。就绪键是 `dsh_web`、`dsh_qq`、`dsh_mcbot`，只列出已配置的服务。`DSH_QQ_MANAGED` 打开时，已登录的 `GET /api/chatbots/status` 返回 `410 chatbot_managed_by_dsh`。旧的发布、通知、工具和公开 QQ Webhook 返回 404。
 
 ## 0. 约定
 
@@ -32,7 +29,7 @@
 - AI 主机 SSO：app 登录/已登录后访问 `GET /api/auth/ai-ticket?next=<ai 完整 URL>`，服务端校验 `next` 必须属于配置的 `AI_ORIGIN`，签发 60 秒一次性 ticket 并 302 到 `https://ai.example.com/__af/sso/<ticket>?next=<ai 相对路径>`；代理校验/消费 ticket 后设置 ai 主机 host-only `af_session` 并 302 到目标路径。ticket 一次性、绑定 aiOrigin、不落库。请求头 `Accept` 包含 `application/json` 时改为 `200 { "url": "<同一地址>" }`，不跳转。
 - Bot 功能开关：`CHATBOT_ENABLED=false` 或缺少 `CHATBOT_SECRET_KEY` 时，Webhook 一律 `404 not_found`，`/api/chatbots*` 写操作返回 `503 chatbot_disabled`/`chatbot_key_missing`；`GET /api/chatbots/status` 仍可读。
 - mcbot 功能开关（v0.8.0 引入，v0.8.1 安全加固，v1.2.3 收口面板写入口）：`MCBOT_ENABLED=false` 时 `GET /api/mcbot/status` 仍返回 `enabled:false` 的空壳快照。`POST /api/mcbot/autonomy/start`、`POST /api/mcbot/goals`、`POST /api/mcbot/goals/:goalId/:action`、`POST /api/mcbot/tasks`、`POST /api/mcbot/tasks/resume`、`POST /api/mcbot/move`、`POST /api/mcbot/say` 在会话与 CSRF 之后直接返回 `409 mcbot_control_via_chat`，不先判断启用或控制 Token，也不调用上游。其余端点在关闭时返回 `503 mcbot_disabled`。控制 Token 为空时，对话、急停、在线模式、停止任务和停止自主会话返回 `503 mcbot_control_disabled`。`MCBOT_URL` 只允许 `http(s)://loopback[:port]` 根地址（拒绝 userinfo/路径/查询/片段）。上游未启用/网络不可达返回 `503 mcbot_unavailable`；鉴权失败/上游异常返回 `502 mcbot_auth_failed`/`mcbot_upstream_error`；上游 5xx 的稳定业务码 `task_disabled`/`control_disabled`/`history_disabled`/`admin_unavailable` 保留为 `mcbot_*`。响应与错误文本不包含 mcbot URL/Token。
-- 安全响应头：`Cache-Control: no-store`（静态 hash 资源除外）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、CSP（见 docs/app/SECURITY.md）。
+- 安全响应头：`Cache-Control: no-store`（静态 hash 资源除外）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、CSP（见 docs/SECURITY.md）。
 - 登录限制：每 IP 5 次失败/15 分钟；全局 60 次/小时（密码）、120 次/小时（TOTP），loopback 来源不占全局桶。`429` 响应包含 `retryAfterSec`。
 - 单文件上限：普通 multipart **100 MiB**（`MAX_UPLOAD_BYTES=104857600`，匹配 Cloudflare 代理）；更大文件走分片上传。超过返回 `413 file_too_large`，磁盘不足返回 `507 insufficient_storage`。
 - 未登录访问 `ai.example.com` 的 HTML 请求：`302` 到 `https://app.example.com/login?next=https%3A%2F%2Fai.example.com%2F`；app 登录页对 ai 外部 `next` 先走 `/api/auth/ai-ticket` → ai `/__af/sso/<ticket>`，再由代理设置 ai host-only 会话 Cookie；API/WebSocket 未认证返回 `401`。
@@ -44,11 +41,11 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "1.2.1", "schemaVersion": 21, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
+{ "ok": true, "version": "1.2.3", "schemaVersion": 21, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
 ```
 
 - `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
-- 失败时返回 503/错误体；`/healthz` 仍为 Cloudflare Access bypass（见 `docs/app/DEPLOY.md` §5.2）。
+- 失败时返回 503/错误体；`/healthz` 仍为 Cloudflare Access bypass（见 `docs/DEPLOY.md` §5.2）。
 
 ## 2. 认证与账号
 
@@ -573,7 +570,7 @@ RCON 不可用：`502 rcon_unavailable`。
 - `GET /api/restores/:planId` → `{plan}`（用于恢复向导刷新/断网后继续轮询）。
 - 错误码：`archive_encrypted` 409（加密归档 Web 不可操作）、`restore_disabled` 403、`archive_not_verified`/`archive_chain_invalid` 409、`invalid_selection`/`confirmation_failed` 400、`invalid_totp` 401、`restore_too_many_files` 400。
 - 归档导入的信任边界：归档来自管理员（TOTP 门禁），但 tar 仍按不可信输入校验路径穿越/链接/设备/超大条目；不提供归档下载。schema v16 启动时会拒绝高于支持版本的数据库（迁移 5–16 保留；本版无新迁移）。
-- 整库恢复：不在 Web API 内，按 `docs/app/BACKUP.md` §8.1 的离线 root 手工流程执行（停服、解包校验、替换数据、pre-restore 备份与失败回滚）；加密归档必须先在 PC 用离线私钥解密，再按同流程恢复。
+- 整库恢复：不在 Web API 内，按 `docs/BACKUP.md` §8.1 的离线 root 手工流程执行（停服、解包校验、替换数据、pre-restore 备份与失败回滚）；加密归档必须先在 PC 用离线私钥解密，再按同流程恢复。
 
 ## 12. 可观测性与备份状态
 
@@ -688,7 +685,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 14. Bot 平台
 
-Bot 功能默认关闭：`CHATBOT_ENABLED=false` 或缺少有效 `CHATBOT_SECRET_KEY` 时，Webhook 与写接口不可用（见 §0），`GET /api/chatbots/status` 仍可读并返回 `enabled=false/keyConfigured=false`。所有管理端点需要会话；写操作需要 CSRF；凭据字段只写不读。Cloudflare Access 必须对 `/api/chatbot/webhook/*` 做 bypass，否则平台回调会被边缘拦截（见 `docs/app/DEPLOY.md` §5.2）。
+Bot 功能默认关闭：`CHATBOT_ENABLED=false` 或缺少有效 `CHATBOT_SECRET_KEY` 时，Webhook 与写接口不可用（见 §0），`GET /api/chatbots/status` 仍可读并返回 `enabled=false/keyConfigured=false`。所有管理端点需要会话；写操作需要 CSRF；凭据字段只写不读。Cloudflare Access 必须对 `/api/chatbot/webhook/*` 做 bypass，否则平台回调会被边缘拦截（见 `docs/DEPLOY.md` §5.2）。
 
 平台：仅 `qq`（QQ 官方 Bot）。API 不接受其它平台值，`ChatbotSummary` 无 `gateway`，目标无 `chatTrigger`，发布无 `mediaFileIds`。QQ 仅支持文本（单条 ≤2000 字符），入站图片默认交给 AI 理解；AI 仅普通消息 Chat，需 `CHATBOT_AI_ENABLED=true`。
 
@@ -841,9 +838,9 @@ ChatbotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|proje
 
 `chatbot_disabled`（503）、`chatbot_key_missing`（503）、`chatbot_ai_tool_isolation_unavailable`（503，AI 工具隔离不可用且发送工具启用时新 Chat 被拒绝，10 分钟窗口后重试）、`chatbot_key_invalid`（500，仅启动/配置阶段）、`invalid_chatbot_config`（400，含非 QQ 平台/字段校验失败）、`publish_confirm_required`（400）、`publish_text_too_long`（400，发布文本超过 2000 字符）、`totp_required`（400）、`invalid_code`（401）、`conflict`（409，目标重复）、`rate_limited`（429）、`not_found`（404）、`invalid_request`（400，静默时段/事件结果非法）、`chatbot_health_unsupported`（400，适配器不支持连接自检）。AI 图片内部错误码 `chatbot_ai_image_unsupported`/`chatbot_ai_image_invalid` 只用于日志/降级，不作为管理端点响应。Webhook 额外使用 `invalid_signature`、`stale_signature`、`invalid_payload`、`missing_fields`。删除 `chat_trigger_unsupported` 与媒体相关错误码（`too_many_media`/`media_too_large`/`media_total_too_large`/`qq_media_unsupported`）。
 
-## 15. mcbot Bot 对接（v0.8.0 引入；v1.0.2 自主模式；v1.0.3 环境/动作工具；v1.0.5 在线模式/目标/自动生存；v1.0.6 寻路状态；v1.0.7 成功时间与兜底原因；v1.0.9 事件缺口；v1.0.10 活动范围；v1.0.11 反射、v1.0.12 世界记忆与 v1.0.13 记忆坐标不新增应用字段；v1.2.3 管理员对话；默认关闭）
+## 15. mcbot Bot 对接
 
-mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口，并代理管理员对话、在线模式和急停，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。目标上游为 mcbot **v1.2.3**（契约 v2，兼容已声明契约 v1 的旧版本）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，v1.0.9 增加可空 `eventGap`，v1.0.10 至 v1.2.2 不新增应用字段，v1.2.3 把面板行动收口到对话。旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
+mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）。应用轮询只读接口，并代理管理员对话、在线模式和急停。浏览器不直连 mcbot，服务端不下发 Token 或 URL。目标上游为 mcbot **v1.2.3**（契约 v2）。旧版缺少字段时，应用隐藏对应卡片；没有 `/events/recent` 时只把 `eventsSupported` 降为 false。应用上的任务开始、目标写、自主开始、移动和游戏发言返回 `409 mcbot_control_via_chat`，不调用上游。这些端点都要会话，写操作还要 CSRF。凭据与响应边界见 `docs/SECURITY.md`。
 
 ### 通用语义
 
@@ -978,3 +975,620 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 - 轮询每轮向上游取最近 **200** 条（覆盖一次突发；上游 ring 500），合并进内存缓存时按 id 去重、newest-first、最多 100 条且总字节 ≤512 KiB。
 - `alert` 事件映射为本应用告警事件（`status='event'`），映射与字段见 §10；告警游标保存在 `meta.mcbot.event_cursor={bootId,lastEventId,lastTs}`，首次/重启/`bootId` 变化只建基线不重放；`MCBOT_ALERTS_ENABLED=false` 仍推进游标但不写告警；告警写入失败时游标停在上一条已处理事件并在下一轮重试（不静默丢告警）。
 - 聊天事件只进服务端内存事件缓存（≤100 条/≤512 KiB），不提供历史查询、不持久化、不写日志/审计正文；应用重启或 mcbot 重启即丢失。
+
+
+## Minecraft Bot 本机契约
+
+Bot 只监听回环地址。读 Token 与控制 Token 分离。下面的路径是 mcbot 自己的路径，不是 Workbench 的 `/api/mcbot`。
+
+## 1. 基础信息
+
+| 项目 | 值 |
+|---|---|
+| Base URL | `http://127.0.0.1:3010`（仅回环，不对外） |
+| 读 Token | `HTTP_TOKEN`，用于 `/status`、`/presence`、`/goals`、`/task`、`/events`、`/events/recent`、`GET /admin/chat` |
+| 控制 Token | `HTTP_CONTROL_TOKEN`，用于 `/task/*`、`POST /move`、`POST /say`、`/presence`、`/goals*`、`/autonomy/start|stop`、`POST /admin/chat`、`POST /emergency-stop` |
+| 契约版本 | `CONTRACT_VERSION=2`，由 `/healthz`、`/status` 与 `/events/recent` 的 `contractVersion` 返回 |
+| Token 位置 | Pi：`/etc/mcbot/env`（root:mcbot 0640） |
+| 数据格式 | JSON / SSE，UTF-8 |
+| 请求体上限 | 8 KiB |
+| 自主工具 | 生产由 DSH 插件经私有 Unix socket 调用。配置 `DSH_AGENT_SOCKET` 后 `/autonomy/mcp` 返回 404。未配置时该路径只接受当前会话随机 Bearer，不暴露给应用/浏览器 |
+| MCP 工具发现 | `AUTONOMY_MCP_WARMUP_MS=3000`：运行时注册后等待 OpenCode 刷新工具列表再创建 session |
+| `/say` 限流 | 10 次/分钟（进程内） |
+| 控制接口限流 | 30 次/分钟（`CONTROL_RATE_LIMIT`） |
+| 鉴权头 | `Authorization: Bearer <token>`；不支持 URL query token |
+
+读/控制 Token 必须分离。用读 Token 调控制接口返回 401；用控制 Token 调读接口返回 401。控制 Token 为空时，控制接口返回 503 `control_disabled`，读接口不受影响。
+
+```bash
+READ="$(sudo grep '^HTTP_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
+CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
+```
+
+## 2. GET /healthz
+
+无需鉴权。
+
+```json
+{
+  "status": "ok",
+  "version": "1.0.9",
+  "contractVersion": 2,
+  "uptimeSec": 123,
+  "state": "connected",
+  "connected": true
+}
+```
+
+`state`：`idle` / `connecting` / `connected` / `backoff` / `cooldown`。动态模式下 `idle` 是正常状态（无玩家在线）。
+
+`contractVersion` 为只读契约版本（当前 `2`），与 `/status`、`/events/recent` 返回值一致；新增可选字段不升版本，破坏性变更才递增。契约 v2 把发言划入控制 Token。
+
+## 3. GET /status
+
+需要读 Token。返回完整快照；v0.2 字段保持兼容，`task` 增加 `pendingResume`。
+
+```json
+{
+  "version": "1.0.9",
+  "contractVersion": 2,
+  "uptimeSec": 123,
+  "state": "connected",
+  "minecraft": {
+    "connected": true,
+    "username": "lofii",
+    "host": "127.0.0.1",
+    "port": 25565,
+    "version": "26.1",
+    "reconnects": 0,
+    "lastDisconnect": null
+  },
+  "player": {
+    "dimension": "主世界",
+    "position": { "x": 204.5, "y": 63, "z": 469.5 },
+    "health": 20,
+    "food": 20
+  },
+  "server": {
+    "reachable": true,
+    "online": 1,
+    "max": 6,
+    "versionName": "Paper 26.1.2",
+    "motd": "Raspberry Pi 5 | Minecraft LAN",
+    "latencyMs": 5,
+    "lastPingAt": "2026-10-26T13:25:01.000Z"
+  },
+  "presence": {
+    "enabled": true,
+    "mode": "auto",
+    "modeSource": "default",
+    "modeUpdatedAt": null,
+    "pollMs": 15000,
+    "graceMs": 60000,
+    "checkMs": 5000,
+    "otherPlayers": 0,
+    "lastDecision": "connected"
+  },
+  "survival": { "enabled": true, "lastRunAt": "2026-10-26T13:25:00.000Z", "lastAction": "idle", "lastError": null },
+  "navigation": {
+    "state": "idle",
+    "source": "planner",
+    "attempts": 1,
+    "lastFailureKind": null,
+    "lastFallback": null,
+    "aiUsed": false,
+    "updatedAt": "2026-10-30T12:00:00.000Z"
+  },
+  "ai": { "enabled": true, "provider": "opencode-go", "model": "deepseek-v4.1-flash", "inFlight": 0, "queued": 0, "failures": 0, "lastLatencyMs": 2359, "lastError": null },
+  "memory": { "players": 1, "turns": 2 },
+  "task": {
+    "enabled": true,
+    "active": true,
+    "name": "fishing",
+    "state": "running",
+    "startedAt": "2026-10-26T13:22:43.689Z",
+    "elapsedSec": 170,
+    "progress": {
+      "fishCaught": 5, "wheatHarvested": 0, "planted": 0, "deposited": 0,
+      "treesChopped": 0, "logsChopped": 0, "saplingsPlanted": 0, "mobsKilled": 0,
+      "oresMined": 0, "coalMined": 0, "ironMined": 0, "copperMined": 0,
+      "forestTreesChopped": 0, "naturalLogsChopped": 0, "naturalSaplingsPlanted": 0,
+      "sleepVotes": 0, "nightSkipped": 0, "patrolWaypoints": 0, "patrolDistance": 0
+    },
+    "failures": 0,
+    "lastError": null,
+    "pendingResume": null,
+    "queue": []
+  }
+}
+```
+
+`task.state`：`idle` / `starting` / `running` / `depositing` / `recovering` / `stopping` / `defending` / `pending_resume`。
+
+有待恢复任务时：
+
+```json
+"task": {
+  "enabled": true,
+  "active": false,
+  "name": "fishing",
+  "state": "pending_resume",
+  "startedAt": "2026-10-26T13:22:43.689Z",
+  "elapsedSec": 137,
+  "progress": {
+    "fishCaught": 4, "wheatHarvested": 0, "planted": 0, "deposited": 0,
+    "treesChopped": 0, "logsChopped": 0, "saplingsPlanted": 0, "mobsKilled": 0
+  },
+  "failures": 0,
+  "lastError": null,
+  "pendingResume": {
+    "taskId": "46451943-eae1-41c0-8df3-beef3c7b60f4",
+    "name": "fishing",
+    "startedAt": "2026-10-26T13:22:43.689Z",
+    "elapsedSec": 137,
+    "progress": { "fishCaught": 4, "wheatHarvested": 0, "planted": 0, "deposited": 0, "treesChopped": 0, "logsChopped": 0, "saplingsPlanted": 0, "mobsKilled": 0 },
+    "expiresAt": "2026-10-26T13:35:00.619Z"
+  },
+  "queue": [
+    { "taskId": "...", "name": "farming", "requestedBy": "panel", "requestedAt": "2026-10-26T13:25:00.000Z" }
+  ]
+}
+```
+
+- `minecraft.connected` 是 Bot 自身是否已 spawn；`server.online` 是服务器在线人数（Bot 在线时包含 Bot）。
+- `presence.otherPlayers` 不含 Lofii。
+- `ai.lastError` 已截断，不含提示词或密钥。
+- 不暴露记忆内容、Token、OpenCode 密码。
+- 401：`{"error":"unauthorized","message":"..."}`。
+
+## 4. GET /task
+
+需要读 Token。返回当前任务（与 `/status.task` 一致，含 `pendingResume` 与 `queue`）。
+
+```json
+{ "task": { "...": "..." } }
+```
+
+## 5. GET /events（SSE）
+
+需要读 Token；仅支持 `GET`。
+
+```http
+GET /events HTTP/1.1
+Authorization: Bearer <HTTP_TOKEN>
+Accept: text/event-stream
+Last-Event-ID: <bootId>-<seq>   # 可选
+```
+
+响应头：
+
+```text
+Content-Type: text/event-stream; charset=utf-8
+Cache-Control: no-cache, no-transform
+Connection: keep-alive
+X-Accel-Buffering: no
+```
+
+连接后先发 `retry: 5000`，再发 `hello`；每 15 秒发 `: ping` 注释。最多 8 个并发客户端（`SSE_MAX_CLIENTS`），超过返回 503。
+
+### 5.1 事件 envelope
+
+```json
+{
+  "id": "036e732d-10",
+  "type": "task",
+  "ts": "2026-10-26T13:24:14.828Z",
+  "data": {}
+}
+```
+
+SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `chat` / `presence` / `movement`。
+
+### 5.2 hello
+
+`hello` 的 `data` 直接是快照：
+
+```json
+{
+  "version": "1.0.9",
+  "bootId": "036e732d",
+  "lastEventId": "036e732d-10",
+  "resync": false,
+  "snapshot": { "...StatusSnapshot..." }
+}
+```
+
+- `Last-Event-ID` 属于当前 `bootId` 且在 ring（500 条）内：回放该 ID 之后的事件。
+- `bootId` 不同、ID 过旧、非法：`resync: true`；面板应重新拉 `/status` 与 `/task`。
+- SSE 是内存 ring，进程重启后清空；不要把 SSE 当持久消息队列。
+
+### 5.3 task
+
+```json
+{
+  "action": "started|progress|depositing|recovering|stopping|stopped|completed|failed|resume_required|resumed|interrupted|queued|queue_started|queue_cleared|defending|alert",
+  "task": { "...TaskSnapshot..." }
+}
+```
+
+### 5.4 chat
+
+只发 Lofii 对话：
+
+```json
+{ "direction": "in", "username": "Antifield", "message": "Lofii 去钓鱼", "source": "chat" }
+{ "direction": "out", "source": "ai|command|task|proactive|movement|http", "text": "好，我去钓鱼啦。", "lines": ["好，我去钓鱼啦。"] }
+```
+
+- `in` 仅被点名/唤醒的消息；无关公屏不发。
+- `out` 是 Lofii 的回复/任务/主动消息；`source` 用于面板筛选。
+- 不包含记忆全文、Token、密码。
+
+### 5.5 presence
+
+```json
+{
+  "state": "connected",
+  "connected": true,
+  "otherPlayers": 0,
+  "lastDecision": "connected",
+  "taskActive": true,
+  "taskName": "fishing",
+  "taskState": "running"
+}
+```
+
+状态变化时最多约 2 秒内推送。
+
+### 5.6 movement
+
+```json
+{ "action": "home|come|follow|stop", "target": "Antifield", "status": "started|completed|failed", "error": null, "requestId": "..." }
+```
+
+`follow` 只发 `started`；`/move stop` 时发 `stop` 的完成事件。
+
+## 6. GET /events/recent（只读轮询）
+
+需要读 Token；仅支持 `GET`。读取内存事件 ring 的最近事件，用于面板后端低频轮询或 SSE 断线后的补拉；**不替代 SSE**，事件不持久化。
+
+```http
+GET /events/recent?limit=50 HTTP/1.1
+Authorization: Bearer <HTTP_TOKEN>
+```
+
+| 参数 | 默认 | 约束 |
+|---|---|---|
+| `limit` | `50` | 十进制整数 1–200；非整数、0、201、空值均返回 400 |
+
+成功（200）：
+
+```json
+{
+  "contractVersion": 2,
+  "bootId": "036e732d",
+  "lastEventId": "036e732d-10",
+  "events": [
+    { "id": "036e732d-9", "type": "task", "ts": "2026-10-26T13:24:12.000Z", "data": {} },
+    { "id": "036e732d-10", "type": "presence", "ts": "2026-10-26T13:24:14.828Z", "data": {} }
+  ]
+}
+```
+
+- `events` 按发生顺序（旧 → 新）升序排列，最多 `min(limit, ring 内事件数)` 条；ring 为空时 `events: []`、`lastEventId: null`。
+- 事件 envelope 与 SSE 一致（`id/type/ts/data`），但**不含 `hello`**；`contractVersion` 当前为 `2`。
+- `bootId` 与 `lastEventId` 用于增量判断：`bootId` 变化说明进程重启，面板应重新拉 `/status`/`/task`；`lastEventId` 可保存用于去重或作为 SSE `Last-Event-ID` 的参考。
+- 错误：401 `unauthorized`（缺失/错误 Token；控制 Token 不适用）；400 `invalid_request`（`limit` 非法）；405 `method_not_allowed`（非 GET）。
+- 只读接口：不改 ring、不产生事件、不写审计；`/events`（SSE）行为不变。
+
+## 7. 控制接口
+
+本机任务、移动、游戏发言和自主启动仍给游戏内口令与内部调用使用。Workbench 面板不再代理其中的开始、移动和发言。
+
+### 7.0 GET /admin/chat 与 POST /admin/chat
+
+`GET` 使用读 Token，返回 `{ messages, turn }`。消息最多 40 条，只在进程内存。`POST` 使用控制 Token，并占用 `/say` 的 10 次/分钟限额。body `{ "message": "1..2000" }`。允许 ASCII `/`，拒绝 C0 与 DEL。成功 **202** `{ "ok": true, "turnId", "status": "pending" }`。已有进行中的回合返回 **409** `chat_busy`。未装配管理员对话时 **503** `admin_unavailable`。空闲 30 分钟、急停或进程退出后清空。
+
+### 7.0.1 POST /emergency-stop
+
+使用控制 Token 与控制限额。不调用模型。活动自主会话、活动任务或队列、待恢复，以及管理员对话都会停止。某一腿失败时继续其余腿。空闲算成功。返回 **200** `{ "ok", "failures" }`，失败名只有 `task`、`autonomy`、`admin`。
+
+### 7.1 POST /task/start
+
+需要控制 Token + `Content-Type: application/json`。
+
+```json
+{ "name": "fishing|farming|woodcutting|mining|forest|sleep|patrol|guard|escort|explore|clearing" }
+```
+
+- 空闲：202 `{"ok":true,"queued":false,"position":null,"task":{...}}`，任务立即 active。
+- 已有 active：入队，202 `{"ok":true,"queued":true,"position":1..3,"task":{...}}`。
+- 队列最多 3 个（`QUEUE_MAX`，不含 active）；同任务允许重复。
+- 任务上限默认 60 分钟（`TASK_MAX_MINUTES`）；mining 内部 30 分钟上限。
+- 有 pending：409 `resume_pending`（必须先 resume 或 stop/清空）。
+- 队列满：409 `queue_full`。
+- 任务开关关闭：503 `task_disabled`。
+- 不需要 Bot 已在线：任务会先进入 active，由动态存在逻辑自动连接 Lofii。
+
+### 7.2 POST /task/stop
+
+```json
+{ "reason": "panel" }
+```
+
+- active：202，任务进入 `stopping`，并**清空队列**。
+- 只有 pending：202，取消 pending 与队列（审计 `task.discard_pending`）。
+- 都没有：409 `no_active_task`。
+
+### 7.2.1 队列语义
+
+- active 正常完成 → 自动启动队首，SSE `task.queue_started`。
+- active 失败、防御撤退、恢复超时、`/task/stop` → 清空队列。
+- `GET /task.queue` 与 `/status.task.queue` 可见当前队列。
+- 队列与 active 一起写入 `task-state.json` v2；服务重启后 pending + queue 保留，resume 后继续。
+- v0.3 的 v1 task-state 文件自动迁移，新进度字段补 0。
+
+### 7.3 POST /task/resume
+
+需要控制 Token。body 可为空，或：
+
+```json
+{ "taskId": "46451943-eae1-41c0-8df3-beef3c7b60f4" }
+```
+
+- pending 未过期：202，恢复原进度与剩余时间。
+- 无 pending：409 `no_pending_task`。
+- 过期/taskId 不匹配：409 `resume_failed`。
+- 10 分钟（`TASK_PENDING_TTL_MS`）未确认：自动 `interrupted`，清空 pending。
+
+### 7.4 POST /move
+
+需要控制 Token + JSON。
+
+```json
+{ "action": "home|come|follow|stop", "target": "Antifield" }
+```
+
+- `home`：回家；忽略 `target`。
+- `come` / `follow`：`target` 可省略，默认 `COMMAND_ALLOWLIST[0]`（Antifield）；必须在线，否则 409 `target_not_online`。
+- `stop`：只停移动，不停止任务。
+- 任务 active：409 `task_active`（先 `/task/stop`）。
+- Bot 未连接：409 `not_connected`。
+- 202 只表示已接受；结果通过 SSE `movement` 事件返回。
+
+### 7.4.1 砍树 / 被动防御 / 记忆摘要
+
+- `woodcutting` 只处理固定 oak 树场 `x180–193, z455–464`；实际地面块 y=63、原木从 y=64 起；只砍 `oak_log`、逐棵补种 `oak_sapling`，原木存箱。
+- 任务中被动防御：12 格内 zombie/husk/drowned/skeleton/stray/spider/cave_spider 才接战；排除 creeper/enderman/witch/玩家；HP≤12、food≤6 或 >2 只怪时撤退回家并让当前任务失败（清队列）。
+- 记忆摘要不新增 HTTP 接口；每 40 turns（20 来回）后台生成 ≤1000 字聊天摘要，注入后续 prompt。
+
+### 7.5 错误码汇总
+
+| 条件 | HTTP | error |
+|---|---|---|
+| 缺失/错误 Token | 401 | `unauthorized` |
+| 控制 Token 未配置 | 503 | `control_disabled` |
+| 任务开关关闭 | 503 | `task_disabled` |
+| 请求体非 JSON | 415 | `unsupported_media_type` |
+| 请求体过大 | 413 | `payload_too_large` |
+| 非法 JSON/字段 | 400 | `invalid_request` |
+| 有 pending 时启动 | 409 | `resume_pending` |
+| 队列满 | 409 | `queue_full` |
+| 无任务 | 409 | `no_active_task` / `no_pending_task` |
+| 移动目标离线 | 409 | `target_not_online` |
+| 任务 active 时移动 | 409 | `task_active` |
+| Bot 未连接 | 409 | `not_connected` |
+| 限流 | 429 | `rate_limited` |
+
+## 8. POST /say
+
+需要控制 Token + JSON。只允许聊天文本，任意位置的 ASCII `/`、C0 控制字符和 DEL 都返回 400。
+
+```json
+{ "message": "来自 AntifieldCloud 的问候" }
+```
+
+成功：`{"ok":true,"lines":1}`。错误：
+
+| 条件 | HTTP | error |
+|---|---|---|
+| 未连接 | 409 | `not_connected` |
+| 首字符 `/` | 400 | `message_must_not_start_with_slash` |
+| 空消息/超 720 字符/非法 JSON | 400 | `invalid_request` |
+| 非 JSON | 415 | `unsupported_media_type` |
+| 超 8 KiB | 413 | `payload_too_large` |
+| 超过 10 次/分钟 | 429 | `rate_limited` |
+
+## 9. 管理、历史与告警
+
+### 9.1 GET /admin/status
+
+需要读 Token。只读 RCON 白名单：`tps`、`list`、`whitelist list`、`time`。
+
+```json
+{
+  "admin": {
+    "enabled": true,
+    "rcon": true,
+    "updatedAt": "2026-10-27T07:31:08.071Z",
+    "lastError": null,
+    "tps": { "one": 19.1, "five": 19.4, "fifteen": 19.8 },
+    "online": { "count": 2, "max": 6, "players": ["Antifield", "lofii"] },
+    "whitelist": { "count": 6, "names": ["lofii", "SFZ", "Jay", "Antifield", "GAY", "shoayu"] },
+    "time": { "ticks": 21461, "label": "03:27" },
+    "backup": { "status": "unknown" }
+  }
+}
+```
+
+- `/status` 也包含同一 `admin` 对象。
+- RCON 失败时 `rcon=false`，`lastError` 截断；不影响任务/HTTP。
+- 没有写管理接口、没有任意命令执行；备份目录不存在，`backup.status` 固定 `unknown`。
+
+### 9.2 GET /history
+
+需要读 Token。
+
+```text
+GET /history?kind=samples&from=<ISO>&to=<ISO>&limit=100
+GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
+```
+
+- `kind` 默认 `samples`；`limit` 1–1000（默认 100）；ISO 时间非法 → 400。
+- `samples` 每 60 秒一条；保留 30 天；字段：`ts/connected/state/taskName/taskState/health/food/memoryMb/tps/queueLen/rssMb`。
+- `alerts` 字段：`id/ts/type/severity/message/details`。
+- 响应：`{kind, from, to, count, samples|alerts}`。
+- 不含聊天正文/Token/密码。
+
+### 9.3 SSE alert
+
+```json
+{
+  "type": "alert",
+  "data": {
+    "type": "low_health|task_failed|disconnected|chest_full|defense_retreat",
+    "severity": "warning|error",
+    "message": "Lofii 血量偏低：8/20",
+    "details": {},
+    "ts": "2026-10-27T07:31:17.802Z"
+  }
+}
+```
+
+- 5 分钟同类型冷却；启动后 10 秒内不报低血量。
+- 告警写入 SQLite `alerts` 表。
+
+## 10. 游戏内行为
+
+- 唤醒词：`Lofii` / `@Lofii`（不区分大小写；只回应被点名的消息）。
+- 仅 `COMMAND_ALLOWLIST` 内玩家可下命令，默认 `Antifield`。
+- 命令：状态、钓鱼、种田、砍树、挖矿、砍天然林、睡觉、巡逻、收工、回家、存东西、过来、跟随、停下、看我、挥手、帮助。
+- 安全区扩至 `x111–239, z410–474`；挖矿/天然林只在安全区、保护盒外操作；天然林只 oak/spruce/birch 并补种；挖矿只煤/铁/铜裸露矿、不挖隧道。
+- 睡觉用 Vote2Sleep（min 1、40%）；非夜晚/无床/vote 失败正常结束。
+- 巡逻四角安全区边界（内缩 4 格），最多 15 分钟，不主动追怪。
+- v0.5 仍默认保留游戏内/AI 意图直接触发；`HTTP_ONLY_HIGH_RISK=true` 可关闭高风险触发。
+- 任务期间即使 Antifield 下线，Lofii 保持在线；任务结束恢复动态下线。
+
+## 12. 自主会话
+
+自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.2.3（`/opt/mcbot/releases/20261114T043045Z`），`AUTONOMY_ENABLED=true`。主人通过游戏聊天，或在 Minecraft Bot 页对话后由模型决定是否启动。应用面板不再直接启动自主会话。生产由 DSH 插件经私有 Unix socket 调用受控工具，mcbot 策略层校验并执行。配置该 socket 后 `/autonomy/mcp` 返回 404。OpenCode 原生 MCP 只属于已退役的回滚路径。**不要为普通面板/第三方开放 `/autonomy/mcp` 或该 socket**。
+
+v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱动重决策；应用对缺失字段/工具保持兼容。
+
+### 12.1 GET /autonomy
+
+需要读 Token。返回：
+
+```json
+{"autonomy":{"enabled":true,"active":true,"state":"running","goal":"准备食物","startedAt":"...","elapsedSec":12,"remainingSec":1188,"toolCalls":2,"maxToolCalls":12,"lastAction":"start_task","lastReason":"目标需要鱼","lastError":null,"lastDecisionAt":"...","decisionCycles":0,"lastEvent":null,"lastObservedAt":"...","blockers":[]}}
+```
+
+`/status` 同时包含同一 `autonomy` 对象（可选字段；旧版 mcbot 缺失时应用按 null 降级；v1.0.3 新增字段为追加）。
+
+### 12.2 POST /autonomy/start
+
+需要控制 Token + `Content-Type: application/json`。body 可为 `{}` 或 `{ "goal": "准备一些食物" }`；goal trim 后 ≤200 字符、无控制字符。
+
+- 202 `{ "ok": true, "autonomy": {...} }`；
+- 409 `autonomy_busy`（已有 active/排队/pending 任务或会话）；
+- 400 `invalid_request` / `invalid_goal`；
+- 503 `autonomy_disabled` / `autonomy_unavailable`。
+
+启动条件：`AUTONOMY_ENABLED=true`、AI 已启用、Minecraft 已连接、无 active/queue/pending 任务。
+
+### 12.3 POST /autonomy/stop
+
+需要控制 Token。body 可为空或 `{ "reason": "..." }`（≤200 字符、无控制字符）；幂等。返回 202 `{ "ok": true, "autonomy": {...} }`。会中断 OpenCode 会话、停止活动任务并清理 MCP/session；v1.0.3 同时关闭容器窗口并停止自主寻路。
+
+### 12.4 原生 MCP 工具
+
+工具名以 OpenCode 运行时 server 名 `mcbot_autonomy` 为前缀；权限规则为 deny-all + `mcbot_autonomy_*` allow：
+
+| 工具 | 参数 | 约束 |
+|---|---|---|
+| `start_task` | `run_id, task, reason` | task ∈ `AUTONOMY_TASKS`；无 active/queue/pending；健康/食物过低拒绝 |
+| `stop_task` | `run_id, reason` | 有 active 任务 |
+| `go_home` | `run_id, reason` | 无 active/pending 任务 |
+| `deposit` | `run_id, reason` | 无 active/pending 任务 |
+| `task_status` | `run_id` | 只读 |
+| `observe` | `run_id` | v1.0.3；只读环境快照 + 半径内 allowlist 方块/容器；计入工具预算 |
+| `inspect_chest` | `run_id, target, reason` | v1.0.3；target 为 `x,y,z`；仅扫描半径内、allowlist 容器、无 active/queue/pending；短距寻路不传送、不破块；只读不取物并立即关闭 |
+| `eat` | `run_id, item, reason` | v1.0.3；item 必须是背包内食物；仅 `food < AUTONOMY_EAT_BELOW` 且空闲 |
+| `equip` | `run_id, item, reason` | v1.0.3；item 必须是背包内护甲/工具/武器；仅空闲；目标槽位由类型决定 |
+| `finish` | `run_id, summary` | 结束会话；会话结束会清理活动任务 |
+| `memory_read` | `run_id`，可选 `category`、`key` | 读取世界记忆正文。分类仅限 `place`、`resource`、`food`、`danger`、`route`、`note`。给出 `key` 时必须同时给出 `category`。不启动任务，计入工具预算 |
+| `memory_write` | `run_id, category, key, text, reason` | 按分类和键写入或覆盖。键 1–64，正文 1–240，均不含控制字符。最多 200 条；已有键可更新，满额后拒绝新键。不启动任务 |
+| `memory_forget` | `run_id, category, key, reason` | 删除一条记忆。不存在则返回错误。不启动任务 |
+
+每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码、容器类型/摘要计数，不记录 prompt/Token/完整容器内容。记忆工具只记分类和键，不记正文。世界记忆与聊天记忆分开，按当前维度选取 `world-memory.json`／`world-memory.nether.json`／`world-memory.end.json`（均 0600，每文件最多 200 条），历史主世界 version 1 格式兼容。提示词只带当前维度、分类计数和最近 8 个键，`observe` 返回半径内方块和容器。挖矿／天然林可记录已扫描并复核的 resource 坐标；到场继续复核，失效时回退扫描。工具表仍是上面 13 个，不新增环境变量、参数或跨维度移动。
+
+断线时无法确认当前维度，记忆工具返回 `memory_dimension_unavailable`，不会回退读取主世界记录；未知维度返回 `memory_dimension_invalid`。
+
+### 12.8 在线模式、长期目标与自动生存
+
+**GET /presence（读 Token）**：返回 `{ mode, source, updatedAt, connected, lastDecision }`；`mode ∈ auto|always|off`，`source ∈ default|env|persisted`。
+
+**POST /presence（控制 Token）**：body `{ "mode": "auto|always|off" }`；成功 200 `{ mode }`；任务/队列/待恢复/自主会话运行中切 `off` 返回 409 `presence_busy`；持久化失败 500 `presence_persist_failed`；非法模式 400 `invalid_request`。
+
+**GET /goals?limit=20（读 Token）**：返回 `{ goals: [...] }`，目标含 `id/objective/status/currentStep/steps`；默认最多 20，范围 1–50。
+
+**POST /goals（控制 Token）**：body `{ "objective": "1..200 字符", "steps": [{"kind":"task","taskName":"woodcutting"},{"kind":"deposit"},{"kind":"home"}] }`；任务名受白名单限制，最多 5 步；创建后为 `pending`，**不会自动开始**。目标动作：`POST /goals/:id/start|pause|resume|cancel`。
+
+**持久化与安全**：`presence.json` 与 `goals.db` 位于 `/var/lib/mcbot`，权限 `0640`，不保存 Token/聊天正文；目标重启后为 `paused`，必须主人显式恢复；`path` 失败最多安全重试一次，生存中断恢复且无威胁后最多自动恢复一次。
+
+**v1.0.5 环境变量**：`PRESENCE_MODE`、`PRESENCE_FILE`、`AUTO_SURVIVAL`、`AUTO_SURVIVAL_INTERVAL_MS`、`AUTO_EAT_BELOW`、`AUTO_RESTOCK`、`AUTO_RESTOCK_INTERVAL_MS`、`GOALS_FILE`、`GOALS_MAX_STEPS`；`AUTONOMY_TASKS` 默认追加 `clearing`。
+
+### 12.9 确定性导航与受控路点
+
+`/status` 新增可选 `navigation`：`state ∈ idle|planning|executing|fallback`、`source ∈ pathfinder|planner|ai|teleport|stopped|null`、`attempts`、`lastFailureKind`、`lastFallback ∈ teleport|stopped|null`、`aiUsed`、`updatedAt`。旧版缺失时应用隐藏该字段。
+
+- 导航顺序：pathfinder 快速路径 → 确定性 A*（只读现有方块，支持台阶/楼梯/半砖与 1 格抬高、2 格下落）→ 受控执行 → AI 路点建议（默认 OpenCode 配置可用时启用）→ 安全锚点/传送/停止。
+- 不挖掘、不放置、不跑酷、不跨维度。v1.0.6 当时把任务、目标和自主限制在安全区矩形内。v1.0.10 起行走不再受该矩形限制，见下一节。玩家实体未加载或跨维度时仍拒绝按名字传送。
+- 安全传送必须是最后手段，同时写 `movement` 事件与 `navigation.lastFallback='teleport'`，并通过聊天提示。
+- AI 只在确定性失败后单次请求，超时/非法/越界建议一律丢弃；AI 不直接控制移动。
+
+**v1.0.6 环境变量**：`PATH_PLANNER_ENABLED`、`PATH_PLANNER_MAX_NODES`、`PATH_PLANNER_TIMEOUT_MS`、`PATH_MAX_REPLANS`、`PATH_TELEPORT_FALLBACK`、`PATH_OUTSIDE_SAFE_RADIUS`、`PATH_AI_ENABLED`、`PATH_AI_TIMEOUT_MS`、`PATH_AI_COOLDOWN_MS`。
+
+**v1.0.10 活动范围**：行走不再受 `SAFE_*` 限制。`SCAN_RADIUS` 默认 32、最大 64。`CRITICAL_HEALTH` 默认 6，设为 0 关闭濒危回基地。寻路失败不再把目标点当作传送落点；`PATH_TELEPORT_FALLBACK` 仍被读取，但不触发任意点传送。
+
+### 12.5 事件驱动重决策
+
+- 触发：`task` 事件的 `queued/queue_started/completed/failed/stopped/interrupted/queue_cleared/resume_required`，以及 `alert` 事件的 `low_health/low_food/inventory_full/defense_retreat/task_failed/chest_full`。
+- 同原因 `AUTONOMY_EVENT_DEBOUNCE_MS`（默认 30000）去重；最多 `AUTONOMY_MAX_REPROMPTS`（默认 6）次；无周期定时器。
+- 只有存在 active/queue/pending 任务时保持会话；否则首轮后结束。
+- 安全事件依赖 `ALERTS_ENABLED=true`；关闭时不会产生安全阈值重提示。
+
+### 12.6 环境与动作配置
+
+```text
+AUTONOMY_ENABLED=false
+AUTONOMY_MAX_MINUTES=20
+AUTONOMY_MAX_TOOL_CALLS=12
+AUTONOMY_MAX_FAILURES=2
+AUTONOMY_GOAL_MAX_CHARS=200
+AUTONOMY_DECISION_TIMEOUT_MS=180000
+AUTONOMY_MCP_WARMUP_MS=3000
+AUTONOMY_SCAN_RADIUS=16
+AUTONOMY_SCAN_MAX_BLOCKS=48
+AUTONOMY_SCAN_BLOCKS=chest,trapped_chest,barrel,ender_chest,*_bed,water,crafting_table,furnace,blast_furnace,smoker,wheat,carrots,potatoes,beetroots,*_log,*_ore
+AUTONOMY_CHEST_READ_ENABLED=true
+AUTONOMY_CHEST_PATH_TIMEOUT_MS=12000
+AUTONOMY_EAT_BELOW=18
+AUTONOMY_ACTION_COOLDOWN_MS=5000
+AUTONOMY_EVENT_DEBOUNCE_MS=30000
+AUTONOMY_MAX_REPROMPTS=6
+AUTONOMY_TASKS=fishing,farming,woodcutting,mining,forest,sleep,patrol,guard,escort,explore,clearing
+```
+
+### 12.7 `autonomy` 事件
+
+SSE `/events` 与 `/events/recent` 新增 `type:"autonomy"`，data 形如 `{action,state,reason,error}`；应用用于展示自主状态变化。该事件是追加字段。当前契约为 2，发言使用控制 Token。
+## 11. 对接建议
+
+- 面板后端用 `fetch` + `Authorization` 消费 `/events`，不要用浏览器 EventSource 直连。
+- 初始展示先拉 `/status` 与 `/task`，再用 SSE 增量更新；断线按 `Last-Event-ID` 重连，`resync:true` 时重新拉快照。
+- 不便长期持有 SSE 时，可低频轮询 `GET /events/recent`（默认 50 条，可带 `limit`），由后端按 `bootId`/`lastEventId` 去重；`bootId` 变化时重新拉 `/status` 与 `/task`。`/healthz.contractVersion` 可用于契约兼容性检查。
+- 控制调用只从面板后端发出，控制 Token 放后端 env；不要下发到浏览器。
+- `/admin/status`、`/history` 使用读 Token；不可写。
+- 告警建议后端按 `type` 去重/展示，并自行决定是否通知；本版没有 webhook。
+- 本版不提供 `/metrics`、webhook、审计查询接口、跨维度/多 Bot/语音/桥接。
