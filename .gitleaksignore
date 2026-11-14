@@ -6,3 +6,4 @@
 81be6e50a26c75495ab2d7df19d7c48f651ae849:server/test/bot-qq.test.ts:generic-api-key:219
 9ae58099bb911d960b566bee2f4a1055c055c294:server/test/lofii-client.test.ts:generic-api-key:209
 b15d2ff6bced1b7e7805af14503cd9f0cc24d1a0:server/test/proxy-upgrade.test.ts:generic-api-key:68
+583bc286b7137b5c7e9778b46c6f23f7624a3553:apps/mcbot/test/unit/http.test.ts:generic-api-key:94

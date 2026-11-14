@@ -55,7 +55,10 @@ jobs:
         run: |
           npm audit --prefix deploy/dsh --omit=dev --audit-level=high
           node deploy/dsh/patch-qq.mjs
-          test "$(node deploy/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js --version)" = "0.2.2-rc.1"
+          # 已安装 CLI 必须与 deploy/tool-versions.json 的 dshVersion 一致。
+          expected="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync("deploy/tool-versions.json","utf8")).dshVersion)')"
+          test -n "$expected"
+          test "$(node deploy/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js --version)" = "$expected"
           node deploy/dsh/smoke-runtime.mjs
           node --test scripts/test/dsh-*.test.mjs
 
