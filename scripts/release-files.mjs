@@ -27,8 +27,10 @@ function allowed(kind, path) {
 }
 
 function checkPath(path) {
+  // 公开说明页的 GitHub Pages 标记使用固定文件名 .nojekyll，其余点开头路径仍然拒绝。
   if (!/^[\w./-]+$/.test(path) ||
-      path.split('/').some(part => !part || part === '..' || part.startsWith('.') || part === 'node_modules')) {
+      path.split('/').some(part => !part || part === '..' ||
+        (part.startsWith('.') && part !== '.nojekyll') || part === 'node_modules')) {
     throw new Error('invalid_release_path')
   }
 }
