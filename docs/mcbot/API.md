@@ -492,7 +492,7 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 
 ## 12. v1.0.2/v1.0.3 AI 自主会话（OpenCode 原生 MCP 工具）
 
-自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.2.2（`/opt/mcbot/releases/20261113T072417Z`），`AUTONOMY_ENABLED=true`，仍仅主人通过游戏聊天或应用面板显式启动。生产由 DSH 插件经私有 Unix socket 调用受控工具，mcbot 策略层校验并执行。配置该 socket 后 `/autonomy/mcp` 返回 404。OpenCode 原生 MCP 只属于已退役的回滚路径。**不要为普通面板/第三方开放 `/autonomy/mcp` 或该 socket**。
+自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.2.3（`/opt/mcbot/releases/20261114T043045Z`），`AUTONOMY_ENABLED=true`。主人通过游戏聊天，或在 Minecraft Bot 页对话后由模型决定是否启动。应用面板不再直接启动自主会话。生产由 DSH 插件经私有 Unix socket 调用受控工具，mcbot 策略层校验并执行。配置该 socket 后 `/autonomy/mcp` 返回 404。OpenCode 原生 MCP 只属于已退役的回滚路径。**不要为普通面板/第三方开放 `/autonomy/mcp` 或该 socket**。
 
 v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱动重决策；应用对缺失字段/工具保持兼容。
 

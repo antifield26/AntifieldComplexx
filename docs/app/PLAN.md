@@ -8,7 +8,7 @@
 
 DSH Web 重新启用 `ui-plugin-manager` 与 `plugin-package-inventory-deepseek`。Workbench 仍拒绝无连字符的 `/api/pluginManager/`、上传、设置写入和凭据写入。已登录管理员经 Access 与应用会话可以安装或移除 DSH Web 进程中的插件。真实安装尚未在 Pi 上执行。
 
-不迁移 schema。同 schema 回滚恢复 v1.2.2 的 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`，以及关闭插件页的 DSH 配置，保留现行数据库及 WAL。只重启受影响的 Workbench、DSH Web 和 Minecraft Agent。
+不迁移 schema。生产 Workbench `20261114T051811Z`，mcbot `20261114T043045Z`，DSH `20261114T051442Z`（0.2.2-rc.3），运行提交 `b5990e8`。部署内 smoke 28／0／0／0，完整 Access smoke 39／0／0／0。Windows 计划任务 1.2.3。同 schema 回滚把 Workbench 指回 `20261114T042643Z`、DSH 指回 `20261114T043420Z`，保留现行数据库及 WAL。再退到 v1.2.2 恢复 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`、DSH `20261113T080907Z`。
 
 ## v1.2.2（2026-11-13 已部署并验收）
 

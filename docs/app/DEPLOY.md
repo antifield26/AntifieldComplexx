@@ -2,7 +2,7 @@
 
 ## v1.2.3 生产部署（2026-11-14）
 
-生产 Workbench 为 `20261114T042643Z`，mcbot 为 `20261114T043045Z`，DSH 为 `20261114T043420Z`。运行提交 `ebeb44f`。本版不迁移 schema，契约仍是 v2。部署前快照 `db-predeploy-20261114T042801428Z.sqlite`（schema 21，sha256 `dc05d00bebc5f56628a07c61b884ece2a0e2882cbe079a6cab5231cf41f02ee0`）。部署内 smoke 28／0／0／0。只重启了 Workbench、mcbot、DSH Web 和 Minecraft Agent。Minecraft 启动时间仍是 2026-11-14 00:00:17 CST，QQ 启动时间仍是 2026-11-14 12:07:28 CST。回滚恢复 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`，并把 DSH current 指回 `20261113T080907Z` 后只重启 Web 与 Minecraft Agent，保留现行数据库及 WAL。Windows 计划任务仍是 1.2.2。
+生产 Workbench 为 `20261114T051811Z`（提交 `b5990e8`），mcbot 为 `20261114T043045Z`，DSH 为 `20261114T051442Z`（0.2.2-rc.3，QQ 插件 0.5.5）。本版不迁移 schema，契约仍是 v2。部署前快照 `db-predeploy-20261114T051951685Z.sqlite`（schema 21，sha256 `add606703e1a33328855a1d0cceb19b15f99b0e1eb3671db4d4f414f896a7f10`）。部署内 smoke 28／0／0／0，完整 Access smoke 39／0／0／0。切换时重启了 Workbench 与 DSH 的 Web、QQ、Minecraft Agent。Minecraft 启动时间仍是 2026-11-14 00:00:17 CST。mcbot 未再部署。同 schema 回滚把 Workbench current 指回 `20261114T042643Z`、DSH current 指回 `20261114T043420Z`，重启 Workbench 与 DSH 三路，保留现行数据库及 WAL。再退到 v1.2.2 使用 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`、DSH `20261113T080907Z`。Windows 计划任务为 1.2.3，installedAt `2026-11-14T05:26:19.1249844Z`。
 
 DSH Web 重新启用插件页 `ui-plugin-manager` 与清单插件 `plugin-package-inventory-deepseek`。页面经 `/api/remote.mux` 与 `/api/plugin-manager/detail-file` 查看和安装、卸载。无连字符的 `/api/pluginManager/`、会话上传、设置写入和凭据写入仍由 Workbench 拒绝。模型侧 `tool-plugin-manager` 保持关闭。Minecraft Agent 的最小策略不启用 shell、文件系统或该清单插件。这次没有实际安装或卸载插件。
 
@@ -446,7 +446,7 @@ sudo -u opencode /var/lib/opencode/.opencode/bin/opencode --version   # 期望 v
 ### 3.3 Node.js 运行时安全更新（v26.13.0）
 
 生产应用使用 `/usr/local/bin/node`（systemd `ExecStart`）；npm/npx 仍指向 nvm（仅构建/部署工具）。
-当前生产为 **v26.13.0**（2026-11-07，官方 linux-arm64，SHA-256 校验通过）。相对 v26.12.1 只切换 Lithium LTS 标记，没有其它运行时改动。npm 仍是 nvm 12.2.0。`/usr/local/bin/node` 与 `/usr/local/lib/nodejs/node-v26.13.0-linux-arm64` 保留；`node.v26.12.1`、`node.v26.11.1` 和 `node-v26.12.1-linux-arm64` 已删除。Node 升级当时应用与 mcbot `/healthz` 为 1.0.13。当前应用与 mcbot `/healthz` 为 v1.2.2，schema 21，契约 v2。
+当前生产为 **v26.13.0**（2026-11-07，官方 linux-arm64，SHA-256 校验通过）。相对 v26.12.1 只切换 Lithium LTS 标记，没有其它运行时改动。npm 仍是 nvm 12.2.0。`/usr/local/bin/node` 与 `/usr/local/lib/nodejs/node-v26.13.0-linux-arm64` 保留；`node.v26.12.1`、`node.v26.11.1` 和 `node-v26.12.1-linux-arm64` 已删除。Node 升级当时应用与 mcbot `/healthz` 为 1.0.13。当前应用与 mcbot `/healthz` 为 v1.2.3，schema 21，契约 v2。
 
 下面是 2026-10-22 从 v26.11.1 升到 **v26.12.1** 的记录。未改动应用版本/schema。
 

@@ -66,7 +66,7 @@
 
 ### mcbot Minecraft Bot（v0.8.0 引入；v1.0.5 常驻/生存/目标；v1.0.6 统一寻路；v1.0.7 兜底重决策；v1.0.8 契约 v2；v1.0.9 事件缺口；v1.0.10 活动范围；v1.0.11 本地反射；v1.0.12 世界记忆；v1.0.13 记忆坐标；v1.1.0 DSH 工具）
 
-- 独立附属服务 `mcbot`（本版 **v1.2.2**；最低 v0.6.0，契约 v2，仅监听 `127.0.0.1:3010`）；应用通过服务端轮询 `GET /status` 与 `GET /events/recent?limit=200`（默认 5s）获取状态与最近事件，**浏览器不直连 mcbot**。生产进程为 v1.2.2（`/opt/mcbot/releases/20261113T072417Z`），同 schema 回滚 v1.2.1 使用 `/opt/mcbot/releases/20261112T115627Z`。回滚到 v1.2.0 使用 `/opt/mcbot/releases/20261111T105117Z`，保留现行数据库及 WAL。回滚到 v1.1.1 使用 `/opt/mcbot/releases/20261110T022539Z`。回滚到 v1.1.0 使用 `/opt/mcbot/releases/20261108T080545Z`。发言仅契约 v2，使用控制 Token；契约 v1 仍可读状态并执行既有控制。同一启动周期内的事件序号空洞出现在 `eventGap`，面板仍显示当前状态。
+- 独立附属服务 `mcbot`（本版 **v1.2.3**；最低 v0.6.0，契约 v2，仅监听 `127.0.0.1:3010`）；应用通过服务端轮询 `GET /status` 与 `GET /events/recent?limit=200`（默认 5s）获取状态与最近事件，**浏览器不直连 mcbot**。生产进程为 v1.2.3（`/opt/mcbot/releases/20261114T043045Z`），同 schema 回滚 v1.2.2 使用 `/opt/mcbot/releases/20261113T072417Z`。回滚到 v1.2.1 使用 `/opt/mcbot/releases/20261112T115627Z`，保留现行数据库及 WAL。回滚到 v1.2.0 使用 `/opt/mcbot/releases/20261111T105117Z`。回滚到 v1.1.1 使用 `/opt/mcbot/releases/20261110T022539Z`。回滚到 v1.1.0 使用 `/opt/mcbot/releases/20261108T080545Z`。发言仅契约 v2，使用控制 Token；契约 v1 仍可读状态并执行既有控制。同一启动周期内的事件序号空洞出现在 `eventGap`，面板仍显示当前状态。
 - v1.0.5：在线模式 `auto/always/off` 持久化、空闲自动进食/换装、自动补货默认开启、安全区清怪任务、多步目标（task/deposit/home）与失败分类；目标重启后保持 paused，不自动执行。
 - v1.0.6：确定性 A*（只读现有地形，支持 1 格抬高/2 格下落/台阶半砖）、受控路点执行、AI 路点建议（OpenCode 可用时默认启用）、安全传送兜底与 `navigation` 状态；不挖掘/不放置/不跑酷。
 - v1.0.7：寻路兜底（安全传送或停止）进入自主会话既有重决策，30 秒去重、每会话最多 6 次；提示只含固定中文事实，不带坐标。面板过期文案用 `lastSuccessAt`，没有成功轮询时显示“尚无成功轮询”。
@@ -213,11 +213,11 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，需 QQ 后台开启接收所有消息并由群主授权获取全部消息。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量按清单覆盖，同毫秒写入会进入下一次增量；时钟回拨仍记 `clockSkew`，归档时间不早于最近一份本机归档。Web 导入归档按 90 天保留；告警持续 firing 每 24h 重通知；`.backup.lock` 有 30s 心跳续租。
-- **发布状态**：v1.2.2 已于 2026-11-13 部署并验收，已发布 annotated Tag `v1.2.2`。发布页附带 `AntifieldComplexx_1.2.2_x64-setup.exe`（3,401,307 字节）、`AntifieldComplexx-1.2.2-arm64.zip`（6,160,540 字节）与 SHA256SUMS。Tag 指向 `e2ec493`，生产进程仍是 `58b7693`。上一已部署版本 v1.2.1 于 2026-11-12 完成部署。再上一版本是 v1.2.0（2026-11-11），然后是 v1.1.1（2026-11-10）。5 格垂直墙在禁止挖掘/放置时只做明确兜底。历史发布记录见 [CHANGELOG.md](CHANGELOG.md) 与 [AUDIT](docs/app/AUDIT.md)。
+- **发布状态**：v1.2.3 已于 2026-11-14 部署。生产运行提交 `b5990e8`。annotated Tag `v1.2.3` 指向本发布记录。发布页附带 `AntifieldComplexx_1.2.3_x64-setup.exe`（3,401,982 字节）、`AntifieldComplexx-1.2.3-arm64.zip`（5,943,514 字节）与 SHA256SUMS。上一已部署版本 v1.2.2 的 Tag 指向 `e2ec493`，当时生产进程是 `58b7693`。再上一版本是 v1.2.1（2026-11-12），然后是 v1.2.0（2026-11-11）。5 格垂直墙在禁止挖掘/放置时只做明确兜底。历史发布记录见 [CHANGELOG.md](CHANGELOG.md) 与 [AUDIT](docs/app/AUDIT.md)。
 - **mcbot 告警只有事件语义**：上游 `alert` 映射为 `status='event'` 历史事件，不参与 firing/resolved 状态机，也没有恢复通知/冷却；上游告警状态需在 mcbot 侧查看（本应用只记录与转发）。
 - **mcbot 聊天/事件不持久化**：事件流与聊天只存在进程内存（最多 100 条且序列化 ≤512 KiB），应用或 mcbot 重启即丢失；历史接口只返回 mcbot 自己的 samples/alerts，不保存聊天正文。
 - **mcbot 轮询延迟与单实例**：状态/事件最多滞后一个轮询周期（默认 5s），控制结果最终一致；单进程内存缓存，不支持多实例/多副本；mcbot 不可达/数据过期/部分轮询失败时展示缓存与可见警告并降级。
-- **mcbot 依赖独立服务**：需部署 mcbot **v1.2.2**（最低 v0.6.0，仅 loopback、契约 v2）并同步 Token；应用不管理 mcbot 生命周期、不读取其 RCON 或 DSH 凭据；旧版无 `/events/recent` 时事件流显示升级提示。生产进程是 v1.2.2。
+- **mcbot 依赖独立服务**：需部署 mcbot **v1.2.3**（最低 v0.6.0，仅 loopback、契约 v2）并同步 Token；应用不管理 mcbot 生命周期、不读取其 RCON 或 DSH 凭据；旧版无 `/events/recent` 时事件流显示升级提示。生产进程是 v1.2.3（`/opt/mcbot/releases/20261114T043045Z`）。
 - **mcbot 控制面可写**：启用控制 Token 后本应用可让 mcbot 开始/停止任务、移动与游戏内发言（`/say` 自 v0.8.1 起同样需要控制 Token；真实 Minecraft 操作，仍受 mcbot 自身预算、锚点和权限限制）；误操作需人工在游戏内纠正，控制 Token 应按需配置/轮换。
 
 详细设计与验收标准见 `docs/app/ARCHITECTURE.md`、`docs/app/SECURITY.md`、`docs/app/DEPLOY.md`、`docs/app/BACKUP.md`、`docs/app/CHATBOT.md`、`docs/app/API.md`、`docs/app/UI-SPEC.md`。
