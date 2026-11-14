@@ -1596,10 +1596,40 @@ export interface McbotAutonomySnapshot {
   lastDecisionAt: string | null
 }
 
-/** POST /api/mcbot/autonomy/start|stop 的响应：始终带可控的自主快照。 */
+/** POST /api/mcbot/autonomy/stop 的响应：始终带可控的自主快照。 */
 export interface McbotAutonomyResult {
   ok?: boolean
   autonomy: McbotAutonomySnapshot | null
+}
+
+/** 管理员对话只存在于 mcbot 进程内存。 */
+export interface McbotChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  text: string
+  at: string
+}
+
+export interface McbotChatTurn {
+  id: string
+  status: 'pending' | 'ok' | 'error'
+  error: string | null
+}
+
+export interface McbotChatState {
+  messages: McbotChatMessage[]
+  turn: McbotChatTurn | null
+}
+
+export interface McbotChatAccepted {
+  ok: boolean
+  turnId: string
+  status: 'pending'
+}
+
+export interface McbotEmergencyStopResult {
+  ok: boolean
+  failures: string[]
 }
 
 /** mcbot 内存事件环中的一条事件；data 形状随 type 变化，渲染层只读取已知字段。 */

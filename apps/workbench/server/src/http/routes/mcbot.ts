@@ -1,12 +1,11 @@
 /**
- * mcbot 对接 HTTP 路由（v0.8.0；v1.0.2 增加 AI 自主模式代理）。
+ * mcbot 对接 HTTP 路由。
  *
  * 边界：
- * - 全部需要登录；GET 按 IP 限流 60/min；控制接口额外校验 CSRF，并按 IP 限流（控制 20/min，聊天 10/min）。
- * - 上游错误统一映射为 AppError：禁用/不可用 503、鉴权/上游异常 502、上游 400/409
- *   保留状态码并透传稳定码 `mcbot_<上游 code>`；message 不含内部 URL/Token。
- * - 自主目标/停止原因只做长度与控制字符校验；审计只记字符数，不记录目标/原因正文。
- * - 审计记录控制动作元数据；/say 只记录字符数，绝不记录聊天正文。
+ * - 全部需要登录。GET 按 IP 限流 60/min。仍开放的写接口校验 CSRF，控制 20/min，管理员对话 10/min。
+ * - 任务开始、目标写、自主开始、移动和游戏发言在 CSRF 之后返回 409，不调用上游。
+ * - 管理员对话审计只记字符数。急停审计只记失败腿名。正文不落库。
+ * - 上游错误统一映射为 AppError。message 不含内部 URL 或 Token。
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
@@ -34,17 +33,8 @@ export const MCBOT_TASK_NAMES = [
   'clearing',
 ] as const
 export type McbotTaskName = (typeof MCBOT_TASK_NAMES)[number]
-export const MCBOT_MOVE_ACTIONS = ['home', 'come', 'follow', 'stop'] as const
-export type McbotMoveAction = (typeof MCBOT_MOVE_ACTIONS)[number]
-/** 与上游 /say 一致：trim 后 1..720 字符。 */
-export const MCBOT_SAY_MAX_CHARS = 720
-/** 自主目标上限（与上游 AUTONOMY_GOAL_MAX_CHARS 默认值一致）。 */
-export const MCBOT_AUTONOMY_GOAL_MAX_CHARS = 200
 /** 自主停止原因上限。 */
 export const MCBOT_AUTONOMY_REASON_MAX_CHARS = 200
-
-const TASK_NAMES = new Set<string>(MCBOT_TASK_NAMES)
-const MOVE_ACTIONS = new Set<string>(MCBOT_MOVE_ACTIONS)
 
 /** 聊天/taskId 不允许 C0 控制字符与 DEL（避免命令/日志/上游参数注入面）。 */
 function hasControlChars(value: string): boolean {
@@ -95,15 +85,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   mcbot_presence_disabled: 'mcbot 在线模式不可用',
   mcbot_goals_disabled: 'mcbot 长期目标不可用',
   mcbot_goal_busy: '目标当前不可启动或正忙',
+  mcbot_control_via_chat: '请通过 Minecraft Bot 对话控制',
+  mcbot_chat_busy: '上一条对话还在处理，请稍后再发',
+  mcbot_admin_unavailable: 'Minecraft Bot 对话暂不可用',
+  mcbot_chat_failed: '对话没有完成',
 }
 
 /** 在线模式白名单。 */
 export const MCBOT_PRESENCE_MODES = ['auto', 'always', 'off'] as const
 export type McbotPresenceMode = (typeof MCBOT_PRESENCE_MODES)[number]
-
-/** 长期目标步骤上限（与上游 GOALS_MAX_STEPS 默认值一致）。 */
-export const MCBOT_GOAL_MAX_STEPS = 5
-const GOAL_KINDS = new Set(['task', 'deposit', 'home'])
 
 function errorMessageFor(code: string, fallback: string): string {
   return ERROR_MESSAGES[code] ?? fallback
@@ -201,22 +191,8 @@ export function registerLofiiRoutes(
     }
   })
 
-  app.post('/api/mcbot/autonomy/start', { preHandler: [requireAuth, csrf] }, async (request) => {
-    requireEnabled(mcbot)
-    const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
-    const retry = controlLimiter.hit(clientIp(request))
-    if (retry > 0) throw rateLimited(retry)
-    const body = asRecord(request.body)
-    const goal = optionalBoundedText(body.goal, 'goal', MCBOT_AUTONOMY_GOAL_MAX_CHARS)
-    try {
-      const result = await mcbot.startAutonomy(goal)
-      // 自主目标可能包含用户描述：审计只记录字符数，不记录正文。
-      audit(db, actor.username, 'mcbot.autonomy.start', null, { goalChars: goal?.length ?? 0 }, actor.ip)
-      return { ok: true, autonomy: result.autonomy }
-    } catch (error) {
-      auditFailure(actor, 'mcbot.autonomy.start', error)
-      throw toLofiiAppError(error)
-    }
+  app.post('/api/mcbot/autonomy/start', { preHandler: [requireAuth, csrf] }, async () => {
+    throw new AppError(409, 'mcbot_control_via_chat', errorMessageFor('mcbot_control_via_chat', '请通过 Minecraft Bot 对话控制'))
   })
 
   app.post('/api/mcbot/autonomy/stop', { preHandler: [requireAuth, csrf] }, async (request) => {
@@ -278,81 +254,16 @@ export function registerLofiiRoutes(
     }
   })
 
-  app.post('/api/mcbot/goals', { preHandler: [requireAuth, csrf] }, async (request) => {
-    requireEnabled(mcbot)
-    const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
-    const retry = controlLimiter.hit(clientIp(request))
-    if (retry > 0) throw rateLimited(retry)
-    const body = asRecord(request.body)
-    const objective = typeof body.objective === 'string' ? body.objective.trim() : ''
-    if (objective.length === 0 || objective.length > 200 || hasControlChars(objective)) {
-      throw badRequest('objective 必须是 1..200 字符且不能包含控制字符', 'invalid_request')
-    }
-    const rawSteps = body.steps
-    if (!Array.isArray(rawSteps) || rawSteps.length === 0 || rawSteps.length > MCBOT_GOAL_MAX_STEPS) {
-      throw badRequest(`steps 必须是 1..${MCBOT_GOAL_MAX_STEPS} 步`, 'invalid_request')
-    }
-    const steps = rawSteps.map((value) => {
-      const record = asRecord(value)
-      const kind = typeof record.kind === 'string' ? record.kind : ''
-      if (!GOAL_KINDS.has(kind)) throw badRequest('步骤 kind 必须是 task/deposit/home', 'invalid_request')
-      if (kind === 'task') {
-        const taskName = typeof record.taskName === 'string' ? record.taskName : ''
-        if (!TASK_NAMES.has(taskName)) throw badRequest('步骤 taskName 不合法', 'invalid_request')
-        return { kind, taskName }
-      }
-      return { kind }
-    })
-    try {
-      const result = await mcbot.createGoal(objective, steps)
-      audit(db, actor.username, 'mcbot.goal.create', null, { objectiveChars: objective.length, steps: steps.length }, actor.ip)
-      return result
-    } catch (error) {
-      auditFailure(actor, 'mcbot.goal.create', error)
-      throw toLofiiAppError(error)
-    }
+  app.post('/api/mcbot/goals', { preHandler: [requireAuth, csrf] }, async () => {
+    throw new AppError(409, 'mcbot_control_via_chat', errorMessageFor('mcbot_control_via_chat', '请通过 Minecraft Bot 对话控制'))
   })
 
-  app.post('/api/mcbot/goals/:goalId/:action', { preHandler: [requireAuth, csrf] }, async (request) => {
-    requireEnabled(mcbot)
-    const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
-    const retry = controlLimiter.hit(clientIp(request))
-    if (retry > 0) throw rateLimited(retry)
-    const params = asRecord(request.params)
-    const goalId = typeof params.goalId === 'string' ? params.goalId : ''
-    const action = typeof params.action === 'string' ? params.action : ''
-    if (!/^[A-Za-z0-9-]{1,80}$/.test(goalId)) throw badRequest('goalId 不合法', 'invalid_request')
-    if (action !== 'start' && action !== 'pause' && action !== 'resume' && action !== 'cancel') {
-      throw badRequest('目标动作必须是 start/pause/resume/cancel', 'invalid_request')
-    }
-    try {
-      const result = await mcbot.goalAction(goalId, action)
-      audit(db, actor.username, `mcbot.goal.${action}`, goalId, null, actor.ip)
-      return result
-    } catch (error) {
-      auditFailure(actor, `mcbot.goal.${action}`, error)
-      throw toLofiiAppError(error)
-    }
+  app.post('/api/mcbot/goals/:goalId/:action', { preHandler: [requireAuth, csrf] }, async () => {
+    throw new AppError(409, 'mcbot_control_via_chat', errorMessageFor('mcbot_control_via_chat', '请通过 Minecraft Bot 对话控制'))
   })
 
-  app.post('/api/mcbot/tasks', { preHandler: [requireAuth, csrf] }, async (request) => {
-    requireEnabled(mcbot)
-    const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
-    const retry = controlLimiter.hit(clientIp(request))
-    if (retry > 0) throw rateLimited(retry)
-    const body = asRecord(request.body)
-    const name = typeof body.name === 'string' ? body.name.trim() : ''
-    if (!TASK_NAMES.has(name)) {
-      throw badRequest(`任务名必须是 ${MCBOT_TASK_NAMES.join('/')} 之一`, 'invalid_request')
-    }
-    try {
-      const result = await mcbot.startTask(name)
-      audit(db, actor.username, 'mcbot.task.start', name, { name }, actor.ip)
-      return { ok: true, ...result }
-    } catch (error) {
-      auditFailure(actor, 'mcbot.task.start', error)
-      throw toLofiiAppError(error)
-    }
+  app.post('/api/mcbot/tasks', { preHandler: [requireAuth, csrf] }, async () => {
+    throw new AppError(409, 'mcbot_control_via_chat', errorMessageFor('mcbot_control_via_chat', '请通过 Minecraft Bot 对话控制'))
   })
 
   app.post('/api/mcbot/tasks/stop', { preHandler: [requireAuth, csrf] }, async (request) => {
@@ -370,69 +281,30 @@ export function registerLofiiRoutes(
     }
   })
 
-  app.post('/api/mcbot/tasks/resume', { preHandler: [requireAuth, csrf] }, async (request) => {
+  app.post('/api/mcbot/tasks/resume', { preHandler: [requireAuth, csrf] }, async () => {
+    throw new AppError(409, 'mcbot_control_via_chat', errorMessageFor('mcbot_control_via_chat', '请通过 Minecraft Bot 对话控制'))
+  })
+
+  app.post('/api/mcbot/move', { preHandler: [requireAuth, csrf] }, async () => {
+    throw new AppError(409, 'mcbot_control_via_chat', errorMessageFor('mcbot_control_via_chat', '请通过 Minecraft Bot 对话控制'))
+  })
+
+  app.post('/api/mcbot/say', { preHandler: [requireAuth, csrf] }, async () => {
+    throw new AppError(409, 'mcbot_control_via_chat', errorMessageFor('mcbot_control_via_chat', '请通过 Minecraft Bot 对话控制'))
+  })
+
+  app.get('/api/mcbot/chat', { preHandler: [requireAuth] }, async (request) => {
+    limitGet(request)
     requireEnabled(mcbot)
-    const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
-    const retry = controlLimiter.hit(clientIp(request))
-    if (retry > 0) throw rateLimited(retry)
-    const body = asRecord(request.body)
-    let taskId: string | undefined
-    if (body.taskId !== undefined && body.taskId !== null) {
-      if (typeof body.taskId !== 'string') {
-        throw badRequest('taskId 不合法', 'invalid_request')
-      }
-      const normalized = body.taskId.trim()
-      // 任务 id 不接受空白/控制字符：避免把日志/审计/上游参数注入面扩大。
-      if (
-        normalized.length === 0 ||
-        normalized.length > 64 ||
-        /\s/.test(normalized) ||
-        hasControlChars(normalized)
-      ) {
-        throw badRequest('taskId 不合法', 'invalid_request')
-      }
-      taskId = normalized
-    }
     try {
-      const result = await mcbot.resumeTask(taskId)
-      audit(db, actor.username, 'mcbot.task.resume', taskId ?? 'task', { taskId: taskId ?? null }, actor.ip)
-      return { ok: true, ...result }
+      return await mcbot.adminChatState()
     } catch (error) {
-      auditFailure(actor, 'mcbot.task.resume', error)
       throw toLofiiAppError(error)
     }
   })
 
-  app.post('/api/mcbot/move', { preHandler: [requireAuth, csrf] }, async (request) => {
+  app.post('/api/mcbot/chat', { preHandler: [requireAuth, csrf] }, async (request) => {
     requireEnabled(mcbot)
-    const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
-    const retry = controlLimiter.hit(clientIp(request))
-    if (retry > 0) throw rateLimited(retry)
-    const body = asRecord(request.body)
-    const action = typeof body.action === 'string' ? body.action : ''
-    if (!MOVE_ACTIONS.has(action)) {
-      throw badRequest(`action 必须是 ${MCBOT_MOVE_ACTIONS.join('/')} 之一`, 'invalid_request')
-    }
-    let target: string | undefined
-    if (body.target !== undefined && body.target !== null) {
-      if (typeof body.target !== 'string') throw badRequest('target 不合法', 'invalid_request')
-      const trimmed = body.target.trim()
-      if (trimmed.length > 32) throw badRequest('target 不合法', 'invalid_request')
-      if (trimmed) target = trimmed
-    }
-    try {
-      const result = await mcbot.move(action, target)
-      audit(db, actor.username, 'mcbot.move', action, { action, target: target ?? null }, actor.ip)
-      return { ok: true, ...result }
-    } catch (error) {
-      auditFailure(actor, 'mcbot.move', error)
-      throw toLofiiAppError(error)
-    }
-  })
-
-  app.post('/api/mcbot/say', { preHandler: [requireAuth, csrf] }, async (request) => {
-    requireEnabled(mcbot)
-    // 发言同时要求应用控制权限和上游契约 v2。
     if (!mcbot.controlEnabled) {
       throw new AppError(503, 'mcbot_control_disabled', errorMessageFor('mcbot_control_disabled', 'mcbot 控制接口未启用'))
     }
@@ -440,27 +312,32 @@ export function registerLofiiRoutes(
     const retry = sayLimiter.hit(clientIp(request))
     if (retry > 0) throw rateLimited(retry)
     const body = asRecord(request.body)
-    const raw = typeof body.message === 'string' ? body.message : ''
-    const message = raw.trim()
-    if (!message) throw badRequest('消息不能为空', 'invalid_request')
-    if (message.length > MCBOT_SAY_MAX_CHARS) {
-      throw badRequest(`消息最多 ${MCBOT_SAY_MAX_CHARS} 字符`, 'invalid_request')
-    }
-    // 上游 mcbot 会按行宽切分聊天且只在整段开头转义 /；必须拒绝任意位置的 ASCII /，
-    // 否则“填充字符 + /命令”会在切分后的第二行命中 mineflayer 命令通道。
-    if (message.includes('/')) {
-      throw badRequest('聊天内容不能包含 /（不支持命令，含切分后的命令行）', 'message_must_not_start_with_slash')
-    }
-    if (hasControlChars(message)) {
-      throw badRequest('聊天内容不能包含控制字符', 'invalid_request')
+    const message = typeof body.message === 'string' ? body.message.trim() : ''
+    if (!message || message.length > 2000 || hasControlChars(message)) {
+      throw badRequest('消息必须是 1..2000 字符且不能包含控制字符', 'invalid_request')
     }
     try {
-      const result = await mcbot.say(message)
-      // 审计只记录字符数，绝不记录聊天正文。
-      audit(db, actor.username, 'mcbot.say', null, { chars: message.length }, actor.ip)
-      return { ok: true, ...result }
+      const result = await mcbot.adminChat(message)
+      audit(db, actor.username, 'mcbot.chat', null, { chars: message.length }, actor.ip)
+      return result
     } catch (error) {
-      auditFailure(actor, 'mcbot.say', error)
+      auditFailure(actor, 'mcbot.chat', error)
+      throw toLofiiAppError(error)
+    }
+  })
+
+  app.post('/api/mcbot/emergency-stop', { preHandler: [requireAuth, csrf] }, async (request) => {
+    requireEnabled(mcbot)
+    const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
+    const retry = controlLimiter.hit(clientIp(request))
+    if (retry > 0) throw rateLimited(retry)
+    try {
+      const result = await mcbot.emergencyStop()
+      const failures = Array.isArray(result.failures) ? result.failures.filter((item) => typeof item === 'string') : []
+      audit(db, actor.username, 'mcbot.emergency_stop', null, { failures }, actor.ip)
+      return { ok: failures.length === 0, failures }
+    } catch (error) {
+      auditFailure(actor, 'mcbot.emergency_stop', error)
       throw toLofiiAppError(error)
     }
   })

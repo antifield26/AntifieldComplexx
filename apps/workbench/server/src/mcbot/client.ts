@@ -128,6 +128,7 @@ const STABLE_UPSTREAM_5XX_CODES = new Set([
   'autonomy_disabled',
   'autonomy_unavailable',
   'autonomy_failed',
+  'admin_unavailable',
 ])
 
 /** 稳定错误码；`mcbot_<upstream>` 表示上游明确业务错误。 */
@@ -297,6 +298,22 @@ export class McbotClient {
   /** 契约 v2 的发言使用控制 Token。 */
   async say(message: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
     return this.control('/say', { message }, signal)
+  }
+
+  /** 管理员对话：上游立即接受，结果由 adminChat 轮询。 */
+  async adminChat(message: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return this.control('/admin/chat', { message }, signal)
+  }
+
+  async adminChatState(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const body = await this.request('/admin/chat', { method: 'GET', token: this.readToken, signal })
+    if (!isRecord(body)) throw new McbotError('mcbot_upstream_error', 'mcbot 对话响应格式不合法')
+    return body
+  }
+
+  /** 急停：停止任务、自主会话和管理员会话。空闲腿不算失败。 */
+  async emergencyStop(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return this.control('/emergency-stop', {}, signal)
   }
 
   /** 启动自主模式（控制 Token）；目标由应用侧校验 1..200 字符。 */

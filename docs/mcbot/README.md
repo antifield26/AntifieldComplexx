@@ -3,7 +3,7 @@
 > **DSH 自主运行时**。配置两个 DSH socket 后，普通文本调用走无动作工具的 Agent，自主会话按运行挂载 `dsh-mcbot` 的 13 个工具。模型进程结束后才释放自主启动槽。工具仍由 mcbot 执行并校验，HTTP 契约和世界记忆格式保持原样。部署和验收见 [切换手册](../app/DSH-MIGRATION.md)。
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：**v1.2.2**（2026-11-13 已部署，release `20261113T072417Z`；约定验收完成）。自主工具由 DSH 插件通过私有 Unix socket 调用。挖矿和天然林先读 `resource` 记忆坐标。行走不受 `SAFE_*` 矩形限制。血量 ≤ `CRITICAL_HEALTH` 时只传送回基地。白名单敌对生物可用拳头近战。饥饿时按背包、掉落、食物箱、种田或钓鱼找食。梯子和木门由执行器处理。世界记忆使用固定分类，提示词只带索引。本机契约 v2 发言使用控制 Token；自主会话和移动按单次操作取消。Workbench 兼容 v1 的读取与既有控制。同一启动周期的事件序号空洞由 Workbench 记入 `eventGap`。
+> 当前版本：**v1.2.3**（本地，尚未部署）。生产进程仍是 v1.2.2（release `20261113T072417Z`）。管理员对话决定是否调用现有 13 个工具，并可按需使用 DSH 的 goal 与 todo。游戏内口令保留。急停不经过模型。挖矿和天然林先读 `resource` 记忆坐标。行走不受 `SAFE_*` 矩形限制。血量 ≤ `CRITICAL_HEALTH` 时只传送回基地。白名单敌对生物可用拳头近战。饥饿时按背包、掉落、食物箱、种田或钓鱼找食。梯子和木门由执行器处理。世界记忆使用固定分类，提示词只带索引。本机契约 v2 发言使用控制 Token。同一启动周期的事件序号空洞由 Workbench 记入 `eventGap`。
 
 ## 能做什么
 
@@ -25,13 +25,13 @@
 - **跨 systemd 重启恢复**：任务状态写盘；服务重启后变为 `pending_resume`，面板 10 分钟内确认才继续；不自动执行。
 - **SSE 事件流**：`GET /events` 推送 `hello/presence/task/chat/movement/alert`；内存 500 条 ring、`Last-Event-ID` 回放、心跳、最多 8 客户端。
 - **只读近期事件轮询**：`GET /events/recent`（读 Token）返回 ring 最近 1–200 条事件（升序，无 `hello`）及 `bootId/lastEventId/contractVersion`，供 AntifieldCloud 低频轮询或 SSE 断线补拉；`GET /healthz` 同步返回 `contractVersion`。
-- **HTTP 控制**：独立 `HTTP_CONTROL_TOKEN` 控制 `/task/start|stop|resume` 与 `/move`；读 Token 只能看状态/SSE/`/say`。
+- **HTTP 控制**：独立 `HTTP_CONTROL_TOKEN` 控制 `/task/start|stop|resume`、`/move`、`POST /admin/chat` 与 `/emergency-stop`。读 Token 看状态、SSE 和 `GET /admin/chat`。游戏发言 `/say` 仍用控制 Token，并拒绝 `/` 与 C0。管理员对话允许 `/`，因为它不进入游戏聊天。
 - **审计 JSONL**：任务/移动/HTTP/AI 触发元数据写 `/var/lib/mcbot/audit.jsonl`（0600、5 MB 轮转、30 天）；不含聊天正文/Token/密码。
 - **移动与家**：`回家`、`过来`、`跟随` 统一经过寻路层。行走不受 `SAFE_*` 矩形限制，寻路走廊半径为 `PATH_OUTSIDE_SAFE_RADIUS`。寻路失败就停下。血量 ≤ `CRITICAL_HEALTH` 时只传送回基地。已配置锚点，以及距离超过 `TELEPORT_DISTANCE` 且玩家实体已加载时，仍可传送。
 - **主动行为**：Antifield 加入问候；夜晚/雷雨/死亡固定短文；可关闭。
 - **AI 意图兜底**：固定短语优先；Antifield 的任务类模糊语句才调用 AI 分类，AI 不能直接执行任意动作。
 - **按玩家记忆**：最近 20 轮、保留 30 天；每 20 个来回后台生成 ≤1000 字聊天摘要，落盘到 `/var/lib/mcbot/memory`，重启后仍能记住。
-- **本机 HTTP 接口**：只读状态/任务/SSE/近期事件 + `/say`，独立控制 Token 的任务/移动接口；v1.0.2 增加 `/autonomy` 状态/启动/急停与内部 MCP 工具端点；仅监听 `127.0.0.1:3010`。
+- **本机 HTTP 接口**：只读状态/任务/SSE/近期事件，控制 Token 的任务/移动/游戏发言，以及管理员对话和急停。v1.0.2 的 `/autonomy` 仍在。配置 DSH socket 后 `/autonomy/mcp` 返回 404。仅监听 `127.0.0.1:3010`。
 - **可靠性**：登录超时/断线/服务器重启/满员/连接节流自动退避重连；systemd 崩溃拉起。
 
 ## v1.0.11 本地反射（2026-11-07 单独发布）

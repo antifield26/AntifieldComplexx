@@ -787,6 +787,19 @@ export class McbotService {
     return this.control(() => this.client.goalAction(goalId, action))
   }
 
+  async adminChat(message: string): Promise<Record<string, unknown>> {
+    return this.control(() => this.client.adminChat(message))
+  }
+
+  async adminChatState(): Promise<Record<string, unknown>> {
+    if (!this.config.mcbotEnabled) throw new McbotError('mcbot_disabled', 'mcbot 对接未启用')
+    return this.client.adminChatState()
+  }
+
+  async emergencyStop(): Promise<Record<string, unknown>> {
+    return this.control(() => this.client.emergencyStop())
+  }
+
   private async controlAutonomy(
     run: () => Promise<Record<string, unknown>>,
   ): Promise<{ ok: true; autonomy: McbotAutonomySnapshot | null }> {

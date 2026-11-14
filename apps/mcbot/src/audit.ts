@@ -4,7 +4,8 @@ import type { Logger } from './logger.ts'
 
 export interface AuditEntry {
   event: string
-  source: 'http_control' | 'chat' | 'ai_intent' | 'task' | 'movement' | 'combat' | 'system' | 'autonomy'
+  /** 管理员对话只写审计文件。对外事件流不使用该来源。 */
+  source: 'http_control' | 'chat' | 'ai_intent' | 'task' | 'movement' | 'combat' | 'system' | 'autonomy' | 'admin'
   actor: string
   action: string
   result: 'accepted' | 'completed' | 'denied' | 'failed' | 'interrupted'

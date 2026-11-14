@@ -24,7 +24,7 @@ function json(body: unknown, status = 200): Response {
 
 type Handler = (url: URL, init: RequestInit) => Response | Promise<Response>
 
-function defaultHandler(url: URL): Response {
+function defaultHandler(url: URL, init?: RequestInit): Response {
   if (url.pathname === '/healthz') return json({ status: 'ok', version: '0.6.0', contractVersion: 2 })
   if (url.pathname === '/status') return json({ version: '0.6.0', contractVersion: 2, state: 'connected', minecraft: { connected: true }, task: { active: false, state: 'idle', queue: [] } })
   if (url.pathname === '/events/recent') {
@@ -48,6 +48,12 @@ function defaultHandler(url: URL): Response {
   }
   if (url.pathname === '/move') return json({ ok: true, requestId: 'r4', action: 'home', target: null }, 202)
   if (url.pathname === '/say') return json({ ok: true, lines: 1 })
+  if (url.pathname === '/admin/chat') {
+    const method = String(init?.method ?? 'GET').toUpperCase()
+    if (method === 'GET') return json({ messages: [{ id: 'm1', role: 'user', text: '看看状态', at: '2026-11-14T00:00:00.000Z' }], turn: null })
+    return json({ ok: true, turnId: 'turn-1', status: 'pending' }, 202)
+  }
+  if (url.pathname === '/emergency-stop') return json({ ok: true, failures: [] })
   return json({ error: 'not_found', message: 'not found' }, 404)
 }
 
@@ -194,64 +200,57 @@ test('控制路由：CSRF、上游字段保留、审计动作（不记 say 正�
     assert.equal(noCsrf.statusCode, 403)
     assert.equal(noCsrf.json().error.code, 'csrf_failed')
 
-    const started = await fx.app.inject({
-      method: 'POST',
-      url: '/api/mcbot/tasks',
-      headers: authHeaders(),
-      payload: { name: 'fishing' },
-    })
-    assert.equal(started.statusCode, 200)
-    const startBody = started.json() as Record<string, unknown>
-    assert.equal(startBody.ok, true)
-    assert.equal(startBody.queued, true, '必须保留上游 queued 字段')
-    assert.equal(startBody.position, 1, '必须保留上游 position 字段')
-    assert.equal((startBody.task as { name?: string }).name, 'fishing')
-    assert.equal(authOf(fx.calls.find(({ url }) => url.pathname === '/task/start')!), 'Bearer control-token')
+    for (const url of ['/api/mcbot/tasks', '/api/mcbot/tasks/resume', '/api/mcbot/move', '/api/mcbot/say', '/api/mcbot/autonomy/start', '/api/mcbot/goals']) {
+      const retired = await fx.app.inject({
+        method: 'POST',
+        url,
+        headers: authHeaders(),
+        payload: { name: 'fishing', message: '秘密正文', action: 'come', target: 'Antifield', goal: '秘密目标' },
+      })
+      assert.equal(retired.statusCode, 409, url)
+      assert.equal(retired.json().error.code, 'mcbot_control_via_chat')
+    }
+    assert.equal(fx.calls.filter((call) => ['/task/start', '/task/resume', '/move', '/say', '/autonomy/start', '/goals'].includes(call.url.pathname)).length, 0)
 
     const stopped = await fx.app.inject({ method: 'POST', url: '/api/mcbot/tasks/stop', headers: authHeaders() })
     assert.equal(stopped.statusCode, 200)
     assert.equal(stopped.json().ok, true)
 
-    const resumed = await fx.app.inject({
-      method: 'POST',
-      url: '/api/mcbot/tasks/resume',
-      headers: authHeaders(),
-      payload: { taskId: 'task-1' },
-    })
-    assert.equal(resumed.statusCode, 200)
-    assert.equal(resumed.json().ok, true)
+    const anonymousChat = await fx.app.inject({ method: 'POST', url: '/api/mcbot/chat', payload: { message: '你好' } })
+    assert.equal(anonymousChat.statusCode, 401)
 
-    const moved = await fx.app.inject({
-      method: 'POST',
-      url: '/api/mcbot/move',
-      headers: authHeaders(),
-      payload: { action: 'come', target: 'Antifield' },
-    })
-    assert.equal(moved.statusCode, 200)
-    assert.equal(moved.json().ok, true)
-
-    const secret = '这是一条聊天正文'
+    const secret = '去砍点木头 / 然后回家'
     const said = await fx.app.inject({
       method: 'POST',
-      url: '/api/mcbot/say',
+      url: '/api/mcbot/chat',
       headers: authHeaders(),
       payload: { message: secret },
     })
     assert.equal(said.statusCode, 200)
-    assert.equal(said.json().ok, true)
-    const sayCall = fx.calls.find((call) => call.url.pathname === '/say')
-    assert.ok(sayCall)
-    assert.equal(authOf(sayCall), 'Bearer control-token', '/say 必须使用控制 Token')
+    assert.equal(said.json().status, 'pending')
+    const chatCall = fx.calls.find((call) => call.url.pathname === '/admin/chat' && String(call.init.method).toUpperCase() === 'POST')
+    assert.ok(chatCall)
+    assert.equal(authOf(chatCall), 'Bearer control-token')
+    assert.equal(JSON.parse(String(chatCall.init.body)).message, secret)
+
+    const busy = await fx.app.inject({ method: 'GET', url: '/api/mcbot/chat', headers: authHeaders() })
+    assert.equal(busy.statusCode, 200)
+    assert.equal((busy.json() as { messages: unknown[] }).messages.length, 1)
+
+    const emergency = await fx.app.inject({ method: 'POST', url: '/api/mcbot/emergency-stop', headers: authHeaders() })
+    assert.equal(emergency.statusCode, 200)
+    assert.deepEqual(emergency.json(), { ok: true, failures: [] })
+    const stopCall = fx.calls.find((call) => call.url.pathname === '/emergency-stop')
+    assert.equal(authOf(stopCall!), 'Bearer control-token')
 
     const rows = auditRows(fx.fixture.db)
     const actions = rows.map((row) => row.action)
-    assert.ok(actions.includes('mcbot.task.start'))
     assert.ok(actions.includes('mcbot.task.stop'))
-    assert.ok(actions.includes('mcbot.task.resume'))
-    assert.ok(actions.includes('mcbot.move'))
-    assert.ok(actions.includes('mcbot.say'))
-    const sayAudit = rows.find((row) => row.action === 'mcbot.say')
-    assert.deepEqual(JSON.parse(sayAudit?.detail_json ?? '{}'), { chars: secret.length })
+    assert.ok(actions.includes('mcbot.chat'))
+    assert.ok(actions.includes('mcbot.emergency_stop'))
+    assert.ok(!actions.includes('mcbot.task.start'))
+    const chatAudit = rows.find((row) => row.action === 'mcbot.chat')
+    assert.deepEqual(JSON.parse(chatAudit?.detail_json ?? '{}'), { chars: secret.length })
     const serializedAudit = JSON.stringify(rows)
     assert.ok(!serializedAudit.includes(secret), '审计不得包含聊天正文')
     for (const value of SENSITIVE) {
@@ -265,84 +264,50 @@ test('控制路由：CSRF、上游字段保留、审计动作（不记 say 正�
 test('参数校验：任务名/action/taskId/say 长度与 / 前缀、history kind 与时间', async () => {
   const fx = await makeLofiiApp()
   try {
-    const badName = await fx.app.inject({
-      method: 'POST',
-      url: '/api/mcbot/tasks',
-      headers: authHeaders(),
-      payload: { name: 'cooking' },
-    })
-    assert.equal(badName.statusCode, 400)
-    assert.equal(badName.json().error.code, 'invalid_request')
-
-    const badAction = await fx.app.inject({
-      method: 'POST',
-      url: '/api/mcbot/move',
-      headers: authHeaders(),
-      payload: { action: 'teleport' },
-    })
-    assert.equal(badAction.statusCode, 400)
-
-    const badTaskId = await fx.app.inject({
-      method: 'POST',
-      url: '/api/mcbot/tasks/resume',
-      headers: authHeaders(),
-      payload: { taskId: 123 },
-    })
-    assert.equal(badTaskId.statusCode, 400)
-
-    for (const taskId of ['   ', 'a\u0000b', 'a b']) {
-      const invalidTaskId = await fx.app.inject({
+    for (const url of ['/api/mcbot/tasks', '/api/mcbot/move', '/api/mcbot/tasks/resume', '/api/mcbot/say']) {
+      const retired = await fx.app.inject({
         method: 'POST',
-        url: '/api/mcbot/tasks/resume',
+        url,
         headers: authHeaders(),
-        payload: { taskId },
+        payload: { name: 'cooking', action: 'teleport', taskId: 'a\u0000b', message: '/help' },
       })
-      assert.equal(invalidTaskId.statusCode, 400, `taskId 应拒绝空白/控制字符：${JSON.stringify(taskId)}`)
+      assert.equal(retired.statusCode, 409)
+      assert.equal(retired.json().error.code, 'mcbot_control_via_chat')
     }
+    assert.equal(fx.calls.filter((call) => ['/task/start', '/move', '/task/resume', '/say'].includes(call.url.pathname)).length, 0)
 
-    const emptySay = await fx.app.inject({
+    const emptyChat = await fx.app.inject({
       method: 'POST',
-      url: '/api/mcbot/say',
+      url: '/api/mcbot/chat',
       headers: authHeaders(),
       payload: { message: '   ' },
     })
-    assert.equal(emptySay.statusCode, 400)
+    assert.equal(emptyChat.statusCode, 400)
 
-    const longSay = await fx.app.inject({
+    const longChat = await fx.app.inject({
       method: 'POST',
-      url: '/api/mcbot/say',
+      url: '/api/mcbot/chat',
       headers: authHeaders(),
-      payload: { message: 'x'.repeat(721) },
+      payload: { message: 'x'.repeat(2001) },
     })
-    assert.equal(longSay.statusCode, 400)
+    assert.equal(longChat.statusCode, 400)
 
-    const slashSay = await fx.app.inject({
+    const slashChat = await fx.app.inject({
       method: 'POST',
-      url: '/api/mcbot/say',
+      url: '/api/mcbot/chat',
       headers: authHeaders(),
-      payload: { message: '/help' },
+      payload: { message: '看看 /help 是否只是文字' },
     })
-    assert.equal(slashSay.statusCode, 400)
-    assert.equal(slashSay.json().error.code, 'message_must_not_start_with_slash')
+    assert.equal(slashChat.statusCode, 200)
 
-    // 关键回归：上游按 240 字符切行，第二行以 / 开头会变成命令；应用必须拒绝任意位置 /。
-    const splitInjection = await fx.app.inject({
+    const controlCharChat = await fx.app.inject({
       method: 'POST',
-      url: '/api/mcbot/say',
-      headers: authHeaders(),
-      payload: { message: `${'a'.repeat(240)}/op mcbot` },
-    })
-    assert.equal(splitInjection.statusCode, 400)
-    assert.equal(splitInjection.json().error.code, 'message_must_not_start_with_slash')
-
-    const controlCharSay = await fx.app.inject({
-      method: 'POST',
-      url: '/api/mcbot/say',
+      url: '/api/mcbot/chat',
       headers: authHeaders(),
       payload: { message: 'hello\u0000world' },
     })
-    assert.equal(controlCharSay.statusCode, 400)
-    assert.equal(fx.calls.filter((call) => call.url.pathname === '/say').length, 0, '非法消息不应发往上游')
+    assert.equal(controlCharChat.statusCode, 400)
+    assert.equal(fx.calls.filter((call) => call.url.pathname === '/admin/chat' && String(call.init.method).toUpperCase() === 'POST').length, 1, '非法消息不应发往上游')
 
     const badKind = await fx.app.inject({
       method: 'GET',
@@ -420,7 +385,7 @@ test('限流：控制 20/min/IP、say 10/min/IP，超限 429 rate_limited', asyn
     for (let index = 0; index < 10; index += 1) {
       const response = await fx.app.inject({
         method: 'POST',
-        url: '/api/mcbot/say',
+        url: '/api/mcbot/chat',
         headers: authHeaders(),
         payload: { message: `hi ${index}` },
       })
@@ -428,7 +393,7 @@ test('限流：控制 20/min/IP、say 10/min/IP，超限 429 rate_limited', asyn
     }
     const sayLimited = await fx.app.inject({
       method: 'POST',
-      url: '/api/mcbot/say',
+      url: '/api/mcbot/chat',
       headers: authHeaders(),
       payload: { message: 'one too many' },
     })
@@ -459,7 +424,7 @@ test('错误映射：unavailable 503 / auth_failed 502 / upstream_error 502 / �
     async function postAndExpect(expectedStatus: number, expectedCode: string): Promise<Record<string, unknown>> {
       const response = await fx.app.inject({
         method: 'POST',
-        url: '/api/mcbot/tasks/resume',
+        url: '/api/mcbot/tasks/stop',
         headers: authHeaders(),
         payload: {},
       })
@@ -508,14 +473,14 @@ test('错误映射：unavailable 503 / auth_failed 502 / upstream_error 502 / �
     assert.equal(blocked.statusCode, 503)
     assert.equal(blocked.json().error.code, 'mcbot_control_disabled')
 
-    const say = await readonly.app.inject({
+    const chat = await readonly.app.inject({
       method: 'POST',
-      url: '/api/mcbot/say',
+      url: '/api/mcbot/chat',
       headers: authHeaders(),
-      payload: { message: '只读不能说话' },
+      payload: { message: '只读不能对话' },
     })
-    assert.equal(say.statusCode, 503)
-    assert.equal(say.json().error.code, 'mcbot_control_disabled')
+    assert.equal(chat.statusCode, 503)
+    assert.equal(chat.json().error.code, 'mcbot_control_disabled')
   } finally {
     await readonly.close()
   }

@@ -29,8 +29,6 @@
   disabled: true
 - id: ui-cordis
   disabled: true
-- id: ui-plugin-manager
-  disabled: true
 - id: workspace-controller
   config:
     documentsDirectory: !!js process.cwd()

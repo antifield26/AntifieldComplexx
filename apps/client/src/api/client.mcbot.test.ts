@@ -92,39 +92,28 @@ describe('v0.8.0 mcbot API 客户端', () => {
     expect(history.samples?.[0]?.connected).toBe(true)
   })
 
-  it('任务控制使用 POST 与 JSON body', async () => {
-    fetchMock.mockResolvedValue(mockResponse({ body: { ok: true } }))
-    await api.mcbot.startTask('patrol')
-    expect(lastCall().url).toBe('/api/mcbot/tasks')
+  it('管理员对话与急停使用 POST，正文不进入错误对象', async () => {
+    fetchMock.mockResolvedValue(mockResponse({ body: { ok: true, turnId: 'turn-1', status: 'pending' } }))
+    const accepted = await api.mcbot.chat('去砍点木头')
+    expect(lastCall().url).toBe('/api/mcbot/chat')
     expect(lastCall().init.method).toBe('POST')
-    expect(lastBody()).toEqual({ name: 'patrol' })
-
-    await api.mcbot.stopTask()
-    expect(lastCall().url).toBe('/api/mcbot/tasks/stop')
-    expect(lastCall().init.method).toBe('POST')
-    expect(lastBody()).toEqual({})
-
-    await api.mcbot.resumeTask('task-1')
-    expect(lastCall().url).toBe('/api/mcbot/tasks/resume')
-    expect(lastBody()).toEqual({ taskId: 'task-1' })
-
-    await api.mcbot.resumeTask()
-    expect(lastBody()).toEqual({})
-
-    await api.mcbot.move('follow', 'Antifield')
-    expect(lastCall().url).toBe('/api/mcbot/move')
-    expect(lastBody()).toEqual({ action: 'follow', target: 'Antifield' })
-
-    await api.mcbot.move('home')
-    expect(lastBody()).toEqual({ action: 'home' })
-
-    await api.mcbot.say('晚上好')
-    expect(lastCall().url).toBe('/api/mcbot/say')
-    expect(lastBody()).toEqual({ message: '晚上好' })
-
-    // 写操作附带 CSRF 头
+    expect(lastBody()).toEqual({ message: '去砍点木头' })
+    expect(accepted.turnId).toBe('turn-1')
     const headers = lastCall().init.headers as Record<string, string>
     expect(headers['X-CSRF-Token']).toBe('csrf-test-token')
+
+    fetchMock.mockResolvedValue(mockResponse({ body: { messages: [], turn: null } }))
+    const state = await api.mcbot.chatState()
+    expect(lastCall().url).toBe('/api/mcbot/chat')
+    expect(lastCall().init.method).toBe('GET')
+    expect(state.messages).toEqual([])
+
+    fetchMock.mockResolvedValue(mockResponse({ body: { ok: true, failures: [] } }))
+    const stopped = await api.mcbot.emergencyStop()
+    expect(lastCall().url).toBe('/api/mcbot/emergency-stop')
+    expect(lastCall().init.method).toBe('POST')
+    expect(lastBody()).toEqual({})
+    expect(stopped.ok).toBe(true)
   })
 
   it('mcbot_* 错误解析为中文兜底文案并保留状态码', async () => {
@@ -145,7 +134,7 @@ describe('v0.8.0 mcbot API 客户端', () => {
       fetchMock.mockResolvedValue(
         mockResponse({ status: testCase.status, body: { error: { code: testCase.code } } }),
       )
-      const error = await api.mcbot.stopTask().catch((caught: unknown) => caught)
+      const error = await api.mcbot.emergencyStop().catch((caught: unknown) => caught)
       expect(error).toBeInstanceOf(ApiError)
       expect((error as ApiError).status).toBe(testCase.status)
       expect((error as ApiError).code).toBe(testCase.code)
@@ -160,11 +149,11 @@ describe('v0.8.0 mcbot API 客户端', () => {
         body: { error: { code: 'mcbot_task_active', message: 'mcbot 正在巡逻，请先停止任务' } },
       }),
     )
-    const error = await api.mcbot.move('home').catch((caught: unknown) => caught)
+    const error = await api.mcbot.chat('回家').catch((caught: unknown) => caught)
     expect((error as ApiError).message).toBe('mcbot 正在巡逻，请先停止任务')
   })
 
-  it('自主模式：GET 解包 autonomy、start/stop POST 目标与原因、错误码中文兜底', async () => {
+  it('自主模式：GET 解包 autonomy', async () => {
     const snapshot = {
       enabled: true,
       active: true,
@@ -186,25 +175,6 @@ describe('v0.8.0 mcbot API 客户端', () => {
     expect(lastCall().init.method).toBe('GET')
     expect(autonomy?.state).toBe('running')
     expect(autonomy?.toolCalls).toBe(3)
-
-    fetchMock.mockResolvedValue(mockResponse({ body: { ok: true, autonomy: snapshot } }))
-    const started = await api.mcbot.startAutonomy('收集木材')
-    expect(lastCall().url).toBe('/api/mcbot/autonomy/start')
-    expect(lastCall().init.method).toBe('POST')
-    expect(lastBody()).toEqual({ goal: '收集木材' })
-    expect((lastCall().init.headers as Record<string, string>)['X-CSRF-Token']).toBe('csrf-test-token')
-    expect(started.autonomy?.state).toBe('running')
-
-    await api.mcbot.startAutonomy()
-    expect(lastBody()).toEqual({})
-
-    const stopped = await api.mcbot.stopAutonomy('用户急停')
-    expect(lastCall().url).toBe('/api/mcbot/autonomy/stop')
-    expect(lastBody()).toEqual({ reason: '用户急停' })
-    expect(stopped.ok).toBe(true)
-
-    await api.mcbot.stopAutonomy()
-    expect(lastBody()).toEqual({})
   })
 
   it('自主模式错误码使用中文兜底文案并保留状态码', async () => {
@@ -217,7 +187,7 @@ describe('v0.8.0 mcbot API 客户端', () => {
       fetchMock.mockResolvedValue(
         mockResponse({ status: testCase.status, body: { error: { code: testCase.code } } }),
       )
-      const error = await api.mcbot.startAutonomy().catch((caught: unknown) => caught)
+      const error = await api.mcbot.emergencyStop().catch((caught: unknown) => caught)
       expect(error).toBeInstanceOf(ApiError)
       expect((error as ApiError).status).toBe(testCase.status)
       expect((error as ApiError).code).toBe(testCase.code)

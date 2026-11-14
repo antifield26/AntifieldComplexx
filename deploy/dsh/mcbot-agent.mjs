@@ -15,6 +15,30 @@ const runtime = fileURLToPath(new URL('.', import.meta.url))
 const MAX_BYTES = 256 * 1024
 const TEXT_LIMIT = 16_000
 const MAX_TEXT_RUNS = 2
+const ADMIN_PROMPT_LIMIT = 4_000
+const ADMIN_IDLE_MS = 30 * 60 * 1000
+const DEFAULT_PROMPT = '你是 Minecraft 助手。按本轮明确给出的目标和约束行动。'
+
+function toolOverlay(mcbotPlugin, planning) {
+  const rows = [
+    '- insert:',
+    '    - id: dsh-mcbot',
+    `      name: ${JSON.stringify(mcbotPlugin)}`,
+  ]
+  if (planning) {
+    rows.push(
+      '    - id: goal',
+      "      name: '@deepseek-ai/dsh-goal'",
+      '    - id: tool-goal',
+      "      name: '@deepseek-ai/dsh-tool-goal'",
+      '    - id: tool-todo',
+      "      name: '@deepseek-ai/dsh-tool-todo'",
+      '      config:',
+      '        allowParallelInProgress: false',
+    )
+  }
+  return `${rows.join('\n')}\n`
+}
 
 function readPayload(req) {
   return new Promise((resolve, reject) => {
@@ -39,14 +63,14 @@ function readPayload(req) {
   })
 }
 
-function makeRun(config, tools) {
+function makeRun(config, tools, options = {}) {
   const id = `session-${randomUUID()}`
   const home = mkdtempSync(join(config.home, 'run-'))
   const env = {
     PATH: process.env.PATH,
     HOME: home,
     DEEPSEEK_API_KEY: config.apiKey,
-    DSH_SYSTEM_PROMPT: '你是 Minecraft 助手。按本轮明确给出的目标和约束行动。',
+    DSH_SYSTEM_PROMPT: options.prompt ?? DEFAULT_PROMPT,
   }
   const patches = [join(runtime, 'mcbot-minimal.yml')]
   try {
@@ -55,7 +79,7 @@ function makeRun(config, tools) {
       env.DSH_MCBOT_BINDING = join(home, 'tool-binding.json')
       writeFileSync(env.DSH_MCBOT_BINDING, JSON.stringify(binding), { mode: 0o600, flag: 'wx' })
       const overlay = join(home, 'autonomy.yml')
-      writeFileSync(overlay, `- insert:\n    - id: dsh-mcbot\n      name: ${JSON.stringify(join(runtime, 'dsh-mcbot.mjs'))}\n`, {
+      writeFileSync(overlay, toolOverlay(join(runtime, 'dsh-mcbot.mjs'), options.planning === true), {
         mode: 0o600,
         flag: 'wx',
       })
@@ -82,6 +106,7 @@ function makeRun(config, tools) {
       harness,
       result: null,
       pending: false,
+      idle: null,
       async start() {
         await harness.start()
         if (tools && !existsSync(env.DSH_MCBOT_BINDING + '.ready')) {
@@ -114,6 +139,7 @@ function send(res, status, data) {
 export function startAgent(config) {
   const textRuns = new Set()
   let autonomy = null
+  let admin = null
   let ready = false
   let stopping = false
   let probe
@@ -146,43 +172,64 @@ export function startAgent(config) {
           await run.close().catch(fatalCleanup)
           textRuns.delete(run)
         }
-      } else if (req.url === '/run/start') {
-        if (autonomy) {
+      } else if (req.url === '/run/start' || req.url === '/admin/start') {
+        const planning = req.url === '/admin/start'
+        const current = planning ? admin : autonomy
+        if (current) {
           send(res, 409, { error: 'agent_busy' })
           return
         }
-        const run = makeRun(config, { tools: data.tools, bearer: data.bearer })
-        autonomy = run
-        res.once('close', () => { if (!res.writableEnded) void closeAutonomy(run).catch(fatalCleanup) })
+        if (planning && (typeof data.prompt !== 'string' || data.prompt.length === 0 || data.prompt.length > ADMIN_PROMPT_LIMIT)) {
+          send(res, 400, { error: 'invalid_prompt' })
+          return
+        }
+        const run = makeRun(config, { tools: data.tools, bearer: data.bearer }, planning ? { planning: true, prompt: data.prompt } : {})
+        if (planning) admin = run
+        else autonomy = run
+        const close = planning ? closeAdmin : closeAutonomy
+        res.once('close', () => { if (!res.writableEnded) void close(run).catch(fatalCleanup) })
         try {
           await run.start()
+          if (planning) armAdminIdle(run)
           send(res, 200, { id: run.id })
         } catch {
-          await closeAutonomy(run)
+          await close(run)
           send(res, 503, { error: 'agent_unavailable' })
         }
       } else {
-        const run = autonomy
-        if (!run || data.id !== run.id) {
-          send(res, req.url === '/run/stop' ? 200 : 404, { error: 'run_not_found' })
+        const planning = req.url?.startsWith('/admin/') === true
+        const run = planning ? admin : autonomy
+        const stopPath = planning ? '/admin/stop' : '/run/stop'
+        const promptPath = planning ? '/admin/prompt' : '/run/prompt'
+        const waitPath = planning ? '/admin/wait' : '/run/wait'
+        if (!planning && !req.url?.startsWith('/run/')) {
+          send(res, 404, { error: 'unknown_operation' })
           return
         }
-        if (req.url === '/run/prompt') {
+        if (!run || data.id !== run.id) {
+          send(res, req.url === stopPath ? 200 : 404, { error: 'run_not_found' })
+          return
+        }
+        if (req.url === promptPath) {
           if (run.pending || typeof data.text !== 'string' || data.text.length === 0 || data.text.length > 48_000) {
             send(res, 409, { error: 'run_busy_or_invalid_prompt' })
             return
           }
+          if (planning) pauseAdminIdle(run)
           run.pending = true
           run.result = prompt(run, data.text).then(
             (text) => ({ text }),
             () => ({ error: 'turn_failed' }),
-          ).finally(() => { run.pending = false })
+          ).finally(() => {
+            run.pending = false
+            if (planning && admin === run) armAdminIdle(run)
+          })
           send(res, 200, { ok: true })
-        } else if (req.url === '/run/wait') {
+        } else if (req.url === waitPath) {
           const result = run.result ? await run.result : { text: '' }
           send(res, result.error ? 502 : 200, result)
-        } else if (req.url === '/run/stop') {
-          await closeAutonomy(run)
+        } else if (req.url === stopPath) {
+          await (planning ? closeAdmin(run) : closeAutonomy(run))
           send(res, 200, { ok: true })
         } else {
           send(res, 404, { error: 'unknown_operation' })
@@ -193,14 +240,35 @@ export function startAgent(config) {
     }
   })
 
-  async function closeAutonomy(run) {
+  function pauseAdminIdle(run) {
+    clearTimeout(run.idle)
+    run.idle = null
+  }
+
+  function armAdminIdle(run) {
+    pauseAdminIdle(run)
+    if (run.pending) return
+    run.idle = setTimeout(() => { void closeAdmin(run).catch(fatalCleanup) }, ADMIN_IDLE_MS)
+    run.idle.unref?.()
+  }
+
+  async function closeSlot(run, current, assign) {
+    pauseAdminIdle(run)
     try {
       await run.close()
-      if (autonomy === run) autonomy = null
+      if (current() === run) assign(null)
     } catch (error) {
       fatalCleanup()
       throw error
     }
+  }
+
+  function closeAutonomy(run) {
+    return closeSlot(run, () => autonomy, (value) => { autonomy = value })
+  }
+
+  function closeAdmin(run) {
+    return closeSlot(run, () => admin, (value) => { admin = value })
   }
   function fatalCleanup() {
     console.error('DSH Minecraft Agent 子进程清理失败')
@@ -213,9 +281,11 @@ export function startAgent(config) {
     publishRuntimeStatus(config.statusPath, false)
     server.close()
     server.closeAllConnections()
+    if (admin) pauseAdminIdle(admin)
     const results = await Promise.allSettled([
       ...[...textRuns].map((run) => run.close()),
       ...(autonomy ? [autonomy.close()] : []),
+      ...(admin ? [admin.close()] : []),
       ...(probe ? [probe.close()] : []),
     ])
     if (results.some((result) => result.status === 'rejected')) process.exit(1)

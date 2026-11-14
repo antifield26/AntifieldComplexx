@@ -1,4 +1,10 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.2）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.3）
+
+## v1.2.3 本地变更（尚未部署）
+
+工作区版本是 v1.2.3。生产 Workbench 与 mcbot 仍是 v1.2.2 的 `20261113T072133Z` 与 `20261113T072417Z`。本版不迁移 schema，契约仍是 v2。部署时只重启受影响的 Workbench、DSH Web 和 Minecraft Agent。回滚恢复上述 v1.2.2 release，并把 DSH Web 配置恢复到关闭插件页的那一版，保留现行数据库及 WAL。Minecraft 不因本版重启。
+
+DSH Web 重新启用插件页 `ui-plugin-manager` 与清单插件 `plugin-package-inventory-deepseek`。页面经 `/api/remote.mux` 与 `/api/plugin-manager/detail-file` 查看和安装、卸载。无连字符的 `/api/pluginManager/`、会话上传、设置写入和凭据写入仍由 Workbench 拒绝。模型侧 `tool-plugin-manager` 保持关闭。Minecraft Agent 的最小策略不启用 shell、文件系统或该清单插件。
 
 ## v1.2.2 维护权限与回滚（已验收）
 

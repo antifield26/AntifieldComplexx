@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type {
   McbotAutonomySnapshot,
@@ -18,16 +18,11 @@ import { McbotPanel } from './McbotPanel'
 const mocks = vi.hoisted(() => ({
   status: vi.fn(),
   history: vi.fn(),
-  startTask: vi.fn(),
-  stopTask: vi.fn(),
-  resumeTask: vi.fn(),
-  move: vi.fn(),
-  say: vi.fn(),
-  autonomy: vi.fn(),
-  startAutonomy: vi.fn(),
-  stopAutonomy: vi.fn(),
   presence: vi.fn(),
-  goals: vi.fn(),
+  setPresence: vi.fn(),
+  chat: vi.fn(),
+  chatState: vi.fn(),
+  emergencyStop: vi.fn(),
 }))
 
 vi.mock('../../api/client', () => ({
@@ -35,16 +30,11 @@ vi.mock('../../api/client', () => ({
     mcbot: {
       status: mocks.status,
       history: mocks.history,
-      startTask: mocks.startTask,
-      stopTask: mocks.stopTask,
-      resumeTask: mocks.resumeTask,
-      move: mocks.move,
-      say: mocks.say,
-      autonomy: mocks.autonomy,
-      startAutonomy: mocks.startAutonomy,
-      stopAutonomy: mocks.stopAutonomy,
       presence: mocks.presence,
-      goals: mocks.goals,
+      setPresence: mocks.setPresence,
+      chat: mocks.chat,
+      chatState: mocks.chatState,
+      emergencyStop: mocks.emergencyStop,
     },
   },
   // 测试只需按 code 判断降级；非 ApiError 返回 false。
@@ -263,21 +253,13 @@ function renderPanel() {
 beforeEach(() => {
   mocks.status.mockResolvedValue(snapshot())
   mocks.presence.mockResolvedValue({ presence: { mode: 'auto', source: 'default', updatedAt: null, connected: true, lastDecision: '' } })
-  mocks.goals.mockResolvedValue({ goals: [] })
   mocks.history.mockImplementation(async (query: McbotHistoryQuery) =>
     query.kind === 'samples' ? samplesResult() : alertsResult(),
   )
-  mocks.startTask.mockResolvedValue({ ok: true })
-  mocks.stopTask.mockResolvedValue({ ok: true })
-  mocks.resumeTask.mockResolvedValue({ ok: true })
-  mocks.move.mockResolvedValue({ ok: true })
-  mocks.say.mockResolvedValue({ ok: true })
-  mocks.autonomy.mockResolvedValue(autonomySnapshot())
-  mocks.startAutonomy.mockResolvedValue({ ok: true, autonomy: autonomySnapshot({ state: 'starting' }) })
-  mocks.stopAutonomy.mockResolvedValue({
-    ok: true,
-    autonomy: autonomySnapshot({ state: 'finished', active: false }),
-  })
+  mocks.chatState.mockResolvedValue({ messages: [], turn: null })
+  mocks.chat.mockResolvedValue({ ok: true, turnId: 'turn-1', status: 'pending' })
+  mocks.emergencyStop.mockResolvedValue({ ok: true, failures: [] })
+  mocks.setPresence.mockResolvedValue({ presence: { mode: 'always', source: 'persisted', updatedAt: null, connected: true, lastDecision: '' } })
 })
 
 afterEach(cleanup)
@@ -289,7 +271,8 @@ describe('McbotPanel 状态与降级', () => {
     )
     renderPanel()
     expect(await screen.findByText(/mcbot 集成未启用/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '开始任务' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '急停' })).toBeNull()
+    expect(screen.queryByLabelText('管理员对话')).toBeNull()
     expect(mocks.history).not.toHaveBeenCalled()
   })
 
@@ -353,207 +336,59 @@ describe('McbotPanel 状态与降级', () => {
     expect(screen.getByText('已连接（mcbot）')).toBeTruthy()
   })
 
-  it('控制未启用时禁用任务/移动/聊天操作并显示说明', async () => {
+  it('控制未启用时禁用对话和急停', async () => {
     mocks.status.mockResolvedValue(
       snapshot({ controlEnabled: false, status: mcbotStatus({ task: activeTask() }) }),
     )
     renderPanel()
-    expect(await screen.findByText(/任务\/移动\/聊天操作已禁用/)).toBeTruthy()
-    expect(screen.getByRole('button', { name: '开始任务' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '停止任务' })).toBeDisabled()
+    expect(await screen.findByText(/对话和急停已禁用/)).toBeTruthy()
+    expect(screen.getByLabelText('管理员对话')).toBeDisabled()
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '回家' })).toBeDisabled()
-    expect(screen.getByLabelText('游戏内聊天内容')).toBeDisabled()
-    expect(mocks.move).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '急停' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '开始任务' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '回家' })).toBeNull()
+    expect(mocks.chat).not.toHaveBeenCalled()
+    expect(mocks.emergencyStop).not.toHaveBeenCalled()
   })
 })
 
-describe('McbotPanel 任务控制', () => {
-  it('同一渲染周期重复确认只提交一次任务请求', async () => {
-    let finish: (value: { ok: true }) => void = () => undefined
-    mocks.startTask.mockReturnValueOnce(new Promise<{ ok: true }>((resolve) => { finish = resolve }))
+describe('McbotPanel 管理员对话', () => {
+  it('发送一句话，允许斜杠，不调用旧写接口', async () => {
     renderPanel()
-    await userEvent.click(await screen.findByRole('button', { name: '开始任务' }))
-    const submit = within(screen.getByRole('dialog', { name: '开始任务' })).getByRole('button', { name: '开始' })
-    act(() => { fireEvent.click(submit); fireEvent.click(submit) })
-    expect(mocks.startTask).toHaveBeenCalledOnce()
-    await act(async () => { finish({ ok: true }) })
-    expect(await screen.findByText(/已请求 mcbot 开始/)).toBeInTheDocument()
-  })
-
-  it('确认期间失去控制权限时不使用缓存状态发起任务', async () => {
-    renderPanel()
-    await userEvent.click(await screen.findByRole('button', { name: '开始任务' }))
-    mocks.status.mockResolvedValue(snapshot({ reachable: false, error: 'mcbot_unavailable' }))
-    fireEvent(window, new Event('af:refresh'))
-    await screen.findByText(/无法连接 mcbot：/)
-    await userEvent.click(within(screen.getByRole('dialog', { name: '开始任务' })).getByRole('button', { name: '开始' }))
-    expect(mocks.startTask).not.toHaveBeenCalled()
-    expect(await screen.findByText('当前控制不可用，请刷新状态后重试')).toBeInTheDocument()
-  })
-
-  it('待恢复任务在确认期间更换时，不恢复未经确认的新任务', async () => {
-    const pendingSnapshot = (taskId: string) => snapshot({ status: mcbotStatus({ task: idleTask({
-      state: 'pending_resume', name: 'fishing', pendingResume: {
-        taskId, name: 'fishing', startedAt: '2026-11-11T12:00:00.000Z', elapsedSec: 30,
-        progress: progress(), expiresAt: '2026-11-11T12:10:00.000Z',
-      },
-    }) }) })
-    mocks.status.mockResolvedValueOnce(pendingSnapshot('task-old')).mockResolvedValue(pendingSnapshot('task-new'))
-    renderPanel()
-    await userEvent.click(await screen.findByRole('button', { name: '恢复任务' }))
-    fireEvent(window, new Event('af:refresh'))
-    await waitFor(() => expect(mocks.status).toHaveBeenCalledTimes(2))
-    await userEvent.click(within(screen.getByRole('dialog', { name: '恢复任务' })).getByRole('button', { name: '恢复' }))
-    expect(mocks.resumeTask).not.toHaveBeenCalled()
-    expect(await screen.findByText('当前控制不可用，请刷新状态后重试')).toBeInTheDocument()
-  })
-
-  it('开始任务需要二次确认，并按所选任务调用接口', async () => {
-    renderPanel()
-    expect(await screen.findByRole('button', { name: '开始任务' })).toBeEnabled()
-    await userEvent.selectOptions(screen.getByLabelText('任务'), 'patrol')
-    await userEvent.click(screen.getByRole('button', { name: '开始任务' }))
-
-    const dialog = await screen.findByRole('dialog', { name: '开始任务' })
-    expect(within(dialog).getByText(/确定让 mcbot 开始「巡逻」任务/)).toBeTruthy()
-    await userEvent.click(within(dialog).getByRole('button', { name: '开始' }))
-
-    await waitFor(() => expect(mocks.startTask).toHaveBeenCalledWith('patrol'))
-    expect(await screen.findByText(/已请求 mcbot 开始「巡逻」任务/)).toBeTruthy()
-  })
-
-  it('停止任务确认文案说明会清空队列', async () => {
-    mocks.status.mockResolvedValue(snapshot({ status: mcbotStatus({ task: activeTask() }) }))
-    renderPanel()
-    await userEvent.click(await screen.findByRole('button', { name: '停止任务' }))
-    const dialog = await screen.findByRole('dialog', { name: '停止任务' })
-    expect(within(dialog).getByText(/确定停止当前任务并清空队列/)).toBeTruthy()
-    await userEvent.click(within(dialog).getByRole('button', { name: '停止' }))
-    await waitFor(() => expect(mocks.stopTask).toHaveBeenCalledTimes(1))
-  })
-
-  it('待恢复任务显示横幅并可确认恢复', async () => {
-    mocks.status.mockResolvedValue(
-      snapshot({
-        status: mcbotStatus({
-          task: idleTask({
-            state: 'pending_resume',
-            name: 'fishing',
-            pendingResume: {
-              taskId: 'task-pending-1',
-              name: 'fishing',
-              startedAt: '2026-10-27T07:00:00.000Z',
-              elapsedSec: 137,
-              progress: progress({ fishCaught: 4 }),
-              expiresAt: '2026-10-27T08:10:00.000Z',
-            },
-          }),
-        }),
-      }),
-    )
-    renderPanel()
-    expect(await screen.findByText(/有待恢复任务「钓鱼」/)).toBeTruthy()
-    await userEvent.click(screen.getByRole('button', { name: '恢复任务' }))
-    const dialog = await screen.findByRole('dialog', { name: '恢复任务' })
-    await userEvent.click(within(dialog).getByRole('button', { name: '恢复' }))
-    await waitFor(() => expect(mocks.resumeTask).toHaveBeenCalledWith('task-pending-1'))
-  })
-
-  it('移动目标排除 mcbot 自己，二次确认后使用所选玩家', async () => {
-    renderPanel()
-    const select = (await screen.findByLabelText('选择移动目标玩家')) as HTMLSelectElement
-    expect(within(select).getByRole('option', { name: 'Antifield' })).toBeTruthy()
-    expect(within(select).queryByRole('option', { name: 'mcbot' })).toBeNull()
-
-    await userEvent.click(screen.getByRole('button', { name: '过来' }))
-    expect(mocks.move).not.toHaveBeenCalled()
-    await userEvent.click(within(screen.getByRole('dialog', { name: '移动控制' })).getByRole('button', { name: '确认移动' }))
-    await waitFor(() => expect(mocks.move).toHaveBeenCalledWith('come', 'Antifield'))
-    expect(await screen.findByText(/已请求 mcbot 过来/)).toBeTruthy()
-
-    await userEvent.click(screen.getByRole('button', { name: '回家' }))
-    await userEvent.click(within(screen.getByRole('dialog', { name: '移动控制' })).getByRole('button', { name: '确认移动' }))
-    await waitFor(() => expect(mocks.move).toHaveBeenLastCalledWith('home', undefined))
-  })
-
-  it('移动确认期间任务开始时不再执行手动移动', async () => {
-    renderPanel()
-    await userEvent.click(await screen.findByRole('button', { name: '回家' }))
-    mocks.status.mockResolvedValue(snapshot({ status: mcbotStatus({ task: activeTask() }) }))
-    fireEvent(window, new Event('af:refresh'))
-    await screen.findAllByText('进行中')
-    await userEvent.click(within(screen.getByRole('dialog', { name: '移动控制' })).getByRole('button', { name: '确认移动' }))
-    expect(mocks.move).not.toHaveBeenCalled()
-    expect(await screen.findByText('移动条件已变化，请查看当前连接、任务和目标玩家后重试')).toBeInTheDocument()
-  })
-
-  it.each([
-    ['连接已断开', snapshot({ status: mcbotStatus({ minecraft: { ...mcbotStatus().minecraft, connected: false } }) })],
-    ['目标玩家已离开', snapshot({ status: mcbotStatus({ admin: { ...mcbotStatus().admin, online: { count: 1, max: 6, players: ['mcbot'] } } }) })],
-  ])('移动确认期间%s时不提交', async (_label, nextSnapshot) => {
-    renderPanel()
-    await userEvent.click(await screen.findByRole('button', { name: '过来' }))
-    mocks.status.mockResolvedValue(nextSnapshot)
-    fireEvent(window, new Event('af:refresh'))
-    await waitFor(() => expect(document.querySelector('#mcbot-move-target')).toBeDisabled())
-    await userEvent.click(within(screen.getByRole('dialog', { name: '移动控制' })).getByRole('button', { name: '确认移动' }))
-    expect(mocks.move).not.toHaveBeenCalled()
-    expect(await screen.findByText('移动条件已变化，请查看当前连接、任务和目标玩家后重试')).toBeInTheDocument()
-  })
-
-  it('取消移动确认不会发出写请求', async () => {
-    renderPanel()
-    await userEvent.click(await screen.findByRole('button', { name: '回家' }))
-    await userEvent.click(within(screen.getByRole('dialog', { name: '移动控制' })).getByRole('button', { name: '取消' }))
-    expect(mocks.move).not.toHaveBeenCalled()
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  })
-})
-
-describe('McbotPanel 游戏内聊天', () => {
-  it('契约 v1 过渡期禁用发言，移动仍可用', async () => {
-    mocks.status.mockResolvedValue(snapshot({ contractVersion: 1, sayEnabled: false }))
-    renderPanel()
-    expect(await screen.findByText(/升级到契约 v2 后可用/)).toBeTruthy()
-    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '回家' })).toBeEnabled()
-  })
-
-  it('拒绝以 / 开头的内容，不打开确认、不调用接口', async () => {
-    renderPanel()
-    const input = await screen.findByLabelText('游戏内聊天内容')
-    await userEvent.type(input, '/tp Antifield')
+    const input = await screen.findByLabelText('管理员对话')
+    await userEvent.type(input, '去附近砍点木头 / 然后回家')
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
-    expect(await screen.findByText(/聊天内容不能包含 \//)).toBeTruthy()
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(mocks.say).not.toHaveBeenCalled()
+    await waitFor(() => expect(mocks.chat).toHaveBeenCalledWith('去附近砍点木头 / 然后回家'))
+    expect(screen.queryByRole('button', { name: '开始任务' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '启动自主模式' })).toBeNull()
   })
 
-  it('拒绝切分边界后的 / 命令行（上游按 240 字符切行）', async () => {
+  it('急停需要二次确认，且不发送对话', async () => {
     renderPanel()
-    const input = await screen.findByLabelText('游戏内聊天内容')
-    // 250+ 字符逐字输入在 jsdom/覆盖率插桩下偶发超过 5s 用例超时；用 change 直接构造边界值。
-    fireEvent.change(input, { target: { value: `${'a'.repeat(240)}/op mcbot` } })
-    await userEvent.click(screen.getByRole('button', { name: '发送' }))
-    expect(await screen.findByText(/聊天内容不能包含 \//)).toBeTruthy()
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(mocks.say).not.toHaveBeenCalled()
+    await userEvent.click(await screen.findByRole('button', { name: '急停' }))
+    const dialog = await screen.findByRole('dialog', { name: '急停' })
+    expect(within(dialog).getByText(/不经过模型|已经发生的世界动作不会回滚/)).toBeTruthy()
+    await userEvent.click(within(dialog).getByRole('button', { name: '急停' }))
+    await waitFor(() => expect(mocks.emergencyStop).toHaveBeenCalledOnce())
+    expect(mocks.chat).not.toHaveBeenCalled()
+    expect(await screen.findByText('已急停')).toBeTruthy()
   })
 
-  it('合法内容二次确认后发送并清空输入', async () => {
+  it('取消急停确认不会发出请求', async () => {
     renderPanel()
-    const input = (await screen.findByLabelText('游戏内聊天内容')) as HTMLTextAreaElement
-    await userEvent.type(input, '晚上好')
-    await waitFor(() => expect(input.value).toBe('晚上好'))
+    await userEvent.click(await screen.findByRole('button', { name: '急停' }))
+    const dialog = await screen.findByRole('dialog', { name: '急停' })
+    await userEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+    expect(mocks.emergencyStop).not.toHaveBeenCalled()
+  })
+
+  it('控制字符留在本地，不调用接口', async () => {
+    renderPanel()
+    const input = await screen.findByLabelText('管理员对话')
+    fireEvent.change(input, { target: { value: 'hello\u0000world' } })
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
-    const dialog = await screen.findByRole('dialog', { name: '发送游戏内聊天' })
-    // 覆盖率插桩会拉长渲染时序：用 findByText 等待确认弹窗内容落定，避免偶发空文本。
-    expect(await within(dialog).findByText('晚上好')).toBeTruthy()
-    await userEvent.click(within(dialog).getByRole('button', { name: '发送' }))
-    await waitFor(() => expect(mocks.say).toHaveBeenCalledWith('晚上好'))
-    expect(await screen.findByText('已发送游戏内聊天')).toBeTruthy()
-    await waitFor(() => expect(input.value).toBe(''))
+    expect(await screen.findByText(/控制字符/)).toBeTruthy()
+    expect(mocks.chat).not.toHaveBeenCalled()
   })
 })
 
@@ -598,91 +433,7 @@ describe('McbotPanel 事件流', () => {
   })
 })
 
-describe('McbotPanel AI 自主模式', () => {
-  it('展示自主状态/目标/工具调用，并用目标启动（二次确认）', async () => {
-    mocks.status.mockResolvedValue(
-      snapshot({ autonomy: autonomySnapshot({ active: false, state: 'idle' }) }),
-    )
-    renderPanel()
-    expect(await screen.findByText('AI 自主模式')).toBeTruthy()
-    const card = screen.getByText('AI 自主模式').closest('section')
-    expect(card).not.toBeNull()
-    expect(within(card as HTMLElement).getByText('空闲')).toBeTruthy()
-    expect(within(card as HTMLElement).getByText('收集小麦并存入箱子')).toBeTruthy()
-    expect(within(card as HTMLElement).getByText('3 / 12')).toBeTruthy()
-    expect(within(card as HTMLElement).getByText('gather_wheat')).toBeTruthy()
-
-    const input = await screen.findByLabelText('自主目标（可选）')
-    expect(input).toBeEnabled()
-    await userEvent.type(input, '收集木材')
-    await userEvent.click(screen.getByRole('button', { name: '启动自主模式' }))
-
-    const dialog = await screen.findByRole('dialog', { name: '启动自主模式' })
-    expect(within(dialog).getByText(/以目标「收集木材」/)).toBeTruthy()
-    await userEvent.click(within(dialog).getByRole('button', { name: '启动' }))
-    await waitFor(() => expect(mocks.startAutonomy).toHaveBeenCalledWith('收集木材'))
-    expect(await screen.findByText('已请求 mcbot 启动自主模式')).toBeTruthy()
-  })
-
-  it('停止自主模式需要二次确认', async () => {
-    mocks.status.mockResolvedValue(snapshot({ autonomy: autonomySnapshot() }))
-    renderPanel()
-    await userEvent.click(await screen.findByRole('button', { name: '停止自主模式' }))
-    const dialog = await screen.findByRole('dialog', { name: '停止自主模式' })
-    expect(within(dialog).getByText(/确定停止 mcbot 的 AI 自主模式/)).toBeTruthy()
-    await userEvent.click(within(dialog).getByRole('button', { name: '停止' }))
-    await waitFor(() => expect(mocks.stopAutonomy).toHaveBeenCalledTimes(1))
-    expect(await screen.findByText('已请求 mcbot 停止自主模式')).toBeTruthy()
-  })
-
-  it('控制未启用或自主模式未启用时禁用启动/停止并给出说明', async () => {
-    mocks.status.mockResolvedValue(
-      snapshot({ controlEnabled: false, autonomy: autonomySnapshot({ active: false, state: 'idle' }) }),
-    )
-    const { unmount } = renderPanel()
-    expect(await screen.findByText(/控制未启用或 mcbot 不可达，自主模式操作不可用/)).toBeTruthy()
-    expect(screen.getByRole('button', { name: '启动自主模式' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '停止自主模式' })).toBeDisabled()
-    unmount()
-
-    mocks.status.mockResolvedValue(
-      snapshot({ autonomy: autonomySnapshot({ enabled: false, active: false, state: 'idle' }) }),
-    )
-    renderPanel()
-    expect(await screen.findByText(/mcbot 自主模式未启用/)).toBeTruthy()
-    expect(screen.getByRole('button', { name: '启动自主模式' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '停止自主模式' })).toBeDisabled()
-    expect(mocks.startAutonomy).not.toHaveBeenCalled()
-  })
-
-  it('旧版 mcbot 无 autonomy 段：显示降级说明且不渲染自主控制', async () => {
-    mocks.status.mockResolvedValue(snapshot({ autonomy: undefined }))
-    renderPanel()
-    expect(await screen.findByText(/未提供自主模式状态/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '启动自主模式' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '停止自主模式' })).toBeNull()
-  })
-
-  it('自主模式失败时展示最近错误与失败徽章', async () => {
-    mocks.status.mockResolvedValue(
-      snapshot({
-        autonomy: autonomySnapshot({ active: false, state: 'failed', lastError: '决策超时' }),
-      }),
-    )
-    renderPanel()
-    expect(await screen.findByText(/自主模式最近错误：决策超时/)).toBeTruthy()
-    expect(screen.getByText('失败')).toBeTruthy()
-  })
-
-  it('任务下拉包含 11 种任务（含守卫/护送/探索/清理）', async () => {
-    renderPanel()
-    const select = (await screen.findByLabelText('任务')) as HTMLSelectElement
-    expect(within(select).getAllByRole('option')).toHaveLength(11)
-    expect(within(select).getByRole('option', { name: '守卫' })).toBeTruthy()
-    expect(within(select).getByRole('option', { name: '护送' })).toBeTruthy()
-    expect(within(select).getByRole('option', { name: '探索' })).toBeTruthy()
-  })
-
+describe('McbotPanel 自主事件', () => {
   it('事件流包含 autonomy 事件与「自主」筛选', async () => {
     mocks.status.mockResolvedValue(
       snapshot({
@@ -700,6 +451,14 @@ describe('McbotPanel AI 自主模式', () => {
     expect(await screen.findByText(/自主模式 · 运行中 · gather_wheat/)).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '自主' }))
     expect(screen.getByText(/自主模式 · 运行中 · gather_wheat/)).toBeTruthy()
+  })
+
+  it('只读展示自主会话状态，没有启动按钮', async () => {
+    mocks.status.mockResolvedValue(snapshot({ autonomy: autonomySnapshot() }))
+    renderPanel()
+    expect(await screen.findByText('运行中')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '启动自主模式' })).toBeNull()
+    expect(screen.queryByLabelText('任务')).toBeNull()
   })
 })
 

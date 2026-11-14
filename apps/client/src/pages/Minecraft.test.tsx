@@ -110,7 +110,7 @@ describe('Minecraft 页标签', () => {
     renderPage()
     expect(await screen.findByRole('tablist', { name: 'Minecraft 页面分区' })).toBeTruthy()
     expect(screen.getByRole('tab', { name: '服务器' }).getAttribute('aria-selected')).toBe('true')
-    expect(screen.getByRole('tab', { name: 'mcbot' }).getAttribute('aria-selected')).toBe('false')
+    expect(screen.getByRole('tab', { name: 'Minecraft Bot' }).getAttribute('aria-selected')).toBe('false')
     expect(screen.getByRole('heading', { level: 1, name: 'Minecraft' })).toBeTruthy()
     expect(
       await screen.findByText('本页只提供状态查看与白名单增删，不提供服务器启停、控制台或任意 RCON 命令。'),
@@ -120,9 +120,9 @@ describe('Minecraft 页标签', () => {
 
   it('切换到 mcbot 写入 ?tab=mcbot，切回服务器清除参数', async () => {
     renderPage()
-    await userEvent.click(screen.getByRole('tab', { name: 'mcbot' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Minecraft Bot' }))
     expect(await screen.findByTestId('mcbot-panel-stub')).toBeTruthy()
-    expect(screen.getByRole('heading', { level: 1, name: 'mcbot' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1, name: 'Minecraft Bot' })).toBeTruthy()
     expect(locationText()).toBe('/minecraft?tab=mcbot')
 
     await userEvent.click(screen.getByRole('tab', { name: '服务器' }))
@@ -134,7 +134,7 @@ describe('Minecraft 页标签', () => {
   it('支持 ?tab=mcbot 深链初始化', async () => {
     renderPage('/minecraft?tab=mcbot')
     expect(await screen.findByTestId('mcbot-panel-stub')).toBeTruthy()
-    expect(screen.getByRole('tab', { name: 'mcbot' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', { name: 'Minecraft Bot' }).getAttribute('aria-selected')).toBe('true')
   })
 
   it('支持 #mcbot 深链初始化，并在切回服务器时清理 hash', async () => {
@@ -147,7 +147,7 @@ describe('Minecraft 页标签', () => {
 
   it('切换标签时保留其他查询参数', async () => {
     renderPage('/minecraft?foo=1&bar=2')
-    await userEvent.click(screen.getByRole('tab', { name: 'mcbot' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Minecraft Bot' }))
     expect(locationText()).toContain('foo=1')
     expect(locationText()).toContain('bar=2')
     expect(locationText()).toContain('tab=mcbot')
@@ -165,7 +165,7 @@ describe('Minecraft 页标签', () => {
     serverTab.focus()
     await userEvent.keyboard('{ArrowRight}')
     expect(await screen.findByTestId('mcbot-panel-stub')).toBeTruthy()
-    expect(screen.getByRole('tab', { name: 'mcbot' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', { name: 'Minecraft Bot' }).getAttribute('aria-selected')).toBe('true')
   })
 
   it('meta.mcbotEnabled=false 时隐藏 mcbot 标签并回退服务器内容', async () => {

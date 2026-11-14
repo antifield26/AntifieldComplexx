@@ -86,11 +86,32 @@ export class DshAgentClient implements DshAutonomySession {
   }
 
   async openRun (bearer: string, tools: McpToolDefinition[]): Promise<string> {
-    const result = await this.invoke('/run/start', { bearer, tools }, 10_000)
+    return this.openSlot('/run/start', { bearer, tools })
+  }
+
+  async openAdmin (bearer: string, tools: McpToolDefinition[], prompt: string): Promise<string> {
+    return this.openSlot('/admin/start', { bearer, tools, prompt })
+  }
+
+  private async openSlot (path: '/run/start' | '/admin/start', payload: Record<string, unknown>): Promise<string> {
+    const result = await this.invoke(path, payload, 10_000)
     if (typeof result.id !== 'string' || !/^session-[a-zA-Z0-9_-]{8,100}$/.test(result.id)) {
-      throw new OpenCodeSessionError('invalid', 'DSH 自主会话标识无效')
+      throw new OpenCodeSessionError('invalid', 'DSH 会话标识无效')
     }
     return result.id
+  }
+
+  async promptAdmin (id: string, text: string, signal?: AbortSignal): Promise<void> {
+    await this.invoke('/admin/prompt', { id, text }, this.timeoutMs, signal)
+  }
+
+  async waitAdmin (id: string, signal?: AbortSignal): Promise<string> {
+    const result = await this.invoke('/admin/wait', { id }, 900_000, signal)
+    return typeof result.text === 'string' ? result.text : ''
+  }
+
+  async stopAdmin (id: string): Promise<void> {
+    await this.invoke('/admin/stop', { id }, 6000)
   }
 
   async prompt (id: string, text: string, signal?: AbortSignal): Promise<void> {

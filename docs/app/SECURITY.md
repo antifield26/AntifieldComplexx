@@ -1,5 +1,11 @@
 # 安全说明
 
+## v1.2.3 控制面与插件页（尚未部署）
+
+管理员对话是 Minecraft Bot 面板的行动入口。审计只记字符数，正文、prompt 和工具参数不进 SQLite，也不进审计。急停不经过模型。应用上退役的写入口在会话与 CSRF 之后返回 409，不调用上游。mcbot 本机游戏发言仍拒绝 ASCII `/` 与 C0。
+
+DSH Web 插件页重新启用。已登录管理员经 Access 与应用会话可以在 DSH Web 进程中安装或移除插件。没有新增 Access bypass，也不向模型开放 `tool-plugin-manager`。无连字符的 `/api/pluginManager/`、会话上传、设置写入和凭据写入仍拒绝。`/autonomy/mcp` 保持不对外。
+
 ## v1.2.2 当前收口边界（已验收）
 
 生产应用已升级为 v1.2.2，完整事项状态见 [BACKLOG](BACKLOG.md)。本轮启用整包 age 公钥加密，私钥有两份离线副本，应用与 Pi 不读取私钥。异地只传密文和校验旁文件；OAuth 配置 ACL 限定本机用户／管理员／SYSTEM，专用目录根 ID 不因排障扩大。
@@ -155,20 +161,20 @@ AI 仅导航固定 AI／Access 来源，远端无主窗口权限，实际 UA、�
 
 ### AI 自主模式（v1.0.2，默认关闭）
 
-- 仅主人显式启动；应用侧 `/api/mcbot/autonomy/*` 需会话 + CSRF + 控制 20/min，GET 60/min；沿用 `MCBOT_CONTROL_TOKEN`，不下发浏览器。
+- 仅主人显式启动。应用 `POST /api/mcbot/autonomy/start` 在 CSRF 之后返回 409，不调用上游。`GET /api/mcbot/autonomy` 为 60 次/分钟。`POST /api/mcbot/autonomy/stop` 需要控制 Token 和 20 次/分钟。管理员对话可调用同一组工具。Token 不下发浏览器。
 - mcbot 只会注册 loopback MCP server，工具白名单固定；OpenCode session deny-all + `mcbot_autonomy_*` allow；每次会话随机 run_id + 短期 Bearer。
 - 模型不能执行任意命令/坐标/玩家名；任务白名单、预算、失败上限、断线/手动指令/急停由 mcbot 策略层 fail-closed。
 - 目标/停止原因只做长度/控制字符校验；审计只记字符数，不记录正文；不记录 prompt/Token。
 - 端点 `/autonomy/mcp` 不得经应用/Cloudflare/nftables 暴露；仅 OpenCode 运行时 loopback 调用。
 ### mcbot（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-- **网络/上游**：mcbot 是独立服务（本版 v1.2.2，最低 v0.6.0，契约 v2），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `mcbot_unavailable` 且不暴露底层 message。自 v0.6.1 起上游逐行把行首 `/` 中和为全角 `／`。
+- **网络/上游**：mcbot 是独立服务（本版 v1.2.3，最低 v0.6.0，契约 v2；生产进程在部署前仍是 v1.2.2），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `mcbot_unavailable` 且不暴露底层 message。自 v0.6.1 起上游逐行把行首 `/` 中和为全角 `／`。
 - **Token 分离**：读 Token 仅用于 `/status`、`/events/recent`、`/history`；控制 Token 仅用于 `/task/*`、`/move`、`/say`（v0.8.1 起 `/say` 是写操作，只读模式返回 `503 mcbot_control_disabled`）；控制 Token 为空时控制方法直接 `mcbot_control_disabled`（不发请求）。Token 来自独立 env，由 root 的 `scripts/sync-mcbot-tokens.sh` 同步（只读 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，不读取 RCON/OpenCode 密码；写前备份 env、同目录临时文件 + `mv` 原子替换、保持 0640，不回显 Token）。
-- **HTTP 面**：`/api/mcbot/*` 全部 `requireAuth`；写操作额外 `csrfGuard`；控制类共享 20/min/IP、`/say` 10/min/IP 限流；服务端白名单校验任务名（11 种，含 clearing）、移动动作（4 种）、`taskId`（trim 后 1–64、无内部空白/控制字符）、消息（trim 后 1–720、**任意位置禁止 ASCII `/`**、禁止 C0 控制字符/DEL，防上游按 240 字符切行后的命令注入）；`/history` 校验 `kind` 与数组形状，只透传对象行；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `mcbot_*`，其它错误统一映射为固定中文文案，不含上游原文/URL/Token。
-- **审计**：`mcbot.task.start/stop/resume`、`mcbot.move`、`mcbot.control_failed`、`mcbot.autonomy.start/stop`、`mcbot.presence.set`、`mcbot.goal.*` 记录动作与元数据；`mcbot.say` 只记录字符数，**绝不记录聊天正文**；事件/聊天不写审计正文。
+- **HTTP 面**：`/api/mcbot/*` 全部 `requireAuth`；写操作额外 `csrfGuard`。任务开始、目标写、自主开始、移动和游戏发言在 CSRF 之后直接 409，不调用上游。仍开放的控制类 20/min/IP，管理员对话 10/min/IP。对话 trim 后 1–2000，允许 ASCII `/`，拒绝 C0。mcbot 本机 `/say` 仍拒绝任意 ASCII `/` 与 C0。`/history` 校验 `kind` 与数组形状，只透传对象行；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled`/`admin_unavailable` 保留为 `mcbot_*`，其它错误统一映射为固定中文文案，不含上游原文/URL/Token。
+- **审计**：`mcbot.task.stop`、`mcbot.autonomy.stop`、`mcbot.presence.set`、`mcbot.control_failed` 记录动作与元数据；`mcbot.chat` 只记录字符数，`mcbot.emergency_stop` 只记录失败腿名。对话正文、prompt 和工具参数不写审计。
 - **告警联动**：`AlertService.recordExternal` 只写 `alert_events(status='event')`，不写 `alert_state`、不参与 firing/resolved；details 只保留清洗后的基础类型（深度≤2、键≤20、数组≤20、字符串≤300，跳过 `__proto__`/`constructor`/`prototype` 键），并附加 `source`/`mcbotEventId`/`mcbotType`；异步复用 webhook（可选 HMAC）与 Bot 通知，失败只记脱敏日志；游标 `meta.mcbot.event_cursor` 防重放（v1.0.0 迁移自 `lofii.event_cursor`）；**告警写入失败时游标停在上一条已处理事件，下一轮重试**（v0.8.1）。
 - **内存/降级**：每轮上游取最近 200 条；事件缓存 ≤100 条且序列化总字节 ≤512 KiB；`/status` 可达但 `/events/recent`/游标失败时前端展示可见警告（不静默停更）；前端对缺失嵌套段安全读取，不把整页交给 ErrorBoundary。v1.0.7 起快照下发 `lastSuccessAt`，面板过期文案用成功时间；从未成功时显示“尚无成功轮询”。失败轮询只推进 `lastPollAt`。
-- **浏览器边界**：前端不接触 mcbot Token/上游地址，不直连 SSE/mcbot；`/api/mcbot/status` 只返回聚合快照与内存事件；事件与聊天纯文本渲染，历史表格只显示白名单字段；控制未启用时全部写操作（含聊天）禁用。
+- **浏览器边界**：前端不接触 mcbot Token/上游地址，不直连 SSE/mcbot；`/api/mcbot/status` 只返回聚合快照与内存事件；事件与管理员对话纯文本渲染，历史表格只显示白名单字段；控制未启用时管理员对话和急停禁用。
 - **默认关闭/回滚**：`MCBOT_ENABLED=false` 默认；回滚设 false（可选清空 Token）并重启即可，无 schema/DB 变更；生产 v1.1.1 已启用（`MCBOT_ENABLED=true`，读/控制 Token 均配置且 `--check` match，仅 loopback；2026-11-10 部署）。v0.8.0、v0.8.1 与 v1.0.6 至 v1.0.12 随各版本发布 Tag+Release。v1.0.11 与 v1.0.12 分开发布。
 
 ### HTTP

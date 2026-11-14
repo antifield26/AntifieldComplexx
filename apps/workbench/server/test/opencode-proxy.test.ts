@@ -184,6 +184,8 @@ test('DSH Web 换票剥离应用及 Access 凭据，拒绝公开启动令牌和�
       assert.match(denied.body, /dsh_route_restricted/)
     }
     assert.equal((await get(address.port, '/api/settings/describe', apiHeaders)).status, 200)
+    assert.equal((await get(address.port, '/api/plugin-manager/detail-file', apiHeaders)).status, 200)
+    assert.equal((await get(address.port, '/api/remote.mux', apiHeaders)).status, 200)
     let resolveStreamClosed = (): void => {}
     const streamClosed = new Promise<void>((resolve) => { resolveStreamClosed = resolve })
     const stream = await new Promise<number>((resolve, reject) => {
@@ -205,7 +207,13 @@ test('DSH Web 换票剥离应用及 Access 凭据，拒绝公开启动令牌和�
     assert.equal((await get(address.port, '/api/session', {
       host: 'ai.test', cookie: `${headers.cookie}; ${dshCookie}`, accept: 'application/json',
     })).status, 401)
-    assert.equal(records.length, 3)
+    assert.deepEqual(records.map((record) => record.url), [
+      '/',
+      '/api/settings/describe',
+      '/api/plugin-manager/detail-file',
+      '/api/remote.mux',
+      '/api/stream',
+    ])
   } finally {
     await app.close()
     await Promise.all([upstream, broker].map((server) => new Promise<void>((resolve) => server.close(() => resolve()))))

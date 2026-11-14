@@ -1,4 +1,4 @@
-# AntifieldComplexx 对接契约（mcbot v1.2.2 / v2）
+# AntifieldComplexx 对接契约（mcbot v1.2.3 / v2）
 
 > 契约 v2 的本机发言使用控制 Token。Workbench 可读取 v1 并沿用既有控制，v1 发言在 Workbench 停用。
 
@@ -7,8 +7,8 @@
 | 项目 | 值 |
 |---|---|
 | Base URL | `http://127.0.0.1:3010`（仅回环，不对外） |
-| 读 Token | `HTTP_TOKEN`，用于 `/status`、`/presence`、`/goals`、`/task`、`/events`、`/events/recent` |
-| 控制 Token | `HTTP_CONTROL_TOKEN`，用于 `/task/*`、`POST /move`、`POST /say`、`/presence`、`/goals*`、`/autonomy/start|stop` |
+| 读 Token | `HTTP_TOKEN`，用于 `/status`、`/presence`、`/goals`、`/task`、`/events`、`/events/recent`、`GET /admin/chat` |
+| 控制 Token | `HTTP_CONTROL_TOKEN`，用于 `/task/*`、`POST /move`、`POST /say`、`/presence`、`/goals*`、`/autonomy/start|stop`、`POST /admin/chat`、`POST /emergency-stop` |
 | 契约版本 | `CONTRACT_VERSION=2`，由 `/healthz`、`/status` 与 `/events/recent` 的 `contractVersion` 返回 |
 | Token 位置 | Pi：`/etc/mcbot/env`（root:mcbot 0640） |
 | 数据格式 | JSON / SSE，UTF-8 |
@@ -303,6 +303,16 @@ Authorization: Bearer <HTTP_TOKEN>
 - 只读接口：不改 ring、不产生事件、不写审计；`/events`（SSE）行为不变。
 
 ## 7. 控制接口
+
+本机任务、移动、游戏发言和自主启动仍给游戏内口令与内部调用使用。Workbench 面板不再代理其中的开始、移动和发言。
+
+### 7.0 GET /admin/chat 与 POST /admin/chat
+
+`GET` 使用读 Token，返回 `{ messages, turn }`。消息最多 40 条，只在进程内存。`POST` 使用控制 Token，并占用 `/say` 的 10 次/分钟限额。body `{ "message": "1..2000" }`。允许 ASCII `/`，拒绝 C0 与 DEL。成功 **202** `{ "ok": true, "turnId", "status": "pending" }`。已有进行中的回合返回 **409** `chat_busy`。未装配管理员对话时 **503** `admin_unavailable`。空闲 30 分钟、急停或进程退出后清空。
+
+### 7.0.1 POST /emergency-stop
+
+使用控制 Token 与控制限额。不调用模型。活动自主会话、活动任务或队列、待恢复，以及管理员对话都会停止。某一腿失败时继续其余腿。空闲算成功。返回 **200** `{ "ok", "failures" }`，失败名只有 `task`、`autonomy`、`admin`。
 
 ### 7.1 POST /task/start
 

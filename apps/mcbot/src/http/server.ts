@@ -11,6 +11,7 @@ import type { PresenceModeSource, RuntimeState, TaskName } from '../state.ts'
 import type { ChatSender } from '../minecraft/chat.ts'
 import type { MovementManager } from '../minecraft/movement.ts'
 import type { AutonomyService } from '../autonomy/service.ts'
+import type { AdminChat } from '../admin/chat.ts'
 import type { GoalRunner } from '../goals/runner.ts'
 import { validateGoalSteps } from '../goals/store.ts'
 import { CONTRACT_VERSION } from '../contract.ts'
@@ -31,6 +32,8 @@ export interface HttpDeps {
   getBot: () => Bot | null
   /** AI 自主会话；未装配时 /autonomy* 返回 503。 */
   autonomy?: AutonomyService
+  /** 管理员对话；未装配时 /admin/chat 返回 503。 */
+  adminChat?: AdminChat
   /** 在线模式读/写；未装配时 /presence* 返回 503。 */
   getPresenceMode?: () => { mode: PresenceMode, source: PresenceModeSource, updatedAt: string | null }
   setPresenceMode?: (mode: PresenceMode, actor: string) => { ok: boolean, code?: string, mode: PresenceMode }
@@ -394,6 +397,24 @@ export class HttpApi {
       if (!this.takeControlSlot()) return this.rateLimited(res, 'control')
       return this.handleAutonomyStop(req, res)
     }
+    if (pathname === '/admin/chat' && req.method === 'GET') {
+      if (!this.authorizeRead(req, res)) return
+      const chat = this.deps.adminChat
+      if (!chat) return sendError(res, 503, 'admin_unavailable', 'admin chat is unavailable')
+      sendJson(res, { status: 200, body: chat.snapshot() })
+      return
+    }
+    if (pathname === '/admin/chat' && req.method === 'POST') {
+      if (!this.authorizeControl(req, res)) return
+      if (!this.takeSaySlot()) return this.rateLimited(res, 'say')
+      return this.handleAdminChat(req, res)
+    }
+    if (pathname === '/emergency-stop') {
+      if (req.method !== 'POST') return this.methodNotAllowed(res, 'POST')
+      if (!this.authorizeControl(req, res)) return
+      if (!this.takeControlSlot()) return this.rateLimited(res, 'control')
+      return this.handleEmergencyStop(res)
+    }
     if (pathname === '/task/start') {
       if (req.method !== 'POST') return this.methodNotAllowed(res, 'POST')
       if (!this.authorizeControl(req, res)) return
@@ -445,6 +466,49 @@ export class HttpApi {
       return
     }
     sendError(res, 404, 'not_found', 'not found')
+  }
+
+  private async handleAdminChat (req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const chat = this.deps.adminChat
+    if (!chat) return sendError(res, 503, 'admin_unavailable', 'admin chat is unavailable')
+    if (!isJsonRequest(req)) return sendError(res, 415, 'unsupported_media_type', 'Content-Type must be application/json')
+    try {
+      const body = await readJsonBody(req)
+      if (!isObject(body) || typeof body.message !== 'string') throw new InvalidMessageError('message must be a string')
+      const result = chat.submit(body.message)
+      if (!result.ok) {
+        const status = result.code === 'invalid_request' ? 400 : result.code === 'chat_busy' ? 409 : 503
+        return sendError(res, status, result.code, 'admin chat rejected the message')
+      }
+      sendJson(res, { status: 202, body: { ok: true, turnId: result.turnId, status: 'pending' } })
+    } catch (error) {
+      if (error instanceof BodyTooLargeError) return sendError(res, 413, 'payload_too_large', 'request body is too large')
+      if (error instanceof InvalidMessageError) return sendError(res, 400, 'invalid_request', error.message)
+      throw error
+    }
+  }
+
+  private async handleEmergencyStop (res: ServerResponse): Promise<void> {
+    const failures: string[] = []
+    const task = this.deps.state.task
+    try {
+      if (this.deps.autonomy?.isActive()) await this.deps.autonomy.stop('emergency')
+    } catch {
+      failures.push('autonomy')
+    }
+    try {
+      this.deps.goals?.interrupt('急停')
+      if (task.active || task.queue.length > 0) this.deps.tasks.requestStop('http')
+      if (task.pendingResume) await this.deps.tasks.discardPending('http')
+    } catch {
+      failures.push('task')
+    }
+    try {
+      if (this.deps.adminChat) await this.deps.adminChat.stop()
+    } catch {
+      failures.push('admin')
+    }
+    sendJson(res, { status: 200, body: { ok: failures.length === 0, failures } })
   }
 
   private async handleAutonomyStart (req: IncomingMessage, res: ServerResponse): Promise<void> {

@@ -14,7 +14,7 @@ import { Vec3 } from 'vec3'
 import type { AuditLogger } from '../audit.ts'
 import type { Config } from '../config.ts'
 import { buildEnvironment, CHEST_BLOCK_NAMES, formatEnvironment } from '../ai/environment.ts'
-import type { AutonomySessionClient, DshAutonomySession, SessionPermission } from '../ai/session.ts'
+import type { AutonomySessionClient, DshAdminSession, DshAutonomySession, SessionPermission } from '../ai/session.ts'
 import { OpenCodeSessionError } from '../ai/session.ts'
 import type { EventBus } from '../events/bus.ts'
 import type { Logger } from '../logger.ts'
@@ -107,7 +107,7 @@ export interface AutonomyServiceDeps {
   chatSender: ChatSender
   movement: MovementManager
   tasks: TaskController
-  opencode: AutonomySessionClient | DshAutonomySession
+  opencode: AutonomySessionClient | (DshAutonomySession & DshAdminSession)
   getBot: () => Bot | null
   goalBusy?: () => boolean
   worldMemory?: WorldMemoryStore
@@ -162,6 +162,7 @@ export class AutonomyService {
   private readonly logger: Logger
   private readonly worldMemory: WorldMemoryStore
   private run: ActiveRun | null = null
+  private admin: ActiveRun | null = null
   private mcpCleanupRequired = true
   private dshCleanupId: string | null = null
   private dshCleanupPending = false
@@ -403,10 +404,142 @@ export class AutonomyService {
   }
 
   async shutdown (): Promise<void> {
+    await this.stopAdmin('shutdown')
     const run = this.run
     if (!run) return
     run.stopRequested = true
     await this.finalize(run, 'finished', null, 'shutdown')
+  }
+
+  adminActive (): boolean {
+    return this.admin?.active === true && !this.admin.stopRequested
+  }
+
+  /** 打开或复用管理员工具会话。不启动游戏内自主循环。 */
+  async ensureAdmin (): Promise<{ ok: true, runId: string } | { ok: false, code: string }> {
+    if (this.admin?.active && !this.admin.stopRequested && this.admin.sessionId) {
+      return { ok: true, runId: this.admin.runId }
+    }
+    const client = this.deps.opencode
+    if (!('openAdmin' in client) || !this.deps.config.aiEnabled) return { ok: false, code: 'admin_unavailable' }
+    const run = this.blankRun('管理员对话')
+    this.admin = run
+    try {
+      run.sessionId = await client.openAdmin(run.token, buildToolDefinitions(), this.adminPrompt(run))
+      if (run.stopRequested) {
+        await this.stopAdmin('stopped')
+        return { ok: false, code: 'admin_unavailable' }
+      }
+      run.state = 'running'
+      return { ok: true, runId: run.runId }
+    } catch (error) {
+      this.admin = null
+      const code = error instanceof OpenCodeSessionError && error.status === 409 ? 'admin_busy' : 'admin_unavailable'
+      return { ok: false, code }
+    }
+  }
+
+  async promptAdmin (text: string): Promise<void> {
+    const run = this.admin
+    const client = this.deps.opencode
+    if (!run?.active || !run.sessionId || !('promptAdmin' in client)) {
+      throw new OpenCodeSessionError('invalid', 'admin session is not active')
+    }
+    await client.promptAdmin(run.sessionId, text)
+  }
+
+  async waitAdmin (): Promise<string> {
+    const run = this.admin
+    const client = this.deps.opencode
+    if (!run?.active || !run.sessionId || !('waitAdmin' in client)) {
+      throw new OpenCodeSessionError('invalid', 'admin session is not active')
+    }
+    return client.waitAdmin(run.sessionId)
+  }
+
+  async stopAdmin (reason: string): Promise<void> {
+    const run = this.admin
+    if (!run) return
+    run.stopRequested = true
+    run.abort.abort()
+    const client = this.deps.opencode
+    if (run.sessionId && 'stopAdmin' in client) {
+      try {
+        await client.stopAdmin(run.sessionId)
+      } catch {
+        this.logger.warn('管理员会话关闭失败')
+      }
+    }
+    if (this.admin === run) this.admin = null
+    this.deps.audit.append({
+      event: 'admin.stop',
+      source: 'admin',
+      actor: 'panel',
+      action: 'stop',
+      result: 'accepted',
+      details: { reason: sanitizeText(reason, MAX_REASON_CHARS) }
+    })
+  }
+
+  private blankRun (goal: string): ActiveRun {
+    const now = Date.now()
+    return {
+      runId: randomUUID(),
+      token: randomBytes(24).toString('base64url'),
+      goal,
+      startedAt: now,
+      deadline: now + this.deps.config.autonomyMaxMinutes * 60_000,
+      maxToolCalls: this.deps.config.autonomyMaxToolCalls,
+      state: 'starting',
+      active: true,
+      sessionId: null,
+      startup: null,
+      toolCalls: 0,
+      failures: 0,
+      lastAction: null,
+      lastReason: null,
+      lastError: null,
+      lastDecisionAt: null,
+      decisionCycles: 0,
+      reprompts: 0,
+      lastEvent: null,
+      lastObservedAt: null,
+      blockers: [],
+      finishRequested: false,
+      stopRequested: false,
+      abort: new AbortController(),
+      loop: null,
+      finalizing: null,
+      unsubscribe: null,
+      pendingReason: null,
+      decisionWaiter: null,
+      eventSeen: new Map(),
+      actionInFlight: false,
+      actionCooldownUntil: 0
+    }
+  }
+
+  private adminPrompt (run: ActiveRun): string {
+    return [
+      '你是 Minecraft 管理员的助手。按主人这句话决定是否行动。',
+      `当前 run_id：${run.runId}`,
+      '任务名只能是现有白名单。需要规划时可以使用 get_goal、create_goal、update_goal 和 todo_write。',
+      '世界动作只用已注册的 mcbot 工具，并把当前 run_id 原样放进 run_id。',
+      '不要使用 shell、文件或网络工具，也不要把主人的话发进游戏聊天。',
+      '主人没有要求行动时只回答，不调用世界工具。'
+    ].join('\n')
+  }
+
+  private matchingRun (bearer: string): ActiveRun | null {
+    if (this.run?.active && !this.run.stopRequested && safeEqual(bearer, this.run.token)) return this.run
+    if (this.admin?.active && !this.admin.stopRequested && safeEqual(bearer, this.admin.token)) return this.admin
+    return null
+  }
+
+  private stopMatching (run: ActiveRun, reason: string): void {
+    run.stopRequested = true
+    if (run === this.admin) setImmediate(() => { void this.stopAdmin(reason) })
+    else setImmediate(() => { void this.stop(reason) })
   }
 
   private mcpUrl (): string {
@@ -692,11 +825,14 @@ export class AutonomyService {
     return { status: 200, body: Array.isArray(body) ? responses : responses[0] }
   }
 
-  /** DSH 私有工具入口，使用现有自主会话的鉴权和业务校验。 */
+  /** DSH 私有工具入口。自主会话与管理员会话各自校验 Bearer。 */
   async handleDshTool (bearer: string, body: unknown): Promise<McpHttpResult> {
-    if (!('openRun' in this.deps.opencode) || !this.enabled) return { status: 404, body: { error: 'autonomy_disabled' } }
-    const run = this.run
-    if (!run || !run.active || run.stopRequested || !safeEqual(bearer, run.token)) {
+    if (!('openRun' in this.deps.opencode) && !('openAdmin' in this.deps.opencode)) {
+      return { status: 404, body: { error: 'autonomy_disabled' } }
+    }
+    const run = this.matchingRun(bearer)
+    if (!run) {
+      if (!this.enabled && !this.adminActive()) return { status: 404, body: { error: 'autonomy_disabled' } }
       return { status: 401, body: { error: 'unauthorized' } }
     }
     const record = asRecord(body)
@@ -746,26 +882,23 @@ export class AutonomyService {
       run.failures += 1
       run.lastError = error
       this.publish()
+      const admin = run === this.admin
       this.deps.audit.append({
-        event: 'autonomy.reject',
-        source: 'autonomy',
+        event: admin ? 'admin.reject' : 'autonomy.reject',
+        source: admin ? 'admin' : 'autonomy',
         actor: 'lofii',
         action: name || 'unknown',
         result: 'denied',
         details: { error, reason: sanitizeText(String(args.reason ?? ''), MAX_REASON_CHARS) }
       })
-      this.emit('reject', typeof args.reason === 'string' ? args.reason : null, error)
-      if (run.failures >= this.deps.config.autonomyMaxFailures) {
-        run.stopRequested = true
-        setImmediate(() => { void this.stop('too_many_failures') })
-      }
+      if (run !== this.admin) this.emit('reject', typeof args.reason === 'string' ? args.reason : null, error)
+      if (run.failures >= this.deps.config.autonomyMaxFailures) this.stopMatching(run, 'too_many_failures')
       return { content: [{ type: 'text', text: JSON.stringify({ ok: false, error, message }) }], isError: true }
     }
     if (!isToolName(name)) return fail('tool_not_allowed', 'tool is not allowed')
     if (!run.active || run.stopRequested) return fail('autonomy_stopped', 'autonomy session is not active')
     if (Date.now() >= run.deadline) {
-      run.stopRequested = true
-      setImmediate(() => { void this.stop('deadline') })
+      this.stopMatching(run, 'deadline')
       return fail('autonomy_deadline', 'autonomy time budget exhausted')
     }
     if (run.toolCalls >= run.maxToolCalls) return fail('tool_budget_exhausted', 'tool budget exhausted')
@@ -802,7 +935,7 @@ export class AutonomyService {
           if (result.status !== 'started') {
             return fail('task_start_failed', `task was not started (${result.status})`)
           }
-          this.auditTool(name, taskName, reason)
+          this.auditTool(run, name, taskName, reason)
           return {
             content: [{ type: 'text', text: JSON.stringify({ ok: true, task: taskName, state: this.deps.state.task }) }],
             isError: false
@@ -811,7 +944,7 @@ export class AutonomyService {
         case 'stop_task': {
           if (!this.deps.state.task.active) return fail('no_active_task', 'no active task')
           this.deps.tasks.requestStop('autonomy')
-          this.auditTool(name, 'task', reason)
+          this.auditTool(run, name, 'task', reason)
           return { content: [{ type: 'text', text: JSON.stringify({ ok: true, action: 'stop_task' }) }], isError: false }
         }
         case 'go_home': {
@@ -819,7 +952,7 @@ export class AutonomyService {
             return fail('task_active', 'stop the active task before going home')
           }
           await this.deps.movement.home()
-          this.auditTool(name, 'home', reason)
+          this.auditTool(run, name, 'home', reason)
           return { content: [{ type: 'text', text: JSON.stringify({ ok: true, action: 'go_home' }) }], isError: false }
         }
         case 'deposit': {
@@ -827,11 +960,11 @@ export class AutonomyService {
             return fail('task_active', 'stop the active task before depositing')
           }
           await this.deps.tasks.depositNow()
-          this.auditTool(name, 'deposit', reason)
+          this.auditTool(run, name, 'deposit', reason)
           return { content: [{ type: 'text', text: JSON.stringify({ ok: true, action: 'deposit' }) }], isError: false }
         }
         case 'task_status': {
-          this.auditTool(name, 'status', reason)
+          this.auditTool(run, name, 'status', reason)
           return {
             content: [{ type: 'text', text: JSON.stringify({ ok: true, task: this.deps.state.task }) }],
             isError: false
@@ -842,7 +975,7 @@ export class AutonomyService {
           run.blockers = [...snapshot.blockers]
           run.lastObservedAt = snapshot.observedAt
           this.publish()
-          this.auditTool(name, 'environment', reason || 'observe')
+          this.auditTool(run, name, 'environment', reason || 'observe')
           return {
             content: [{ type: 'text', text: JSON.stringify({ ok: true, environment: snapshot }) }],
             isError: false
@@ -851,7 +984,7 @@ export class AutonomyService {
         case 'inspect_chest': {
           const target = typeof args.target === 'string' ? args.target.trim() : ''
           const result = await this.inspectChest(run, target)
-          this.auditTool(name, result.type, reason)
+          this.auditTool(run, name, result.type, reason)
           return {
             content: [{ type: 'text', text: JSON.stringify({ ok: true, chest: result }) }],
             isError: false
@@ -860,7 +993,7 @@ export class AutonomyService {
         case 'eat': {
           const item = typeof args.item === 'string' ? args.item.trim() : ''
           const result = await this.eat(run, item)
-          this.auditTool(name, result.item, reason)
+          this.auditTool(run, name, result.item, reason)
           return {
             content: [{ type: 'text', text: JSON.stringify({ ok: true, ...result }) }],
             isError: false
@@ -869,7 +1002,7 @@ export class AutonomyService {
         case 'equip': {
           const item = typeof args.item === 'string' ? args.item.trim() : ''
           const result = await this.equip(run, item)
-          this.auditTool(name, result.item, reason)
+          this.auditTool(run, name, result.item, reason)
           return {
             content: [{ type: 'text', text: JSON.stringify({ ok: true, ...result }) }],
             isError: false
@@ -877,9 +1010,11 @@ export class AutonomyService {
         }
         case 'finish': {
           const summary = sanitizeText(String(args.summary ?? ''), MAX_SUMMARY_CHARS)
-          run.finishRequested = true
-          if (run.toolCalls >= run.maxToolCalls) run.stopRequested = true
-          this.auditTool(name, summary || 'summary', reason || 'finish')
+          if (run !== this.admin) {
+            run.finishRequested = true
+            if (run.toolCalls >= run.maxToolCalls) run.stopRequested = true
+          }
+          this.auditTool(run, name, summary || 'summary', reason || 'finish')
           return {
             content: [{ type: 'text', text: JSON.stringify({ ok: true, action: 'finish', summary }) }],
             isError: false
@@ -890,7 +1025,7 @@ export class AutonomyService {
           const category = typeof args.category === 'string' ? args.category.trim() : ''
           const key = typeof args.key === 'string' ? args.key.trim() : ''
           const target = key ? `${category}:${key}` : (category || 'index')
-          this.auditTool(name, target, reason || 'memory_read')
+          this.auditTool(run, name, target, reason || 'memory_read')
           return {
             content: [{ type: 'text', text: JSON.stringify({ ok: true, items }) }],
             isError: false
@@ -902,7 +1037,7 @@ export class AutonomyService {
             typeof args.key === 'string' ? args.key : '',
             typeof args.text === 'string' ? args.text : ''
           )
-          this.auditTool(name, `${saved.category}:${saved.key}`, reason)
+          this.auditTool(run, name, `${saved.category}:${saved.key}`, reason)
           return {
             content: [{ type: 'text', text: JSON.stringify({ ok: true, category: saved.category, key: saved.key, updated: saved.updated }) }],
             isError: false
@@ -913,7 +1048,7 @@ export class AutonomyService {
             typeof args.category === 'string' ? args.category : '',
             typeof args.key === 'string' ? args.key : ''
           )
-          this.auditTool(name, `${removed.category}:${removed.key}`, reason)
+          this.auditTool(run, name, `${removed.category}:${removed.key}`, reason)
           return {
             content: [{ type: 'text', text: JSON.stringify({ ok: true, category: removed.category, key: removed.key }) }],
             isError: false
@@ -1062,7 +1197,7 @@ export class AutonomyService {
     return await this.withAction(run, async () => {
       if (run.stopRequested || !run.active) throw new AutonomyToolError('autonomy_stopped', 'autonomy session is not active')
       await bot.equip(item, 'hand')
-      if (run !== this.run || run.stopRequested || !run.active || run.abort.signal.aborted) {
+      if ((run !== this.run && run !== this.admin) || run.stopRequested || !run.active || run.abort.signal.aborted) {
         throw new AutonomyToolError('autonomy_stopped', 'autonomy session is not active')
       }
       await bot.consume()
@@ -1085,15 +1220,16 @@ export class AutonomyService {
     })
   }
 
-  private auditTool (name: string, action: string, reason: string): void {
+  private auditTool (run: ActiveRun, name: string, action: string, reason: string): void {
+    const admin = run === this.admin
     this.deps.audit.append({
-      event: 'autonomy.tool',
-      source: 'autonomy',
+      event: admin ? 'admin.tool' : 'autonomy.tool',
+      source: admin ? 'admin' : 'autonomy',
       actor: 'lofii',
       action: name,
       result: 'accepted',
       details: { target: sanitizeText(action, 160), reason: sanitizeText(reason, MAX_REASON_CHARS) }
     })
-    this.emit('tool', reason)
+    if (!admin) this.emit('tool', reason)
   }
 }

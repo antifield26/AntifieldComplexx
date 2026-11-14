@@ -4,7 +4,7 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、DeepSeek Harness AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.2.2（2026-11-13 已部署并验收）**。schema 21、mcbot 契约 v2。同 schema 回到 v1.2.1 仅还原 release 与配置，保留现行数据库及 WAL。再退到 v1.2.0 同样保留数据库及 WAL。退回 v1.1.1 必须恢复迁移前快照与 v1.1.1 release。Web、QQ 与 mcbot Agent 继续使用 DeepSeek Harness。OpenCode **v2.2.5** 仅用于恢复历史版本 v1.0.13（`1743323`）。
+**当前版本 v1.2.3（本地，尚未部署）**。schema 21、mcbot 契约 v2。生产仍是 v1.2.2（2026-11-13 已部署并验收）。同 schema 从 v1.2.2 回到 v1.2.1 仅还原 release 与配置，保留现行数据库及 WAL。再退到 v1.2.0 同样保留数据库及 WAL。退回 v1.1.1 必须恢复迁移前快照与 v1.1.1 release。Web、QQ 与 mcbot Agent 继续使用 DeepSeek Harness。OpenCode **v2.2.5** 仅用于恢复历史版本 v1.0.13（`1743323`）。
 
 生产 Workbench release 为 `20261113T072133Z`，mcbot 为 `20261113T072417Z`（运行提交 `58b7693`），DSH 为 `20261113T080907Z`（QQ 包装器提交 `22103d8`，锁定依赖不变）。本次部署前快照 `db-predeploy-20261113T072147842Z.sqlite`（schema 21，sha256 `0f01b51bcc963eeef49216834ebf08d7dc775192ed2f0e406ec416bf0fa38651`）。最近演练 `20261113T081625Z`（schema 21，应用与世界隔离恢复）。公网界面开关保持默认开启。
 
@@ -13,7 +13,7 @@ schema **v21**（设备登记与请求签名）。客户端与 schema 21 绑定�
 **v1.0.7 基线（2026-11-04 已部署，commit `b17102b`）**：schema v19 为 `alert_events.dedupe_key`；mcbot 快照下发 `lastSuccessAt`；mcbot 进程不在或轮询过期走 `service_down`；寻路兜底进入自主重决策（不新增 MCP 工具，不挖掘/不放置/不跑酷）。OpenCode **v2.2.5** 已在树莓派运行，回滚备份 timestamp `20261104T062115Z`。v1.0.7 app `/opt/antifieldcloud/releases/20261104T093100Z`（schema 19）、mcbot `/opt/mcbot/releases/20261104T092858Z`。npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
 权威文档：
-- `docs/app/BACKLOG.md`：v1.2.2 当前 12 项进度，区分分支实现、生产启用与未完成验收；历史审计段落不重复计数。
+- `docs/app/BACKLOG.md`：v1.2.2 已收口的 12 项进度；v1.2.3 尚未部署。历史审计段落不重复计数。
 - `docs/app/PLAN.md`：范围、决策、阶段与验收
 - `docs/app/API.md`：HTTP 契约（服务端/前端共同遵守）
 - `docs/app/UI-SPEC.md`：界面与交互
@@ -147,8 +147,8 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 14. Bot AI 工具隔离 fail-closed（OpenCode 回滚路径；生产 QQ 由 DSH 管理）：OpenCode 拒绝 `permissions` 时不得以默认权限继续对话；启用发送工具或文档/read 模式且隔离不可用时新 Chat 返回 `503 chatbot_ai_tool_isolation_unavailable` 并回固定提示、写审计/状态；10 分钟重试窗口到点放行重试，上游恢复后自动恢复。
     文档模式只允许 `read` 当前作用域 `role.md`/`memory.md`（deny-all + 精确 read 规则）；不得放行 shell/edit/glob/grep；上下文目录不得包含密钥，文件 0640、目录 0750，不进入备份。
 15. 审计写入不得静默失败也不得回滚已完成的业务状态：非安全审计事务外 best-effort，失败计数 + 最近错误暴露到 `/api/version.audit`；安全关键审计逐条记录；公开下载计数保持在事务内。
-16. **AI 自主会话（v1.0.2 引入，v1.0.3 增强；代码默认关闭）**：仅主人显式启动；模型通过 DSH 插件经私有 Unix socket 调用 `start_task`/`stop_task`/`go_home`/`deposit`/`task_status`/`observe`/`inspect_chest`/`eat`/`equip`/`finish`/`memory_read`/`memory_write`/`memory_forget`，任务名受 `AUTONOMY_TASKS` 白名单约束；`observe` 只读环境（基础状态+半径内 allowlist 方块/容器），`inspect_chest` 仅扫描半径内、无 active/queue/pending 时短距寻路只读容器且不取物、不传送、不破块，`eat`/`equip` 仅空闲时对背包内食物/护甲/工具生效；任务生命周期与安全阈值事件驱动重决策（30s 去重、最多 6 次），无周期空转；会话使用随机 run_id + 短期 Bearer，配置 `DSH_AGENT_SOCKET` 后 `/autonomy/mcp` 返回 404。OpenCode 回滚路径的 session 必须 deny-all + `mcbot_autonomy_*` allow；预算/时间/连续失败/断线/手动指令/急停均需 fail-closed，结束必须停止任务并清理 session/MCP；不得把 `/autonomy/mcp` 暴露给应用/浏览器/公网，不得在日志/审计记录 prompt/Token/完整容器内容/世界记忆正文。世界记忆分类只有 place、resource、food、danger、route、note，文件为 dataDir 下的 world-memory.json（0600），与聊天记忆分开；提示词只带分类计数和最近 8 个键；记忆工具计入既有工具预算，不启动任务。
-17. mcbot 对接（v0.8.0 引入，v0.8.1 安全加固）读/控制 Token 必须分离且只走 loopback：`MCBOT_URL` 非 loopback/非 http(s)/含 userinfo/路径/查询/片段拒绝启动，客户端禁止跟随重定向；Token 不得进入浏览器/bundle/API 响应/日志/审计正文；控制/任务/移动/聊天必须登录 + CSRF + 控制 Token + IP 限流并二次确认（`/say` 自 v0.8.1 起也需控制 Token，只读模式 503）；`/say` 只聊天（**任意 ASCII `/` 与 C0 控制字符一律拒绝**，防切行后的命令注入）且审计只记字符数；`taskId` 拒绝空白/控制字符；事件缓存 ≤100 条且 ≤512 KiB、响应体流式 ≤2 MiB；聊天/事件只存内存不落库；上游告警只能以 `status='event'` 记录，不得写入 `alert_state` 或伪装 firing/resolved。
+16. **AI 自主会话（v1.0.2 引入，v1.0.3 增强；代码默认关闭）**：仅主人显式启动；模型通过 DSH 插件经私有 Unix socket 调用 `start_task`/`stop_task`/`go_home`/`deposit`/`task_status`/`observe`/`inspect_chest`/`eat`/`equip`/`finish`/`memory_read`/`memory_write`/`memory_forget`，任务名受 `AUTONOMY_TASKS` 白名单约束；`observe` 只读环境（基础状态+半径内 allowlist 方块/容器），`inspect_chest` 仅扫描半径内、无 active/queue/pending 时短距寻路只读容器且不取物、不传送、不破块，`eat`/`equip` 仅空闲时对背包内食物/护甲/工具生效；任务生命周期与安全阈值事件驱动重决策（30s 去重、最多 6 次），无周期空转；会话使用随机 run_id + 短期 Bearer，配置 `DSH_AGENT_SOCKET` 后 `/autonomy/mcp` 返回 404。OpenCode 回滚路径的 session 必须 deny-all + `mcbot_autonomy_*` allow；预算/时间/连续失败/断线/手动指令/急停均需 fail-closed，结束必须停止任务并清理 session/MCP；不得把 `/autonomy/mcp` 暴露给应用/浏览器/公网，不得在日志/审计记录 prompt/Token/完整容器内容/世界记忆正文。v1.2.3 起，应用面板不再直接启动任务或自主会话；主人在 Minecraft Bot 页对话，模型按这句话决定是否调用上述 13 个工具，并可按需使用 DSH 的 goal 与 todo。游戏内口令仍可启动。急停不经过模型。不新增第 14 个 mcbot 工具名，不挂 goal-round-driver，不向模型开放 plugin-manager。世界记忆分类只有 place、resource、food、danger、route、note，文件为 dataDir 下的 world-memory.json（0600），与聊天记忆分开；提示词只带分类计数和最近 8 个键；记忆工具计入既有工具预算，不启动任务。
+17. mcbot 对接（v0.8.0 引入，v0.8.1 安全加固）读/控制 Token 必须分离且只走 loopback：`MCBOT_URL` 非 loopback/非 http(s)/含 userinfo/路径/查询/片段拒绝启动，客户端禁止跟随重定向；Token 不得进入浏览器/bundle/API 响应/日志/审计正文。应用上的任务开始、目标写、自主开始、移动和游戏发言在会话与 CSRF 之后返回 409 `mcbot_control_via_chat`，不调用上游。管理员对话需要登录、CSRF 或已签名设备、控制 Token 和发言限流；允许 ASCII `/`，拒绝 C0；审计只记字符数，正文不进 SQLite。急停停止任务、自主会话和管理员会话，不调用模型。mcbot 本机 `/say` 仍拒绝任意 ASCII `/` 与 C0。在线模式切换保留。事件缓存 ≤100 条且 ≤512 KiB、响应体流式 ≤2 MiB；聊天/事件只存内存不落库；上游告警只能以 `status='event'` 记录，不得写入 `alert_state` 或伪装 firing/resolved。
 
 ## 6. 数据库与数据
 
@@ -181,6 +181,8 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 - 每个阶段结束给出「产出摘要 + 未决问题 + 验证证据」。
 
 ## 8. 已知环境事实（不要重复踩坑）
+
+- **v1.2.3（本地，尚未部署）**：Minecraft Bot 面板只通过管理员对话决定行动。模型可调用现有 13 个 mcbot 工具，并按需使用 DSH goal 与 todo。应用上的任务开始、目标写、自主开始、移动和游戏发言返回 409，不调用上游。在线模式、只读状态和急停保留。急停不经过模型。游戏内口令保留。对话不进 SQLite。DSH Web 重新启用插件页与清单插件；无连字符的 `/api/pluginManager/`、上传、设置写入和凭据写入仍拒绝。模型侧 `tool-plugin-manager` 保持关闭。已登录管理员经 Access 与应用会话可以安装或移除 DSH Web 进程中的插件。schema 21、契约 v2、DSH 0.2.2-rc.1 不变。生产进程仍是下一节的 v1.2.2。部署前不要把生产 smoke 的期望版本改成 1.2.3。
 
 - **v1.2.2（2026-11-13，已部署并验收）**：Workbench `20261113T072133Z`、mcbot `20261113T072417Z`（`58b7693`），DSH `20261113T080907Z`（QQ 监督器 `22103d8`，锁定版本不变）。双端保留数据升级，用户确认登录通过，MC 远程管理真机验收按用户要求跳过。整包 age 加密、PC 解密及 full＋3 inc／schema 21／世界隔离演练 `20261113T081625Z` 通过。Windows 任务 1.2.2，installedAt `2026-11-13T14:16:50.7758244Z`。无限免密 sudo 已撤销，日常使用 root 固定维护入口，管理员部署使用密码及已有全局 sudo 票据；不改 SSH。收权及异地启用后完整 Access smoke **39／0／0／0**。OneDrive 因 401 退役接入，Google Drive 独立 Production OAuth／drive.file／专用目录、32 MiB 分段、令牌刷新与 full＋3 inc 云端隔离恢复通过；每日异地任务 13:00，实际调度退出码 0，Pi 成功状态回写通过。已发布 annotated Tag `v1.2.2`，指向 `e2ec493`；生产进程仍是 `58b7693`。发布页附带 `AntifieldComplexx_1.2.2_x64-setup.exe`（3,401,307 字节）、`AntifieldComplexx-1.2.2-arm64.zip`（6,160,540 字节）与 `SHA256SUMS`。当前状态以 BACKLOG／ACCEPTANCE 为准。
 

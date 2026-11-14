@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { HttpApi } from '../../src/http/server.ts'
+import type { AdminChat } from '../../src/admin/chat.ts'
 import type { AuditLogger } from '../../src/audit.ts'
 import { EventBus } from '../../src/events/bus.ts'
 import type { ChatSender } from '../../src/minecraft/chat.ts'
@@ -84,6 +85,53 @@ test('HTTP API enforces auth and /say rules', async () => {
 
     assert.equal((await fetch(`${base}/say`, { headers })).status, 405)
     assert.equal((await fetch(`${base}/nope`)).status, 404)
+  } finally {
+    await api.stop()
+  }
+})
+
+test('急停在目标中断后仍停止活动任务，空闲算成功', async () => {
+  const config = makeConfig({ httpPort: 0, httpHost: '127.0.0.1' }, { HTTP_CONTROL_TOKEN: 'fedcba9876543210fedcba9876543210' })
+  const state = makeState(config)
+  state.setTask({
+    active: true,
+    queue: [{ taskId: 'q1', name: 'fishing', requestedBy: 'test', requestedAt: new Date().toISOString() }]
+  })
+  let stopped = 0
+  let discarded = 0
+  let adminStopped = 0
+  const chatSender = { isConnected: () => false, say: async () => [] } as unknown as ChatSender
+  const api = new HttpApi({
+    ...fakeDeps(config, state, chatSender),
+    tasks: {
+      snapshot: () => state.task,
+      requestStop: () => { stopped += 1 },
+      discardPending: async () => { discarded += 1 }
+    } as unknown as TaskController,
+    goals: { interrupt: () => true } as unknown as ConstructorParameters<typeof HttpApi>[0]['goals'],
+    adminChat: { stop: async () => { adminStopped += 1 } } as unknown as AdminChat
+  })
+  const port = await api.start()
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/emergency-stop`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer fedcba9876543210fedcba9876543210', 'Content-Type': 'application/json' },
+      body: '{}'
+    })
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), { ok: true, failures: [] })
+    assert.equal(stopped, 1)
+    assert.equal(discarded, 0)
+    assert.equal(adminStopped, 1)
+
+    state.setTask({ active: false, queue: [] })
+    const idle = await fetch(`http://127.0.0.1:${port}/emergency-stop`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer fedcba9876543210fedcba9876543210', 'Content-Type': 'application/json' },
+      body: '{}'
+    })
+    assert.equal(idle.status, 200)
+    assert.equal((await idle.json() as { ok: boolean }).ok, true)
   } finally {
     await api.stop()
   }

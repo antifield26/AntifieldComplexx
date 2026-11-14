@@ -31,7 +31,7 @@
 - 认证：登录成功后服务端在 **app 主机**下发 host-only `af_session`（HttpOnly）与 `af_csrf`（可读）Cookie（均不设 `Domain`；`ai` 主机使用独立 host-only 会话 Cookie）。除 `GET/HEAD` 外的所有 `/api` 请求必须带 `X-CSRF-Token: <af_csrf>`，并满足 `Origin` 为 `https://app.example.com` / 本机；`ai` 源不再作为 app 写请求的受信 Origin。例外：公开 Bot Webhook `POST /api/chatbot/webhook/:botId` 不挂会话/CSRF，只按平台签名（及时间戳/去重）鉴权（见 §14）；既有公开分享 `POST /api/public/shares/:token/unlock` 也只校验 Origin 与限流。客户端设备会话使用 `Authorization: Bearer` 与设备签名，签名通过后不再要求 CSRF；`Authorization` 存在但不是合法 Bearer 时不回退 Cookie（见 §2）。
 - AI 主机 SSO：app 登录/已登录后访问 `GET /api/auth/ai-ticket?next=<ai 完整 URL>`，服务端校验 `next` 必须属于配置的 `AI_ORIGIN`，签发 60 秒一次性 ticket 并 302 到 `https://ai.example.com/__af/sso/<ticket>?next=<ai 相对路径>`；代理校验/消费 ticket 后设置 ai 主机 host-only `af_session` 并 302 到目标路径。ticket 一次性、绑定 aiOrigin、不落库。请求头 `Accept` 包含 `application/json` 时改为 `200 { "url": "<同一地址>" }`，不跳转。
 - Bot 功能开关：`CHATBOT_ENABLED=false` 或缺少 `CHATBOT_SECRET_KEY` 时，Webhook 一律 `404 not_found`，`/api/chatbots*` 写操作返回 `503 chatbot_disabled`/`chatbot_key_missing`；`GET /api/chatbots/status` 仍可读。
-- mcbot 功能开关（v0.8.0 引入，v0.8.1 安全加固）：`MCBOT_ENABLED=false` 时 `/api/mcbot/status` 仍返回 `enabled:false` 的空壳快照，其余 `/api/mcbot/*` 返回 `503 mcbot_disabled`；`MCBOT_CONTROL_TOKEN` 为空（只读模式）时 `/tasks*`、`/move` **与 `/say`** 均返回 `503 mcbot_control_disabled`（`/status`、`/history` 仍可读）。`MCBOT_URL` 只允许 `http(s)://loopback[:port]` 根地址（拒绝 userinfo/路径/查询/片段）。上游未启用/网络不可达返回 `503 mcbot_unavailable`；鉴权失败/上游异常返回 `502 mcbot_auth_failed`/`mcbot_upstream_error`；上游 5xx 的稳定业务码 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `mcbot_*`。响应与错误文本不包含 mcbot URL/Token。
+- mcbot 功能开关（v0.8.0 引入，v0.8.1 安全加固，v1.2.3 收口面板写入口）：`MCBOT_ENABLED=false` 时 `GET /api/mcbot/status` 仍返回 `enabled:false` 的空壳快照。`POST /api/mcbot/autonomy/start`、`POST /api/mcbot/goals`、`POST /api/mcbot/goals/:goalId/:action`、`POST /api/mcbot/tasks`、`POST /api/mcbot/tasks/resume`、`POST /api/mcbot/move`、`POST /api/mcbot/say` 在会话与 CSRF 之后直接返回 `409 mcbot_control_via_chat`，不先判断启用或控制 Token，也不调用上游。其余端点在关闭时返回 `503 mcbot_disabled`。控制 Token 为空时，对话、急停、在线模式、停止任务和停止自主会话返回 `503 mcbot_control_disabled`。`MCBOT_URL` 只允许 `http(s)://loopback[:port]` 根地址（拒绝 userinfo/路径/查询/片段）。上游未启用/网络不可达返回 `503 mcbot_unavailable`；鉴权失败/上游异常返回 `502 mcbot_auth_failed`/`mcbot_upstream_error`；上游 5xx 的稳定业务码 `task_disabled`/`control_disabled`/`history_disabled`/`admin_unavailable` 保留为 `mcbot_*`。响应与错误文本不包含 mcbot URL/Token。
 - 安全响应头：`Cache-Control: no-store`（静态 hash 资源除外）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、CSP（见 docs/app/SECURITY.md）。
 - 登录限制：每 IP 5 次失败/15 分钟；全局 60 次/小时（密码）、120 次/小时（TOTP），loopback 来源不占全局桶。`429` 响应包含 `retryAfterSec`。
 - 单文件上限：普通 multipart **100 MiB**（`MAX_UPLOAD_BYTES=104857600`，匹配 Cloudflare 代理）；更大文件走分片上传。超过返回 `413 file_too_large`，磁盘不足返回 `507 insufficient_storage`。
@@ -841,19 +841,19 @@ ChatbotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|proje
 
 `chatbot_disabled`（503）、`chatbot_key_missing`（503）、`chatbot_ai_tool_isolation_unavailable`（503，AI 工具隔离不可用且发送工具启用时新 Chat 被拒绝，10 分钟窗口后重试）、`chatbot_key_invalid`（500，仅启动/配置阶段）、`invalid_chatbot_config`（400，含非 QQ 平台/字段校验失败）、`publish_confirm_required`（400）、`publish_text_too_long`（400，发布文本超过 2000 字符）、`totp_required`（400）、`invalid_code`（401）、`conflict`（409，目标重复）、`rate_limited`（429）、`not_found`（404）、`invalid_request`（400，静默时段/事件结果非法）、`chatbot_health_unsupported`（400，适配器不支持连接自检）。AI 图片内部错误码 `chatbot_ai_image_unsupported`/`chatbot_ai_image_invalid` 只用于日志/降级，不作为管理端点响应。Webhook 额外使用 `invalid_signature`、`stale_signature`、`invalid_payload`、`missing_fields`。删除 `chat_trigger_unsupported` 与媒体相关错误码（`too_many_media`/`media_too_large`/`media_total_too_large`/`qq_media_unsupported`）。
 
-## 15. mcbot Bot 对接（v0.8.0 引入；v1.0.2 自主模式；v1.0.3 环境/动作工具；v1.0.5 在线模式/目标/自动生存；v1.0.6 寻路状态；v1.0.7 成功时间与兜底原因；v1.0.9 事件缺口；v1.0.10 活动范围；v1.0.11 反射、v1.0.12 世界记忆与 v1.0.13 记忆坐标不新增应用字段；默认关闭）
+## 15. mcbot Bot 对接（v0.8.0 引入；v1.0.2 自主模式；v1.0.3 环境/动作工具；v1.0.5 在线模式/目标/自动生存；v1.0.6 寻路状态；v1.0.7 成功时间与兜底原因；v1.0.9 事件缺口；v1.0.10 活动范围；v1.0.11 反射、v1.0.12 世界记忆与 v1.0.13 记忆坐标不新增应用字段；v1.2.3 管理员对话；默认关闭）
 
-mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。目标上游为 mcbot **v1.2.2**（契约 v2，兼容已声明契约 v1 的旧版本）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，v1.0.9 增加可空 `eventGap`，v1.0.10 至 v1.2.0 不新增应用字段，旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
+mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口，并代理管理员对话、在线模式和急停，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。目标上游为 mcbot **v1.2.3**（契约 v2，兼容已声明契约 v1 的旧版本）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，v1.0.6 增加可选 `navigation` 状态，v1.0.7 增加 `navigation.lastFallbackReason`，v1.0.9 增加可空 `eventGap`，v1.0.10 至 v1.2.2 不新增应用字段，v1.2.3 把面板行动收口到对话。旧版缺失时应用降级隐藏对应卡片/字段；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
 
 ### 通用语义
 
 - 启用：`MCBOT_ENABLED=true` 且配置 `MCBOT_READ_TOKEN`（启动校验：`MCBOT_URL` 必须为 `http(s)://loopback[:port]` 根地址，拒绝 userinfo/路径/查询/片段）；控制：`MCBOT_CONTROL_TOKEN` 非空。
-- 关闭：`MCBOT_ENABLED=false` 时除 `GET /api/mcbot/status`（返回 `enabled:false` 空壳）外均返回 `503 mcbot_disabled`。
-- 只读：控制 Token 为空时 `/tasks*`、`/move` **与 `/say`** 返回 `503 mcbot_control_disabled`（`/say` 是游戏内写操作，v0.8.1 起必须受控制 Token 门控）；`/status`、`/history` 仍可用。
+- 关闭：`MCBOT_ENABLED=false` 时 `GET /api/mcbot/status` 返回 `enabled:false` 空壳。退役写入口在会话与 CSRF 之后直接 409，见下文。其余端点返回 `503 mcbot_disabled`。
+- 只读：控制 Token 为空时，管理员对话、急停、在线模式、`POST /tasks/stop` 与 `POST /autonomy/stop` 返回 `503 mcbot_control_disabled`。`/status`、`/history`、自主快照、目标和对话读取仍可用。退役写入口即使没有控制 Token 也返回 409。
 - 轮询：服务端每 `MCBOT_POLL_MS`（默认 5000，2000–60000）拉一次 `/status` + `/events/recent?limit=200`（覆盖一次突发，避免只看 100 条漏告警）；单飞（不并发/不堆积）；失败只更新 `reachable/stale/error` 并保留上次成功数据。
-- 限流：控制类（tasks/stop/resume/move/autonomy/start/stop 共用）**20 次/分钟/IP**，`/say` **10 次/分钟/IP**；`/status`、`/history`、`/autonomy` GET **60 次/分钟/IP**（v1.0.2；UI 5s 轮询不受影响）；超限 `429 rate_limited` 并带 `Retry-After`。
-- 审计：`mcbot.task.start`（target=任务名）、`mcbot.task.stop`、`mcbot.task.resume`（target=taskId 或 `task`）、`mcbot.move`（target=action）、`mcbot.say`（只记 `chars`）、`mcbot.autonomy.start/stop`（只记目标/原因字符数）、失败 `mcbot.control_failed`（只记稳定错误码）；不记录聊天正文、自主目标/停止原因正文、Token、URL。
-- 错误映射：上游 400/409 保留状态码，`error.code=mcbot_<上游稳定码>`（如 `mcbot_task_rejected`/`mcbot_resume_pending`）；上游 401/403 → `502 mcbot_auth_failed`；上游 429 → `429 mcbot_rate_limited`；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `503 mcbot_<code>`；其它上游错误/非 JSON/超限 → `502 mcbot_upstream_error`；禁用/不可达/控制未启用 → `503 mcbot_disabled`/`mcbot_unavailable`/`mcbot_control_disabled`/`mcbot_not_found`。`message` 为固定中文兜底，不含上游原文/地址/Token。
+- 限流：仍开放的控制类（在线模式、停止任务、停止自主会话、急停）**20 次/分钟/IP**，管理员对话 **10 次/分钟/IP**；`/status`、`/history`、`/autonomy`、`/chat`、`/presence`、`/goals` 的 GET **60 次/分钟/IP**；超限 `429 rate_limited` 并带 `Retry-After`。
+- 审计：`mcbot.task.stop`、`mcbot.autonomy.stop`（只记原因字符数）、`mcbot.presence.set`（只记模式）、`mcbot.chat`（只记 `chars`）、`mcbot.emergency_stop`（只记失败腿名）、失败 `mcbot.control_failed`（只记稳定错误码）。退役写入口不写审计。不记录对话正文、Token、URL。
+- 错误映射：上游 400/409 保留状态码，`error.code=mcbot_<上游稳定码>`（如 `mcbot_chat_busy`/`mcbot_task_rejected`）；上游 401/403 → `502 mcbot_auth_failed`；上游 429 → `429 mcbot_rate_limited`；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled`/`admin_unavailable` 保留为 `503 mcbot_<code>`；其它上游错误/非 JSON/超限 → `502 mcbot_upstream_error`；禁用/不可达/控制未启用 → `503 mcbot_disabled`/`mcbot_unavailable`/`mcbot_control_disabled`/`mcbot_not_found`。应用自己的 `409 mcbot_control_via_chat` 不经过上游。`message` 为固定中文兜底，不含上游原文/地址/Token。
 
 ### GET /api/mcbot/status
 
@@ -909,9 +909,9 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 
 需要会话 + GET 60/min 限流。返回 `{ "autonomy": { ... } }`；上游 mcbot 未启用自主模式时 `autonomy.enabled=false`。旧版 mcbot 无 `/autonomy` 时返回稳定上游错误（应用降级为无自主卡）。
 
-### POST /api/mcbot/autonomy/start（v1.0.2）
+### POST /api/mcbot/autonomy/start（v1.0.2；v1.2.3 起应用停用）
 
-需要会话 + CSRF + 控制 20/min。body 可为 `{}` 或 `{ "goal": "准备食物" }`；goal trim 1..200、无控制字符。成功 **200** `{ "ok": true, "autonomy": { ... } }`；上游忙碌/禁用/不可用分别映射 `409 mcbot_autonomy_busy`/`503 mcbot_autonomy_disabled`/`503 mcbot_autonomy_unavailable`；启动失败 `502 mcbot_autonomy_failed`。
+需要会话 + CSRF。通过后直接 **409** `mcbot_control_via_chat`，消息「请通过 Minecraft Bot 对话控制」。不检查启用状态或控制 Token，不调用上游，不写审计。未登录仍是 401，CSRF 失败仍是 403。mcbot 本机 `POST /autonomy/start` 仍给游戏内口令使用。
 
 ### POST /api/mcbot/autonomy/stop（v1.0.2）
 
@@ -929,62 +929,48 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 
 需要会话 + GET 60/min；query `limit=1..50`（默认 20）；返回上游 `{ goals: [...] }`，目标含 objective/status/currentStep/steps；不包含 Token。
 
-### POST /api/mcbot/goals（v1.0.5）
+### POST /api/mcbot/goals（v1.0.5；v1.2.3 起应用停用）
 
-需要会话 + CSRF + 控制 20/min；body `{ "objective": "1..200 字符", "steps": [{"kind":"task","taskName":"woodcutting"},{"kind":"deposit"},{"kind":"home"}] }`；步骤最多 5 个；taskName 受 11 种任务白名单限制；创建后为 `pending`，必须再显式开始。审计只记 objective 字符数与步骤数。
+需要会话 + CSRF。通过后直接 **409** `mcbot_control_via_chat`，不调用上游，不写审计。目标的创建和推进改由管理员对话里的 DSH goal 工具决定。`GET /api/mcbot/goals` 仍只读。
 
-### POST /api/mcbot/goals/:goalId/:action（v1.0.5）
+### POST /api/mcbot/goals/:goalId/:action（v1.0.5；v1.2.3 起应用停用）
 
-需要会话 + CSRF + 控制 20/min；`action=start|pause|resume|cancel`；`goalId` 为 1–80 字母数字/连字符；成功返回 `{ goal }`；404/409 由上游映射，消息不含目标正文。
-
-开始和继续立即返回目标快照，步骤在后台推进。目标独占任务、存箱和移动，收尾期间冲突操作返回 409。暂停与取消会先撤销执行权，已完成步骤保留。服务重启后在途目标暂停，主人可通过 `resume` 继续。阻塞原因见 `lastFailureKind` 与 `lastError`。
+需要会话 + CSRF。通过后直接 **409** `mcbot_control_via_chat`，不调用上游。`goalId` 与 `action` 不再校验。mcbot 本机目标执行仍由游戏内口令和管理员对话里的工具使用。
 
 ### GET /api/mcbot/status（v1.0.2 增量）
 
 新增可选 `autonomy` 字段（`normalizeAutonomy` 归一化；旧版缺失为 `null`）；`status.autonomy` 与上游 `/status.autonomy` 一致。前端对未知 state 保留字符串并 label 兜底，不丢弃。
-### POST /api/mcbot/tasks
+### POST /api/mcbot/tasks（v1.2.3 起应用停用）
 
-需要会话 + CSRF。body：
-
-```json
-{ "name": "fishing" }
-```
-
-`name` 必须是 `fishing|farming|woodcutting|mining|forest|sleep|patrol|guard|escort|explore|clearing` 之一（v1.0.5 同步 11 种；否则 `400 invalid_request`）。成功 `200 { "ok": true, ...上游响应 }`；上游已 active 时入队（`queued:true`、`position:1..3`）；有 pending → `409 mcbot_resume_pending`；队列满 → `409 mcbot_queue_full`；任务功能关闭 → `503 mcbot_task_disabled`。
+需要会话 + CSRF。通过后直接 **409** `mcbot_control_via_chat`，不校验任务名，不调用上游。11 种任务仍只能由游戏内口令或管理员对话里的 mcbot 工具启动。
 
 ### POST /api/mcbot/tasks/stop
 
 需要会话 + CSRF，body 可为空。成功 `200 { "ok": true, ... }`（中断当前任务并清空队列；只有 pending 时取消 pending 与队列）。无任务 → `409 mcbot_no_active_task`。
 
-### POST /api/mcbot/tasks/resume
+### POST /api/mcbot/tasks/resume（v1.2.3 起应用停用）
 
-需要会话 + CSRF。body 可选：
+需要会话 + CSRF。通过后直接 **409** `mcbot_control_via_chat`，不调用上游。待恢复任务由急停丢弃，或由游戏内口令处理。
 
-```json
-{ "taskId": "46451943-eae1-41c0-8df3-beef3c7b60f4" }
-```
+### POST /api/mcbot/move（v1.2.3 起应用停用）
 
-`taskId` 省略时恢复唯一 pending；提供时必须是 **trim 后 1–64 字符、无内部空白、无 C0 控制字符/DEL**（否则 `400 invalid_request`）。成功 `200 { "ok": true, ... }`；无 pending → `409 mcbot_no_pending_task`；过期/不匹配 → `409 mcbot_resume_failed`。上游 pending 10 分钟未确认会自动中断。
+需要会话 + CSRF。通过后直接 **409** `mcbot_control_via_chat`，不调用上游。移动改由管理员对话里的 mcbot 工具决定。mcbot 本机 `POST /move` 仍保留。
 
-### POST /api/mcbot/move
+### POST /api/mcbot/say（v1.2.3 起应用停用）
 
-需要会话 + CSRF。body：
+需要会话 + CSRF。通过后直接 **409** `mcbot_control_via_chat`，不调用上游。管理员对话允许 ASCII `/`，因为它不进入 Minecraft 聊天。mcbot 本机 `POST /say` 仍拒绝任意 ASCII `/` 与 C0，并使用控制 Token。
 
-```json
-{ "action": "come", "target": "Steve" }
-```
+### GET /api/mcbot/chat（v1.2.3）
 
-`action` 必须是 `home|come|follow|stop`；`target` 可选（trim 后 ≤32 字符，`home`/`stop` 忽略）。成功 `200 { "ok": true, ... }`；任务进行中 → `409 mcbot_task_active`；目标不在线 → `409 mcbot_target_not_online`；mcbot 未连接 Minecraft → `409 mcbot_not_connected`；上游 202 只表示接受，结果通过事件流反映。
+需要会话 + GET 60/min。关闭时 `503 mcbot_disabled`。返回 mcbot 内存中的 `{ "messages": [...], "turn": { "id", "status": "pending|ok|error", "error" } | null }`。每条消息含 `id`、`role`（`user` 或 `assistant`）、`text`、`at`，最多 40 条。正文不进 SQLite，不进审计，重启即丢失。
 
-### POST /api/mcbot/say
+### POST /api/mcbot/chat（v1.2.3）
 
-需要会话、CSRF 和控制 Token。无控制 Token 返回 `503 mcbot_control_disabled`，上游契约 v1 返回 `503 mcbot_say_unavailable`，`sayEnabled` 表示契约 v2 下的发言可用性。
+需要会话、CSRF、控制 Token，以及发言限流 10 次/分钟/IP。body `{ "message": "1..2000 字符" }`。允许 ASCII `/`，拒绝 C0 与 DEL（`400 invalid_request`）。关闭时 `503 mcbot_disabled`，无控制 Token 时 `503 mcbot_control_disabled`。成功 **200** `{ "ok": true, "turnId": "...", "status": "pending" }`。mcbot 本机接受为 202，应用返回该 JSON，不把公网请求挂到模型的长等待上。上一轮未完成时 **409** `mcbot_chat_busy`，消息「上一条对话还在处理，请稍后再发」。对话不可用时 **503** `mcbot_admin_unavailable`。审计 `mcbot.chat` 只记 `{ "chars" }`。同一管理员会话会复用，以便 goal 与 todo 保持；30 分钟空闲、急停或进程退出后删除。
 
-```json
-{ "message": "来自 AntifieldComplexx 的问候" }
-```
+### POST /api/mcbot/emergency-stop（v1.2.3）
 
-成功 `200 { "ok": true, "lines": 1 }`。约束：trim 后非空、≤**720** 字符、**任意位置不能包含 ASCII `/`**（`400 message_must_not_start_with_slash`；防止“填充字符 + /命令”在上游按 240 字符切行后的第二行命中 mineflayer 命令通道）、不能包含 C0 控制字符/DEL（`400 invalid_request`）；mcbot 未连接 → `409 mcbot_not_connected`；上游限流 → `429 mcbot_rate_limited`。自 v0.6.1 起上游还会逐行把行首 `/` 中和为全角 `／`（防御纵深，应用侧不依赖）。**只聊天、不执行命令；内容不落库、不写日志，审计只记字符数**。
+需要会话、CSRF、控制 Token，以及控制限流 20 次/分钟/IP。不调用模型。依次停止活动自主会话、打断目标并停止活动任务或待恢复、关闭管理员对话。某一腿失败时继续其余腿。空闲算成功。返回 `{ "ok": true|false, "failures": ["task"|"autonomy"|"admin"] }`。审计 `mcbot.emergency_stop` 只记 `failures`。`POST /api/mcbot/tasks/stop` 与 `POST /api/mcbot/autonomy/stop` 仍单独可用，空闲任务停止仍是上游的 `409 mcbot_no_active_task`。
 
 ### 事件与告警
 

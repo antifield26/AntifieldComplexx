@@ -43,6 +43,14 @@ export interface DshAutonomySession extends Pick<AutonomySessionClient, 'prompt'
   openRun: (bearer: string, tools: McpToolDefinition[]) => Promise<string>
 }
 
+/** 管理员对话会话。与无工具的陪伴回复、游戏内自主槽分开。 */
+export interface DshAdminSession {
+  openAdmin: (bearer: string, tools: McpToolDefinition[], prompt: string) => Promise<string>
+  promptAdmin: (id: string, text: string, signal?: AbortSignal) => Promise<void>
+  waitAdmin: (id: string, signal?: AbortSignal) => Promise<string>
+  stopAdmin: (id: string) => Promise<void>
+}
+
 type FetchLike = typeof fetch
 
 interface FetchResult {

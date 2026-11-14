@@ -1,4 +1,4 @@
-// Minecraft 页：服务器只读状态/白名单管理与 mcbot 面板两个标签页。
+// Minecraft 页：服务器只读状态/白名单管理与 Minecraft Bot 面板两个标签页。
 // 标签状态写入 ?tab=mcbot（保留其他查询参数），首次加载支持 ?tab=mcbot 或 #mcbot 深链。
 // mcbot 集成未启用（meta.mcbotEnabled=false）时不展示 mcbot 标签页，页面行为与旧版一致。
 
@@ -15,7 +15,7 @@ type MinecraftTab = 'server' | 'mcbot'
 
 const TABS: readonly { id: MinecraftTab; label: string }[] = [
   { id: 'server', label: '服务器' },
-  { id: 'mcbot', label: 'mcbot' },
+  { id: 'mcbot', label: 'Minecraft Bot' },
 ]
 
 /** 深链初始化：?tab=mcbot 或 #mcbot 均进入 mcbot 标签页。 */
@@ -31,12 +31,12 @@ const TAB_COPY: Record<MinecraftTab, { title: string; description: string }> = {
     description: '服务器只读状态与白名单管理',
   },
   mcbot: {
-    title: 'mcbot',
-    description: 'mcbot Bot 运行状态、任务控制、事件流与历史（数据来自本机 mcbot 接口）',
+    title: 'Minecraft Bot',
+    description: '只读状态、在线模式、管理员对话、事件流与历史',
   },
 }
 
-/** Minecraft 页：可键盘操作的“服务器 / mcbot”标签页外壳。 */
+/** Minecraft 页：可键盘操作的“服务器 / Minecraft Bot”标签页外壳。 */
 export function Minecraft() {
   const { meta } = useAppMeta()
   const location = useLocation()

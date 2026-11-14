@@ -1,8 +1,6 @@
 # Web 只提供管理员工作区。保留 Gateway 所需的访问控制服务与设置服务。
 - id: session-log-deepseek
   disabled: true
-- id: plugin-package-inventory-deepseek
-  disabled: true
 - id: session-telemetry-otel
   disabled: true
 - id: desktop-product-telemetry

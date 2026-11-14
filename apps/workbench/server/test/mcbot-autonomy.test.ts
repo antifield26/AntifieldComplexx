@@ -501,29 +501,21 @@ function lastUpstreamCall(calls: FetchCall[], path: string): FetchCall | undefin
   return [...calls].reverse().find((call) => new URL(call.url).pathname === path)
 }
 
-test('MCBOT_TASK_NAMES：11 种任务全部可启动，未知任务 400', async () => {
+test('MCBOT_TASK_NAMES：11 种任务名仍是白名单，面板启动入口改为对话', async () => {
   const fx = await makeRouteApp()
   try {
     assert.equal(MCBOT_TASK_NAMES.length, 11)
-    for (const name of MCBOT_TASK_NAMES) {
+    for (const name of [...MCBOT_TASK_NAMES, 'cooking']) {
       const response = await fx.app.inject({
         method: 'POST',
         url: '/api/mcbot/tasks',
         headers: authHeaders(),
         payload: { name },
       })
-      assert.equal(response.statusCode, 200, `任务 ${name} 应可启动`)
-      const body = JSON.parse(String(lastUpstreamCall(fx.calls, '/task/start')?.init.body)) as { name: string }
-      assert.equal(body.name, name)
+      assert.equal(response.statusCode, 409, `任务 ${name} 应改走对话`)
+      assert.equal(response.json().error.code, 'mcbot_control_via_chat')
     }
-    const invalid = await fx.app.inject({
-      method: 'POST',
-      url: '/api/mcbot/tasks',
-      headers: authHeaders(),
-      payload: { name: 'cooking' },
-    })
-    assert.equal(invalid.statusCode, 400)
-    assert.equal(invalid.json().error.code, 'invalid_request')
+    assert.equal(lastUpstreamCall(fx.calls, '/task/start'), undefined)
   } finally {
     await fx.close()
   }
@@ -548,7 +540,7 @@ test('GET /api/mcbot/autonomy：登录、包装 {autonomy}、禁用降级', asyn
 
   const disabled = await makeRouteApp({ config: { mcbotEnabled: false } })
   try {
-    for (const url of ['/api/mcbot/autonomy', '/api/mcbot/autonomy/start', '/api/mcbot/autonomy/stop']) {
+    for (const url of ['/api/mcbot/autonomy', '/api/mcbot/autonomy/stop']) {
       const response = await disabled.app.inject({
         method: url.endsWith('autonomy') ? 'GET' : 'POST',
         url,
@@ -557,13 +549,20 @@ test('GET /api/mcbot/autonomy：登录、包装 {autonomy}、禁用降级', asyn
       assert.equal(response.statusCode, 503)
       assert.equal(response.json().error.code, 'mcbot_disabled')
     }
+    const retiredStart = await disabled.app.inject({
+      method: 'POST',
+      url: '/api/mcbot/autonomy/start',
+      headers: authHeaders(),
+    })
+    assert.equal(retiredStart.statusCode, 409)
+    assert.equal(retiredStart.json().error.code, 'mcbot_control_via_chat')
     assert.equal(disabled.calls.length, 0, '禁用时不得访问上游')
   } finally {
     await disabled.close()
   }
 })
 
-test('POST /api/mcbot/autonomy/start：CSRF、goal 校验、转发 trim 值、审计只记长度', async () => {
+test('POST /api/mcbot/autonomy/start：改为对话入口，不转发上游', async () => {
   const fx = await makeRouteApp()
   try {
     const noCsrf = await fx.app.inject({
@@ -575,49 +574,17 @@ test('POST /api/mcbot/autonomy/start：CSRF、goal 校验、转发 trim 值、�
     assert.equal(noCsrf.statusCode, 403)
     assert.equal(noCsrf.json().error.code, 'csrf_failed')
 
-    const badGoals: unknown[] = [123, 'x'.repeat(201), 'a\u0000b', '\u0007']
-    for (const goal of badGoals) {
-      const response = await fx.app.inject({
-        method: 'POST',
-        url: '/api/mcbot/autonomy/start',
-        headers: authHeaders(),
-        payload: { goal },
-      })
-      assert.equal(response.statusCode, 400, `非法 goal 应 400：${JSON.stringify(goal).slice(0, 20)}`)
-      assert.equal(response.json().error.code, 'invalid_request')
-    }
-    assert.equal(lastUpstreamCall(fx.calls, '/autonomy/start'), undefined, '非法 goal 不得发往上游')
-
-    const success = await fx.app.inject({
+    const retired = await fx.app.inject({
       method: 'POST',
       url: '/api/mcbot/autonomy/start',
       headers: authHeaders(),
-      payload: { goal: '  收集木材  ' },
+      payload: { goal: '收集木材' },
     })
-    assert.equal(success.statusCode, 200)
-    const body = success.json() as { ok: boolean; autonomy: Record<string, unknown> }
-    assert.equal(body.ok, true)
-    assert.equal(body.autonomy.state, 'starting')
-    assert.equal(body.autonomy.goal, '收集木材', 'goal 必须 trim 后转发')
-    const upstream = lastUpstreamCall(fx.calls, '/autonomy/start')!
-    assert.deepEqual(JSON.parse(String(upstream.init.body)), { goal: '收集木材' })
-    assert.equal(authHeader(upstream.init), `Bearer ${CONTROL}`)
-
-    const rows = auditRows(fx.fixture.db)
-    const startAudit = rows.find((row) => row.action === 'mcbot.autonomy.start')
-    assert.ok(startAudit)
-    assert.deepEqual(JSON.parse(startAudit?.detail_json ?? '{}'), { goalChars: 4 })
-    assert.ok(!JSON.stringify(rows).includes('收集木材'), '审计不得记录自主目标正文')
-
-    // 目标省略（空对象或空白）：按默认目标发送空 body。
-    const defaultGoal = await fx.app.inject({
-      method: 'POST',
-      url: '/api/mcbot/autonomy/start',
-      headers: authHeaders(),
-      payload: {},
-    })
-    assert.equal(defaultGoal.statusCode, 200)
-    assert.deepEqual(JSON.parse(String(lastUpstreamCall(fx.calls, '/autonomy/start')!.init.body)), {})
+    assert.equal(retired.statusCode, 409)
+    assert.equal(retired.json().error.code, 'mcbot_control_via_chat')
+    assert.equal(retired.json().error.message, '请通过 Minecraft Bot 对话控制')
+    assert.equal(lastUpstreamCall(fx.calls, '/autonomy/start'), undefined)
+    assert.ok(!JSON.stringify(auditRows(fx.fixture.db)).includes('收集木材'))
   } finally {
     await fx.close()
   }
@@ -690,7 +657,7 @@ test('自主控制错误映射：409 busy / 503 disabled / 503 unavailable / 502
     async function expectStart(status: number, code: string): Promise<Record<string, unknown>> {
       const response = await fx.app.inject({
         method: 'POST',
-        url: '/api/mcbot/autonomy/start',
+        url: '/api/mcbot/autonomy/stop',
         headers: authHeaders(),
         payload: {},
       })

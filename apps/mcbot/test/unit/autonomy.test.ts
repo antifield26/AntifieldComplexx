@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { Bot } from 'mineflayer'
 import { HttpApi } from '../../src/http/server.ts'
 import type { AuditLogger } from '../../src/audit.ts'
-import type { AutonomySessionClient, DshAutonomySession, SessionPermission } from '../../src/ai/session.ts'
+import type { AutonomySessionClient, DshAdminSession, DshAutonomySession, SessionPermission } from '../../src/ai/session.ts'
 import { AutonomyService } from '../../src/autonomy/service.ts'
 import { EventBus } from '../../src/events/bus.ts'
 import type { ChatSender } from '../../src/minecraft/chat.ts'
@@ -192,7 +192,7 @@ test('DSH 自主急停立即撤销 Bearer，清理重试完成后才能再次启
   let deletes = 0
   let finishCleanup: () => void = () => {}
   const cleanup = new Promise<void>(resolve => { finishCleanup = resolve })
-  const agent: DshAutonomySession = {
+  const agent: DshAutonomySession & DshAdminSession = {
     openRun: async (bearer, tools) => {
       assert.equal(tools.length, 13)
       token = bearer
@@ -205,7 +205,11 @@ test('DSH 自主急停立即撤销 Bearer，清理重试完成后才能再次启
       if (++deletes === 1) throw new Error('清理暂时不可用')
       if (deletes === 2) await cleanup
     },
-    assistantText: async () => ''
+    assistantText: async () => '',
+    openAdmin: async () => 'session-admin-unused',
+    promptAdmin: async () => {},
+    waitAdmin: async () => '',
+    stopAdmin: async () => {}
   }
   const service = new AutonomyService({ ...s, logger: createLogger('error'), opencode: agent })
   assert.equal((await service.start(null, '主人')).ok, true)
@@ -223,6 +227,42 @@ test('DSH 自主急停立即撤销 Bearer，清理重试完成后才能再次启
   assert.equal((await service.start(null, '主人')).ok, true)
   assert.equal((await service.handleDshTool(firstToken, input)).status, 401)
   await service.stop('test')
+})
+
+test('管理员 Bearer 可调用工具，finish 不结束对话', async () => {
+  const s = setup()
+  let prompt = ''
+  let token = ''
+  const stopped: string[] = []
+  const agent: DshAdminSession = {
+    openAdmin: async (bearer, tools, text) => {
+      assert.equal(tools.length, 13)
+      token = bearer
+      prompt = text
+      return 'session-admin-1'
+    },
+    promptAdmin: async () => {},
+    waitAdmin: async () => 'ok',
+    stopAdmin: async () => { stopped.push('stop') }
+  }
+  const service = new AutonomyService({
+    ...s,
+    logger: createLogger('error'),
+    opencode: agent as unknown as DshAutonomySession & DshAdminSession
+  })
+  assert.equal((await service.ensureAdmin()).ok, true)
+  const runId = runIdFromPrompt(prompt)
+  const input = { name: 'task_status', arguments: { run_id: runId } }
+  assert.equal((await service.handleDshTool(token, input)).status, 200)
+  assert.equal((await service.handleDshTool('not-the-token', input)).status, 401)
+  assert.equal((await service.handleDshTool(token, {
+    name: 'finish',
+    arguments: { run_id: runId, summary: '先回答', reason: 'finish' }
+  })).status, 200)
+  assert.equal(service.adminActive(), true)
+  assert.deepEqual(stopped, [])
+  await service.stopAdmin('test')
+  assert.equal(service.adminActive(), false)
 })
 
 test('autonomy tool call starts a task through the deterministic controller', async () => {

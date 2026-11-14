@@ -53,19 +53,17 @@ import type {
   FileListResult,
   FileSearchResult,
   KnowledgeQuery,
-  McbotActionResult,
   McbotAutonomyResult,
   McbotAutonomySnapshot,
-  McbotGoalKind,
-  McbotGoalResult,
+  McbotChatAccepted,
+  McbotChatState,
+  McbotEmergencyStopResult,
   McbotGoalsResult,
   McbotHistory,
   McbotHistoryQuery,
-  McbotMoveAction,
   McbotPresenceMode,
   McbotPresenceResult,
   McbotSnapshot,
-  McbotTaskName,
   DeviceEnrollment,
   DeviceView,
   LoginResult,
@@ -230,6 +228,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   mcbot_autonomy_busy: 'mcbot 自主模式正在运行，请先停止',
   mcbot_autonomy_unavailable: 'mcbot 自主模式不可用，请检查 mcbot 状态',
   mcbot_autonomy_failed: 'mcbot 自主模式启动失败',
+  mcbot_control_via_chat: '请通过 Minecraft Bot 对话控制',
+  mcbot_chat_busy: '上一条对话还在处理，请稍后再发',
+  mcbot_admin_unavailable: 'Minecraft Bot 对话暂不可用',
+  mcbot_chat_failed: '对话没有完成',
   message_must_not_start_with_slash: '聊天内容不能以 / 开头（不会执行任何命令）',
   device_revoked: '这台设备已吊销，请重新登录',
   device_mismatch: '设备与会话不一致，请重新登录',
@@ -1419,9 +1421,9 @@ export const api = {
     },
   },
   /**
-   * mcbot 集成（v0.8.0）：状态/历史为只读 GET；任务/移动/聊天为写操作，
-   * 服务端校验登录态与 CSRF，并可能返回 mcbot_disabled/mcbot_control_disabled 等降级错误。
-   * 本客户端不接触 mcbot Token/URL，控制操作后由调用方重新拉取 status 校验结果。
+   * mcbot 集成：状态、历史、在线模式与自主快照可读。
+   * 世界动作只经管理员对话；急停不经过模型。
+   * 本客户端不接触 mcbot Token/URL。
    */
   mcbot: {
     status(signal?: AbortSignal): Promise<McbotSnapshot> {
@@ -1443,14 +1445,6 @@ export const api = {
     autonomy(signal?: AbortSignal): Promise<McbotAutonomySnapshot | null> {
       return get<McbotAutonomyResult>('/api/mcbot/autonomy', { signal }).then((result) => result.autonomy ?? null)
     },
-    /** 启动自主模式：goal 为空时由 mcbot 使用默认目标。 */
-    startAutonomy(goal?: string): Promise<McbotAutonomyResult> {
-      return post<McbotAutonomyResult>('/api/mcbot/autonomy/start', goal ? { goal } : {})
-    },
-    /** 停止自主模式：上游幂等；reason 仅作运行记录，不上送到 UI。 */
-    stopAutonomy(reason?: string): Promise<McbotAutonomyResult> {
-      return post<McbotAutonomyResult>('/api/mcbot/autonomy/stop', reason ? { reason } : {})
-    },
     /** 在线模式快照（读操作）。 */
     presence(signal?: AbortSignal): Promise<McbotPresenceResult> {
       return get<McbotPresenceResult>('/api/mcbot/presence', { signal })
@@ -1463,36 +1457,16 @@ export const api = {
     goals(limit = 20, signal?: AbortSignal): Promise<McbotGoalsResult> {
       return get<McbotGoalsResult>(`/api/mcbot/goals?limit=${encodeURIComponent(String(limit))}`, { signal })
     },
-    /** 创建长期目标：默认 pending，必须再显式 start。 */
-    createGoal(
-      objective: string,
-      steps: Array<{ kind: McbotGoalKind; taskName?: McbotTaskName }>,
-    ): Promise<McbotGoalResult> {
-      return post<McbotGoalResult>('/api/mcbot/goals', { objective, steps })
+    /** 管理员对话：服务端立即接受，正文由 chatState 轮询。 */
+    chat(message: string): Promise<McbotChatAccepted> {
+      return post<McbotChatAccepted>('/api/mcbot/chat', { message })
     },
-    /** 目标动作；pause 与 cancel 也需二次确认后调用。 */
-    goalAction(
-      goalId: string,
-      action: 'start' | 'pause' | 'resume' | 'cancel',
-    ): Promise<McbotGoalResult> {
-      return post<McbotGoalResult>(`/api/mcbot/goals/${encodeURIComponent(goalId)}/${action}`, {})
+    chatState(signal?: AbortSignal): Promise<McbotChatState> {
+      return get<McbotChatState>('/api/mcbot/chat', { signal })
     },
-    startTask(name: McbotTaskName): Promise<McbotActionResult> {
-      return post<McbotActionResult>('/api/mcbot/tasks', { name })
-    },
-    stopTask(): Promise<McbotActionResult> {
-      return post<McbotActionResult>('/api/mcbot/tasks/stop', {})
-    },
-    /** 省略 taskId 时由服务端恢复唯一 pending 任务；带 taskId 校验是否匹配。 */
-    resumeTask(taskId?: string): Promise<McbotActionResult> {
-      return post<McbotActionResult>('/api/mcbot/tasks/resume', taskId ? { taskId } : {})
-    },
-    /** home 忽略 target；come/follow 的 target 必须在 mcbot 在线玩家列表中。 */
-    move(action: McbotMoveAction, target?: string): Promise<McbotActionResult> {
-      return post<McbotActionResult>('/api/mcbot/move', target ? { action, target } : { action })
-    },
-    say(message: string): Promise<McbotActionResult> {
-      return post<McbotActionResult>('/api/mcbot/say', { message })
+    /** 急停任务、自主会话和管理员对话，不经过模型。 */
+    emergencyStop(): Promise<McbotEmergencyStopResult> {
+      return post<McbotEmergencyStopResult>('/api/mcbot/emergency-stop', {})
     },
   },
   /**

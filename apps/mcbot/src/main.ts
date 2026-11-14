@@ -19,6 +19,7 @@ import { OpenCodeClient } from './ai/opencode.ts'
 import { PathAdvisor } from './ai/path-advisor.ts'
 import { OpenCodeSessionClient } from './ai/session.ts'
 import { DshAgentClient } from './ai/dsh.ts'
+import { AdminChat } from './admin/chat.ts'
 import { IntentClassifier } from './ai/intent.ts'
 import { AiChatService } from './ai/queue.ts'
 import { AutonomyService } from './autonomy/service.ts'
@@ -324,6 +325,7 @@ async function main (): Promise<void> {
     }, 3000).unref?.()
   })
 
+  const adminChat = dshClient ? new AdminChat(autonomy) : null
   const http = new HttpApi({
     config,
     logger: logger.withScope('http'),
@@ -336,6 +338,7 @@ async function main (): Promise<void> {
     history: historyStore ?? undefined,
     getBot: () => client.getBot(),
     autonomy,
+    adminChat: adminChat ?? undefined,
     goals: goals ?? undefined,
     getPresenceMode: () => presence.presenceInfo(),
     setPresenceMode: (mode, actor) => presence.setMode(mode, actor)

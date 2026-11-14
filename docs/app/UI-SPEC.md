@@ -140,10 +140,10 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 说明文字：“回收站中的文件仍占用配额；30 天后自动清理。”
 - 空态：“回收站是空的”。
 
-### 4.5 Minecraft `/minecraft`（服务器 / mcbot 双标签）
+### 4.5 Minecraft `/minecraft`（服务器 / Minecraft Bot 双标签）
 
-- 页头与内容由当前标签决定：服务器标签标题“Minecraft”、副标题“服务器只读状态与白名单管理”；mcbot 标签标题“mcbot”、副标题“mcbot Bot 运行状态、任务控制、事件流与历史（数据来自本机 mcbot 接口）”。
-- **标签栏**（仅 `/api/version.mcbotEnabled=true` 时显示）：`role=tablist` + 两个 `role=tab` 按钮（“服务器”“mcbot”），`aria-selected`/`aria-controls`/`tabIndex` 随激活标签变化，面板 `role=tabpanel` 与 `aria-labelledby` 联动；左右方向键循环、Home/End 跳转，焦点随选中移动；`?tab=mcbot` 或 `#mcbot` 深链进入 mcbot 标签，切回服务器清理由 mcbot 标签写入的 `?tab=mcbot` 与 `#mcbot`。
+- 页头与内容由当前标签决定：服务器标签标题“Minecraft”、副标题“服务器只读状态与白名单管理”；Minecraft Bot 标签标题“Minecraft Bot”、副标题“只读状态、在线模式、管理员对话、事件流与历史”。
+- **标签栏**（仅 `/api/version.mcbotEnabled=true` 时显示）：`role=tablist` + 两个 `role=tab` 按钮（“服务器”“Minecraft Bot”），`aria-selected`/`aria-controls`/`tabIndex` 随激活标签变化，面板 `role=tabpanel` 与 `aria-labelledby` 联动；左右方向键循环、Home/End 跳转，焦点随选中移动；`?tab=mcbot` 或 `#mcbot` 深链进入 Minecraft Bot 标签，切回服务器清理由该标签写入的 `?tab=mcbot` 与 `#mcbot`。路由仍是 `/minecraft`。侧栏桌面为“Minecraft”，紧凑为“MC”。
 - mcbot 未启用（`mcbotEnabled=false` 或旧服务端不下发）时不渲染标签栏，直接展示服务器内容，页面行为与旧版一致。
 - **服务器标签**（原 `/minecraft` 内容）：
   - 顶部状态卡：在线/离线、版本、MOTD、在线人数、TPS、服务状态、公共地址（复制）；RCON 降级时黄色提示。
@@ -484,23 +484,23 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 样式集中在 `web/src/styles/v07.css`（在 `main.tsx` 引入），不引入第三方组件库；测试覆盖长任务超时、恢复持久化、
   加密/异地状态卡、prepare 警告、断点 `fileId`、`archive_encrypted` 文案与 MetaContext 降级。
 
-## 17. mcbot 面板（`/minecraft?tab=mcbot`，v0.8.0 引入；v0.8.1 安全/健壮性；v1.0.2 自主模式；v1.0.5 在线模式/目标）
+## 17. Minecraft Bot 面板（`/minecraft?tab=mcbot`，v0.8.0 引入；v1.2.3 改为管理员对话）
 
-mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbot/status`（5s 轮询，页面隐藏时暂停）与 `GET /api/mcbot/history`；写操作走 `POST /api/mcbot/*`。仅当 `/api/version.mcbotEnabled=true` 时显示入口；`mcbotControlEnabled=false` 时只读（**聊天输入同样禁用**）。状态快照先经 `safemcbotStatus` 归一化，缺失嵌套段显示“—”而不是整页崩溃；面板轮询使用请求序号 + AbortController，旧响应不会覆盖新响应。
+Minecraft Bot 面板是 `/minecraft` 的第二个标签页。标签文字是“Minecraft Bot”。状态来自 `GET /api/mcbot/status`（5s 轮询，页面隐藏时暂停），历史来自 `GET /api/mcbot/history`，对话来自 `GET /api/mcbot/chat`。面板写操作只有在线模式、发送对话和急停。仅当 `/api/version.mcbotEnabled=true` 时显示入口。`controlReady` 要求启用、可达且 `controlEnabled=true`；否则对话输入、发送和急停禁用。状态快照先经 `safemcbotStatus` 归一化，缺失嵌套段显示“—”而不是整页崩溃；面板轮询使用请求序号 + AbortController，旧响应不会覆盖新响应。
 
 ### 入口与布局
 
-- `sayEnabled=false` 时禁用发言。契约 v1 的读取与既有控制保持可用，面板提示升级到 v2 可恢复发言。
-- 标签栏与深链见 §4.5；mcbot 标签页内容自上而下：全局状态提示条 → 状态卡 → 自主模式卡（v1.0.2，旧版上游时隐藏/降级）→ **在线模式与长期目标卡（v1.0.5）** → 任务卡 → 双列（移动控制 / 游戏内聊天）→ 事件流卡 → 历史记录卡。
-- 在线模式与长期目标卡展示 `auto/always/off`、配置来源和持久化时间。目标可选「采集 → 存箱 → 回家」或「清理安全区 → 存箱」。页面轮询步骤状态、阻塞类别及原因。暂停后显示从第几步继续。开始、继续、暂停和取消均需二次确认。只读或旧版 mcbot 按能力降级。
-- 全局提示条（按优先级，只显示最相关的一条）：
+- 标签栏与深链见 §4.5。内容自上而下：全局状态提示条 → 在线模式卡 → 状态卡 → 管理员对话卡 → 事件流卡 → 历史记录卡。
+- 面板不提供任务开始、目标创建、自主启动、移动或游戏内发言按钮。这些动作由对话里的模型决定，或由游戏内口令发起。
+- 在线模式卡标题“在线模式”，说明“只决定 Bot 何时保持在线。任务、移动和目标由管理员对话决定。”展示 `auto/always/off`。切换前确认，标题“切换在线模式”。只读时禁用“常驻在线”。
+- 全局提示条可以同时出现：
   - 等待首次轮询：`notice-muted`“正在等待 mcbot 首次轮询结果；轮询完成前状态可能为空，控制操作暂不可用。”
   - 不可达：`notice-warning`“无法连接 mcbot：<中文错误>。当前显示上次成功轮询的缓存数据，控制操作不可用。”
   - 数据过期：`notice-warning`“mcbot 数据已过期（上次成功轮询 …），请检查 mcbot 进程；新数据恢复前请勿依赖当前状态。”
-  - **事件缺口**：`eventGap` 非空时 `notice-warning`“mcbot 事件缺口：启动 <bootId> 缺少序号 <fromSeq>–<toSeq>（发现于 <相对时间>）。下方仍显示当前 Bot 状态。”该提示与当前状态同时可见，不替代状态卡。
-  - **部分失败**：`notice-warning`“mcbot 状态可达，但事件流/告警游标异常：<中文错误>；事件流可能停止更新，控制仍可尝试。”——`reachable=true` 且 `error≠null` 时必须可见（v0.8.1），不得把“可达”当成“事件正常”。
-  - 控制未启用：`notice-muted`“mcbot 控制未启用：仅展示状态、事件与历史，任务/移动/聊天操作已禁用。”（由 `mcbotControlEnabled` 驱动，不展示 env 名/Token）
-- 集成禁用（`mcbotEnabled=false`）：只显示 `notice-muted` 说明“mcbot 集成未启用（服务端 MCBOT_ENABLED=false）。启用后需要配置 mcbot 地址与 Token 并重启应用；本页不展示任何 Token、内部地址或凭据。”+“重新检测”按钮；不渲染任何数据/控制区。
+  - **事件缺口**：`eventGap` 非空时 `notice-warning`“mcbot 事件缺口：启动 <bootId> 缺少序号 <fromSeq>–<toSeq>（发现于 <相对时间>）。下方仍显示当前 Bot 状态。”
+  - **部分失败**：`notice-warning`“mcbot 状态可达，但事件流/告警游标异常：<中文错误>；事件流可能停止更新，控制仍可尝试。”`reachable=true` 且 `error≠null` 时必须可见。
+  - 控制未启用：`notice-muted`“mcbot 控制未启用（服务端未配置 MCBOT_CONTROL_TOKEN）：对话和急停已禁用。”不展示 Token。
+- 集成禁用（`mcbotEnabled=false`）：只显示 `notice-muted` 说明“mcbot 集成未启用（服务端 MCBOT_ENABLED=false）。启用后需要配置 mcbot 地址与 Token 并重启应用；本页不展示任何 Token、内部地址或凭据。”+“重新检测”按钮；不渲染任何数据/控制区，也不渲染急停或管理员对话。
 
 ### 状态卡
 
@@ -512,40 +512,18 @@ mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbo
 - 脚注：上次轮询相对时间（`lastPollAt`）；“契约版本 < 1”时提示契约版本过低；`contractVersion` 非 number（缺失/`undefined`）时显示“—”，不显示 `vundefined`。
 - 寻路 Fact：有 `navigation` 时显示状态/来源/最近兜底；`lastFallbackReason` 非空时在其下显示“兜底原因：”加该短文本。旧版无 `navigation` 时不显示这一格。
 
-### 自主模式卡（v1.0.2）
+### 自主会话事实
 
-- 位置：状态卡之后、任务卡之前；`snapshot.autonomy` 缺失（旧版 mcbot）时显示 `notice-muted`“mcbot 版本不支持自主模式”，不显示控制。
-- 标题“AI 自主模式”，描述“仅主人显式启动一次；模型只能调用受控任务/移动工具，预算与急停由 mcbot 强制。”
-- 状态：`enabled=false` 显示“未启用”；`active=false` 显示最近状态；运行中显示 6 态徽章（启动中/运行中/停止中/已完成/失败；未知上游值原样显示）。
-- 事实行（缺失显示“—”）：目标、已运行/剩余时间、工具调用 `x/y`、最近动作、最近决策时间、原因、错误。
-- 控制：目标输入（可选，trim ≤200；纯空白视为未提供）+“启动自主模式”（primary，二次确认）；运行中显示“停止自主模式”（danger，二次确认）。
-- 禁用条件与 hint：控制未启用/不可达/上游 `autonomy.enabled=false`/正在停止时禁用；启动中/运行中重复启动禁用；旧版无 autonomy 段时所有控制隐藏。
-- 事件流 `autonomy` 类型徽章使用 info 色调；正文只展示 action/state/原因摘要，不展示模型 prompt/自由文本全文。
-### 任务卡
+- 状态卡在有 `autonomy` 时增加只读事实“自主会话”，显示状态中文。没有启动或停止按钮。事件流里的 `autonomy` 类型仍可筛选，正文只展示 action/state/原因摘要，不展示模型 prompt。
 
-- 标题“任务”，描述“任务由 mcbot 自动执行；开始、停止与恢复都需要二次确认。”；右上角状态徽章：进行中/待恢复/空闲。
-- 待恢复任务 `notice-warning`：任务名、已运行时长、恢复截止时间（相对时间）+“恢复”“放弃”按钮（均需确认）。
-- 任务功能关闭时 `notice-muted`“mcbot 任务功能未启用（TASK_ENABLED=false）。”；任务最近错误显示 warning 文本。
-- 事实行：当前任务、任务状态（中文徽章）、已运行、失败次数、排队任务数。
-- “任务进度”：按任务类型展示非零计数（钓鱼/种田/砍树/挖矿/天然林/睡觉/巡逻，含击杀怪物），无数据显示“当前任务没有进度数据。”。
-- “任务队列”：有序列表（序号/任务名/发起相对时间），空队列显示“队列为空。”。
-- 控制行：任务下拉（11 种中文名，含守卫/护送/探索/清理安全区）；“开始任务”（primary，进行中时可入队，最多 3 个；有待恢复任务、任务功能关闭、控制未启用时禁用并给出 hint）、“停止任务”（danger，中断当前任务并清空队列）、“恢复任务”（仅有待恢复时显示）。
-- 停止确认文案区分“停止任务”与“放弃待恢复任务”，均说明会清空队列、不可撤销；开始确认说明任务由 mcbot 自动执行。
+### 管理员对话
 
-### 移动控制
-
-- 卡片标题“移动控制”，描述“手动让 mcbot 移动；移动可随时停下，不改变任务状态。”
-- 目标玩家下拉（来自 mcbot 在线列表、排除 mcbot 自身；无玩家时“暂无在线玩家”并禁用过来/跟随）；按钮“回家/过来/跟随/停下”，加载态按动作区分；结果以 Toast 反馈并刷新状态。
-- 禁用条件与 hint：控制未启用/不可达、任务进行中（需先停止任务）、mcbot 未连接 Minecraft、无其他在线玩家；说明“回家/停下不需要目标玩家”。
-
-### 游戏内聊天
-
-- 卡片标题“游戏内聊天”，描述“以 mcbot 的身份向游戏内发送聊天；只聊天，绝不执行命令。”
-- `textarea`（`rows=3`、`maxLength=720`、`aria-label`）；字数计数“n/720 · 发送前需要二次确认”；发送按钮在空内容、控制未启用（含只读模式）时禁用。
-- 前端校验：空内容、**任意位置包含 ASCII `/`**（提示“聊天内容不能包含 /（不支持命令，含切分后的命令行）”）、C0 控制字符/DEL、超过 720 字符；错误用 `role="alert"` 展示。
-- **`/say` 是写操作，v0.8.1 起必须启用控制 Token**：只读部署时输入与发送均禁用，服务端返回 `503 mcbot_control_disabled`；不得再出现“只读模式仍可聊天”的引导。
-- 发送确认 Modal 展示消息预览与字符数；成功 Toast + 清空输入。
-- 脚注：“内容不能包含 /；本页不会把聊天当作命令执行，也不展示任何 Token 或内部地址。”
+- 卡片标题“管理员对话”，描述“用一句话说明要做什么。模型按这句话决定是否使用现有任务和规划工具。”
+- 记录区 `role=log`、`aria-label`“管理员对话记录”。空态“还没有对话。任务、移动和游戏内聊天都从这里发起。”用户行前缀“你”，助手行前缀“Bot”。
+- `textarea` `rows=3`、`maxLength=2000`、`aria-label`“管理员对话”。允许 ASCII `/`。本地拒绝 C0，提示“内容不能包含控制字符”。空内容提示“请输入要说的话”。
+- 发送调用 `POST /api/mcbot/chat`，成功后清空输入并重新读取对话。进行中时输入和发送禁用。`controlReady` 时，回合 `pending` 每 1 秒轮询 `GET /api/mcbot/chat`，否则每 5 秒；页面隐藏时暂停。
+- 急停按钮“急停”。确认标题“急停”，正文“确定停止当前任务、自主会话和管理员对话？”，说明“空闲时也算成功。已经发生的世界动作不会回滚。”确认按钮“急停”，取消“取消”。成功 Toast“已急停”；部分失败 Toast“急停未全部完成：”加失败腿名。急停不调用模型。
+- 脚注“立即停止任务、自主会话和这次对话，不经过模型。”不展示 Token、上游地址或 prompt。
 
 ### 事件流
 
@@ -565,9 +543,9 @@ mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbo
 
 ### 确认、降级与隐私
 
-- 二次确认：开始任务、停止/放弃任务、恢复任务、发送游戏内聊天均使用统一 `ConfirmDialog`（危险操作默认焦点“取消”，加载中禁止重复提交）。
-- 降级矩阵：禁用 → 仅说明，`eventGap` 为 null；首次加载失败 → 卡片错误 + 重试；等待首次轮询 → 提示且控制禁用；不可达 → 缓存数据 + 警告 + 控制禁用；stale → 警告，时间用 `lastSuccessAt`，null 时为“尚无成功轮询”（不用失败轮询的 `lastPollAt`）；**事件缺口 → 可见缺口区间，状态卡仍显示**；**可达但事件/游标失败 → 可见部分失败警告，控制仍可用但提示告警可能停更**；控制未启用 → 只读（聊天也禁用）。
-- 隐私与安全：不展示 mcbot URL/Token/内部路径/记忆正文；事件与聊天纯文本渲染；历史只显示白名单字段；所有控制按钮在 `mcbotControlEnabled=false` 时禁用；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符。
+- 二次确认：切换在线模式和急停使用统一 `ConfirmDialog`（危险操作默认焦点“取消”，加载中禁止重复提交）。发送管理员对话不再二次确认。
+- 降级矩阵：禁用 → 仅说明，`eventGap` 为 null；首次加载失败 → 卡片错误 + 重试；等待首次轮询 → 提示且控制禁用；不可达 → 缓存数据 + 警告 + 控制禁用；stale → 警告，时间用 `lastSuccessAt`，null 时为“尚无成功轮询”（不用失败轮询的 `lastPollAt`）；**事件缺口 → 可见缺口区间，状态卡仍显示**；**可达但事件/游标失败 → 可见部分失败警告，对话在控制可用时仍可尝试**；控制未启用 → 对话和急停禁用。
+- 隐私与安全：不展示 mcbot URL/Token/内部路径/记忆正文/模型 prompt；事件与对话纯文本渲染；历史只显示白名单字段；对话和急停在控制未就绪时禁用。管理员对话允许 `/`。mcbot 本机游戏发言仍拒绝任意 ASCII `/` 与 C0。
 - 历史错误码/错误提示使用中文映射（含 `mcbot_cursor_failed`/`mcbot_not_found`/`mcbot_history_disabled`），未知码原样显示；查表使用 own-property，不命中原型链。
 - 响应式/可访问性：390 px 下状态栅格与双列卡片纵向堆叠、不横向滚动；标签键盘可操作；图标按钮有 `aria-label`；表单 label 关联；错误 `role="alert"`；不引入第三方组件库，样式集中在 `web/src/styles/v08.css`。
 - **生产验收状态（v0.8.0，2026-10-27）**：生产部署与只读/API 验收完成；`/minecraft` 生产 UI 视觉确认已完成（Edge 157 headless 经本地 SSH 隧道打开 `/minecraft?tab=lofii`，临时验收会话已清理；状态卡/任务/移动/聊天/事件流/历史/告警均正常渲染，756×900 viewport；用户仍可在自己的浏览器复核，非阻塞）。**v0.8.0 已发布**：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release（publishedAt `2026-10-27T12:02:45Z`）。
