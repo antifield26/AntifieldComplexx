@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台：统一登录与单一入口，整合云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、mcbot Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、DeepSeek Harness AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v1.2.3 已在工作区实现，尚未部署。生产仍是 v1.2.2（2026-11-13 已部署并验收）。schema **v21**，mcbot 契约 v2。Minecraft Bot 面板以管理员对话决定行动，并保留在线模式与急停。远程 DSH 插件页可查看、安装和卸载。Web、QQ 与 mcbot Agent 使用 DeepSeek Harness。OpenCode **v2.2.5** 已从 Pi 退役，离线档供历史回滚。验收与发布门禁见 [ACCEPTANCE](docs/app/ACCEPTANCE.md)。
+> 状态：v1.2.3 已于 2026-11-14 部署。schema **v21**，mcbot 契约 v2。Minecraft Bot 面板以管理员对话决定行动，并保留在线模式与急停。远程 DSH 插件页可查看、安装和卸载。Web、QQ 与 mcbot Agent 使用 DeepSeek Harness。OpenCode **v2.2.5** 已从 Pi 退役，离线档供历史回滚。验收与发布门禁见 [ACCEPTANCE](docs/app/ACCEPTANCE.md)。
 > 客户端与 schema 21 绑定。退回 v1.1.1 的迁移前快照是 `db-predeploy-20261111T104848131Z.sqlite`。当前应用／世界演练是 `20261113T081625Z`（schema 21），云端应用链恢复为 `20261113T135356Z`。退回 v1.1.1 必须恢复该快照、旧 release、Access 策略与公网界面。
 > v1.2.1 本地门禁：2026-11-12 全量检查为服务端／脚本 670（669 pass、1 skip）、前端 343、mcbot 183。Access smoke 37/0/0/2。
 > 命名：2026-10-27 起项目更名为 **AntifieldComplexx**（原 AntifieldCloud）；GitHub 仓库为 [antifield26/AntifieldComplexx](https://github.com/antifield26/AntifieldComplexx)，旧仓库地址由 GitHub 自动重定向。生产运行时标识符（服务用户、systemd 单元、数据路径、Windows 计划任务）保持不变，详见 [AGENTS.md](AGENTS.md) §0.1。
@@ -156,8 +156,8 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC，本版 v1.2.2，2026-11-13 已部署并验收，证据见 ACCEPTANCE）：OpenCode 2.2.5 已退役，安装与回滚见 [DSH-MIGRATION](docs/app/DSH-MIGRATION.md)。应用部署 `.\scripts\deploy.ps1 -PiHost <直连 IP>`。部署之后的冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.2.2 -ExpectedSchemaVersion 21 -ExpectedMcbotVersion 1.2.2 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.1 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`（最低兼容 mcbot v0.6.0；配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 mcbot 时用 `-SkipMcbot`）。生产 `/healthz` 回答 1.2.2 / schema 21。
-Pi 上同步/校验 mcbot Token（root，本版 mcbot v1.2.2，最低 v0.6.0）：`sudo bash scripts/sync-mcbot-tokens.sh`、`sudo bash scripts/sync-mcbot-tokens.sh --check`（只比较不写盘，不回显 Token；失败会原子替换 env）。
+部署（PC，本版 v1.2.3，2026-11-14 已部署，证据见 ACCEPTANCE）：OpenCode 2.2.5 已退役，安装与回滚见 [DSH-MIGRATION](docs/app/DSH-MIGRATION.md)。应用部署 `.\scripts\deploy.ps1 -PiHost <直连 IP>`。部署之后的冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.2.3 -ExpectedSchemaVersion 21 -ExpectedMcbotVersion 1.2.3 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.1 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`（最低兼容 mcbot v0.6.0；配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 mcbot 时用 `-SkipMcbot`）。生产 `/healthz` 回答 1.2.3 / schema 21。
+Pi 上同步/校验 mcbot Token（root，本版 mcbot v1.2.3，最低 v0.6.0）：`sudo bash scripts/sync-mcbot-tokens.sh`、`sudo bash scripts/sync-mcbot-tokens.sh --check`（只比较不写盘，不回显 Token；失败会原子替换 env）。
 
 ## 目录
 

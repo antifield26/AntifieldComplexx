@@ -1,8 +1,15 @@
 # AntifieldComplexx 验收记录
 
-### v1.2.3 本地实现（尚未部署）
+### v1.2.3 生产部署（2026-11-14）
 
-当前版本 v1.2.3 只在工作区实现，尚未部署，也没有生产验收。schema 21、契约 v2、DSH 0.2.2-rc.1 不变。生产仍是 v1.2.2。管理员对话是 Minecraft Bot 面板的行动入口；在线模式和急停保留。远程 DSH 插件页可查看并安装、卸载。已登录管理员经 Access 与应用会话可以改 DSH Web 进程里的插件。真实安装留待部署后在 Pi 上检查。OpenCode v2.2.5 仅用于历史回滚。
+当前版本 v1.2.3 已部署到生产。schema 21、契约 v2、DSH 0.2.2-rc.1 不变。OpenCode v2.2.5 仅用于历史回滚。完整 Access smoke、真实插件安装与卸载、客户端安装包和 Windows 计划任务重装尚未做。
+
+- 运行提交 `ebeb44f`。Workbench `/opt/antifieldcloud/releases/20261114T042643Z`，包 SHA-256 `0e2729b88c78145f49b782117e89c3bc901a4a9edb8fbbe0a0d335aeaac26308`。部署前 schema 21 快照 `db-predeploy-20261114T042801428Z.sqlite`，SHA-256 `dc05d00bebc5f56628a07c61b884ece2a0e2882cbe079a6cab5231cf41f02ee0`。部署内 smoke **28／0／0／0**。`/healthz` 为 1.2.3、schema 21、`db=ok`。
+- mcbot `/opt/mcbot/releases/20261114T043045Z`，包 SHA-256 `72d06e967bfed7cff22b60bba23a0bf016990abd9cdff279ff3fcf89053bc3cf`。切换前状态为空闲。健康检查为 1.2.3、契约 v2、空闲、未连接。没有在真实世界触发 Bot 动作。
+- DSH `/opt/antifield-dsh/releases/20261114T043420Z`。活动策略与仓库一致：Web scope 不再禁用 `ui-plugin-manager`，Web policy 不再禁用 `plugin-package-inventory-deepseek`，`tool-plugin-manager` 仍禁用，Minecraft Agent 最小策略仍禁用清单插件与 shell／文件系统。Agent 提供 `/admin/start`。三路就绪，版本 0.2.2-rc.1，QQ 插件 0.5.5。
+- 只重启了 `antifieldcloud`、`mcbot`、`antifield-dsh-web` 与 `antifield-dsh-mcbot-agent`。Minecraft 启动时间仍是 2026-11-14 00:00:17 CST。QQ 启动时间仍是 2026-11-14 12:07:28 CST。
+- 同 schema 回滚恢复 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`，并把 DSH current 指回 `20261113T080907Z` 后只重启 Web 与 Minecraft Agent，保留现行数据库及 WAL。
+- 已登录管理员经 Access 与应用会话可以安装或移除 DSH Web 进程中的插件。这次没有实际安装或卸载插件，也没有重跑完整 Access smoke。Windows 计划任务仍是 1.2.2，installedAt `2026-11-13T14:16:50.7758244Z`。没有打 Tag，也没有合并到 main。
 
 ### v1.2.2 生产交付与恢复验收（2026-11-13）
 

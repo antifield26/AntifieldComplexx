@@ -1,10 +1,10 @@
 # 部署手册（Raspberry Pi 5 / Debian 13，v1.2.3）
 
-## v1.2.3 本地变更（尚未部署）
+## v1.2.3 生产部署（2026-11-14）
 
-工作区版本是 v1.2.3。生产 Workbench 与 mcbot 仍是 v1.2.2 的 `20261113T072133Z` 与 `20261113T072417Z`。本版不迁移 schema，契约仍是 v2。部署时只重启受影响的 Workbench、DSH Web 和 Minecraft Agent。回滚恢复上述 v1.2.2 release，并把 DSH Web 配置恢复到关闭插件页的那一版，保留现行数据库及 WAL。Minecraft 不因本版重启。
+生产 Workbench 为 `20261114T042643Z`，mcbot 为 `20261114T043045Z`，DSH 为 `20261114T043420Z`。运行提交 `ebeb44f`。本版不迁移 schema，契约仍是 v2。部署前快照 `db-predeploy-20261114T042801428Z.sqlite`（schema 21，sha256 `dc05d00bebc5f56628a07c61b884ece2a0e2882cbe079a6cab5231cf41f02ee0`）。部署内 smoke 28／0／0／0。只重启了 Workbench、mcbot、DSH Web 和 Minecraft Agent。Minecraft 启动时间仍是 2026-11-14 00:00:17 CST，QQ 启动时间仍是 2026-11-14 12:07:28 CST。回滚恢复 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`，并把 DSH current 指回 `20261113T080907Z` 后只重启 Web 与 Minecraft Agent，保留现行数据库及 WAL。Windows 计划任务仍是 1.2.2。
 
-DSH Web 重新启用插件页 `ui-plugin-manager` 与清单插件 `plugin-package-inventory-deepseek`。页面经 `/api/remote.mux` 与 `/api/plugin-manager/detail-file` 查看和安装、卸载。无连字符的 `/api/pluginManager/`、会话上传、设置写入和凭据写入仍由 Workbench 拒绝。模型侧 `tool-plugin-manager` 保持关闭。Minecraft Agent 的最小策略不启用 shell、文件系统或该清单插件。
+DSH Web 重新启用插件页 `ui-plugin-manager` 与清单插件 `plugin-package-inventory-deepseek`。页面经 `/api/remote.mux` 与 `/api/plugin-manager/detail-file` 查看和安装、卸载。无连字符的 `/api/pluginManager/`、会话上传、设置写入和凭据写入仍由 Workbench 拒绝。模型侧 `tool-plugin-manager` 保持关闭。Minecraft Agent 的最小策略不启用 shell、文件系统或该清单插件。这次没有实际安装或卸载插件。
 
 ## v1.2.2 维护权限与回滚（已验收）
 

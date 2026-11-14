@@ -1,12 +1,12 @@
 # AntifieldComplexx 实施计划与状态
 
-## v1.2.3（本地，尚未部署）
+## v1.2.3（2026-11-14 已部署）
 
 范围是 Minecraft Bot 控制层和远程插件页。管理员对话是面板上的唯一行动入口。模型决定是否调用现有 13 个 mcbot 工具，以及 DSH 已有的 goal 与 todo。不改执行器，不新增工具名，不挂 goal-round-driver，不向模型开放插件管理。游戏内口令保留。急停不经过模型，空闲算成功。对话不进数据库。
 
 应用退役任务开始、目标写、自主开始、移动和游戏发言，返回 409 且不调用上游。在线模式和只读状态保留。分页标签改为「Minecraft Bot」，路由和侧栏不变。
 
-DSH Web 重新启用 `ui-plugin-manager` 与 `plugin-package-inventory-deepseek`。Workbench 仍拒绝无连字符的 `/api/pluginManager/`、上传、设置写入和凭据写入。已登录管理员经 Access 与应用会话可以安装或移除 DSH Web 进程中的插件。真实安装留待部署后在 Pi 上检查。
+DSH Web 重新启用 `ui-plugin-manager` 与 `plugin-package-inventory-deepseek`。Workbench 仍拒绝无连字符的 `/api/pluginManager/`、上传、设置写入和凭据写入。已登录管理员经 Access 与应用会话可以安装或移除 DSH Web 进程中的插件。真实安装尚未在 Pi 上执行。
 
 不迁移 schema。同 schema 回滚恢复 v1.2.2 的 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`，以及关闭插件页的 DSH 配置，保留现行数据库及 WAL。只重启受影响的 Workbench、DSH Web 和 Minecraft Agent。
 
