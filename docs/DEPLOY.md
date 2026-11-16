@@ -6,9 +6,9 @@
 
 ## 当前运行与回滚
 
-运行中的 Workbench 是 `/opt/antifieldcloud/releases/20261114T082631Z`（v1.2.3，schema 21）。它在发布记录之外包含插件列表代理：放行 `/api/pluginManager/` 与 `/api/pluginInventory/`，仍拒绝上传、设置写入、凭据写入，以及原始路径中的 `%`。现行库仍是 schema 21 时，同 schema 回滚把 Workbench 指回 `/opt/antifieldcloud/releases/20261114T051811Z`，只重启 `antifieldcloud`，保留现行数据库及 WAL。v1.2.4 把仓库 schema 升到 22，尚未部署。迁移执行后不能再把现行库直接指回 v1.2.3；恢复该版本必须先换回迁移前的 schema 21 快照。
+运行中的 Workbench 是 `/opt/antifieldcloud/releases/20261116T135139Z`（v1.2.4，schema 22）。插件列表代理放行 `/api/pluginManager/` 与 `/api/pluginInventory/`，仍拒绝上传、设置写入、凭据写入，以及原始路径中的 `%`。现行库已是 schema 22。恢复 v1.2.3 必须先换回迁移前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261116T135240676Z.sqlite`，再把 Workbench 指回 `/opt/antifieldcloud/releases/20261114T082631Z`，只重启 `antifieldcloud`。不能只切换 release。
 
-mcbot 是 `/opt/mcbot/releases/20261114T043045Z`。DSH 是 `/opt/antifield-dsh/releases/20261114T051442Z`（0.2.2-rc.3，QQ 插件 0.5.5）。再退时，Workbench 使用 `20261114T042643Z`，DSH 使用 `20261114T043420Z`。v1.2.2 使用 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`、DSH `20261113T080907Z`。这些同 schema 回滚都保留现行数据库及 WAL。
+mcbot 是 `/opt/mcbot/releases/20261116T135658Z`。同契约回滚指回 `/opt/mcbot/releases/20261114T043045Z` 并只重启 mcbot。DSH 是 `/opt/antifield-dsh/releases/20261114T051442Z`（0.2.2-rc.3，QQ 插件 0.5.5）。该 release 的 Web 策略已换成指向 `/usr/local/bin/pnpm` 的版本，旧文件在 `/var/backups/antifieldcloud/web-policy.yml.20261114T051442Z`。再退时，Workbench 使用 `20261114T042643Z`，DSH 使用 `20261114T043420Z`。v1.2.2 使用 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`、DSH `20261113T080907Z`。这些更早的回滚在恢复对应数据库快照后保留当时的数据库及 WAL。
 
 跨 schema 退回 v1.1.1 必须恢复 schema 20 快照 `db-predeploy-20261111T104848131Z.sqlite`、Workbench `20261109T143755Z`、mcbot `20261110T022539Z`、当时的 Access 策略和公网界面。只恢复公网界面时把 `PUBLIC_APP_SHELL` 设为 true 并重启，不改 schema。
 
@@ -32,7 +32,7 @@ Windows 构建 NSIS。Android 的正式路径使用仓库脚本、SDK 36 和既�
 
 ## DeepSeek Harness
 
-CI 用 `deploy/dsh/package-lock.json` 独立安装。DSH 与 SDK 固定为 0.2.2-rc.3，QQ 插件固定为 0.5.5。`sudo bash deploy/dsh/stage.sh` 安装三个 systemd 单元、专用账号和 socket 目录，并把 npm 12.2.2 与 pnpm 10.34.9 装到 `/usr/local/bin`。`npm` 必须留在该前缀下，不能是指向主目录的符号链接：Web 服务启用 ProtectHome，而 `pnpm view` 会调用 `npm`。Web 策略把插件查询指向 `/usr/local/bin/pnpm`。模型侧插件管理工具保持关闭。已在运行的 Web 进程使用 PATH 中的这两个命令；二进制就位后不必为查询重启。下次启动才读到绝对路径。2026-11-16 生产主机已按此装好，Web 单元未重启，隔离查询能返回包名和版本。后续更新由管理员原子切换 `current`。
+CI 用 `deploy/dsh/package-lock.json` 独立安装。DSH 与 SDK 固定为 0.2.2-rc.3，QQ 插件固定为 0.5.5。`sudo bash deploy/dsh/stage.sh` 安装三个 systemd 单元、专用账号和 socket 目录，并把 npm 12.2.2 与 pnpm 10.34.9 装到 `/usr/local/bin`。`npm` 必须留在该前缀下，不能是指向主目录的符号链接：Web 服务启用 ProtectHome，而 `pnpm view` 会调用 `npm`。Web 策略把插件查询指向 `/usr/local/bin/pnpm`。模型侧插件管理工具保持关闭。已在运行的 Web 进程使用 PATH 中的这两个命令；二进制就位后不必为查询重启。2026-11-16 生产主机已把这两个命令装到 `/usr/local/bin`，并把仓库里的 Web 策略写入正在运行的 DSH release，随后只重启了 `antifield-dsh-web`。隔离查询能返回包名和版本。后续 DSH 程序更新仍由管理员原子切换 `current`。
 
 凭据放在 `/etc/antifieldcloud/dsh`，权限 0600，由 systemd `LoadCredential` 注入。Web、QQ 与 mcbot Agent 使用各自的模型和平台凭据。保持 Cloudflare Access。插件页不新增 Access bypass。
 
@@ -64,8 +64,8 @@ curl -fsS http://127.0.0.1:3010/healthz
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
-- 当前 schema **v22**（仓库，尚未部署）：删除 Workbench 旧 QQ 表，外部告警通道只保留 webhook。部署迁移之后，恢复 v1.2.3 必须使用迁移前的 schema 21 快照。
-- schema 21（2026-11-11 已部署，生产仍在此版本）：设备登记、会话绑定与请求签名。迁移前生产库是 schema 20，快照为 `db-predeploy-20261111T104848131Z.sqlite`。迁移后的演练按 schema 21。回到 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略与公网界面。schema 20 增加外部告警 Webhook 和 QQ 入队状态。
+- 当前 schema **v22**：删除 Workbench 旧 QQ 表，外部告警通道只保留 webhook。现行库已迁移。恢复 v1.2.3 必须使用迁移前快照 `db-predeploy-20261116T135240676Z.sqlite`。
+- schema 21（2026-11-11 已部署）：设备登记、会话绑定与请求签名。迁移前生产库是 schema 20，快照为 `db-predeploy-20261111T104848131Z.sqlite`。回到 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略与公网界面。schema 20 增加外部告警 Webhook 和 QQ 入队状态。
 - `PUBLIC_APP_SHELL` 默认 `true`，公网继续提供完整界面。设为 `false` 并重启后，应用公网主机只返回说明页「请使用客户端」和分享页；`127.0.0.1`、`localhost` 与 `::1` 仍提供完整界面。单独回滚该开关：改回 `true` 并重启，不改 schema。生产页面仍经 Access；`/api` 已在控制台放行到应用，见 §5.2。
 
 ## 1. 首次系统初始化（重装时执行）
@@ -182,7 +182,7 @@ npm run check
 
 ### 3.0 当前部署步骤
 
-1. 在 PC 上跑 `npm run check`、`npm run build`、`node scripts/check-version.mjs` 和 `node scripts/check-prod-deps.mjs`。期望应用与 mcbot 为 1.2.4，schema 为 22，契约为 2，DSH 为 0.2.2-rc.3，QQ 插件为 0.5.5。本版尚未部署。
+1. 在 PC 上跑 `npm run check`、`npm run build`、`node scripts/check-version.mjs` 和 `node scripts/check-prod-deps.mjs`。期望应用与 mcbot 为 1.2.4，schema 为 22，契约为 2，DSH 为 0.2.2-rc.3，QQ 插件为 0.5.5。2026-11-16 的生产切换见文首。
 2. 确认没有未确认的归档。开启加密后按两倍明文预算留磁盘。部署前核对并保留 schema 21 的一致性快照。迁移执行后，恢复 v1.2.3 必须使用这份快照。
 3. 部署 Workbench：`.\scripts\deploy.ps1 -PiHost <直连 IP>`。脚本校验 tar、安装生产依赖、做迁移前快照并切换 current。这次迁移跨 schema，失败时进入人工维护，先保全现行库。
 4. Bot 空闲后再部署 mcbot。Minecraft 保持运行。核对 `/healthz` 与契约 v2。
@@ -327,7 +327,7 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 
 生产当前配置（API 创建；含 AI 主机）：
 - 主应用 `AntifieldComplexx`：`app.<domain>`，One-time PIN IdP，策略 `Owner allow`（指定邮箱）+ `Smoke service token`（`non_identity`，指定 service token）。
-- 生产 v1.2.3 仍有 4 个独立 **Bypass** 应用（各自 `Bypass Everyone`）：`/healthz`、`/api/chatbot/webhook`、`/s`、`/api/public/shares`。本版部署后 Workbench 不再提供 QQ Webhook，该 bypass 可以保留。
+- 生产仍有 4 个独立 **Bypass** 应用（各自 `Bypass Everyone`）：`/healthz`、`/api/chatbot/webhook`、`/s`、`/api/public/shares`。Workbench 不再提供 QQ Webhook，该 bypass 可以保留。
 - service token 名称 `smoke-readonly`，有效期 1 年；Client ID/Secret 只保存在 PC `.local/cf-access.env`（gitignored），不写仓库；`CF_ACCESS_APP_AI_ID` 也已写入该文件。
 - 2026-11-14 之前已实测：未登录 `/` 302 到 `*.cloudflareaccess.com`；上述 bypass 路径返回应用状态码而非 302；`ai` 未认证 302、service token 401。
 - 2026-11-11 客户端验收：用户在控制台放行应用 `/api`。未登录 `/api/version` 与 `/api/metrics` 返回应用 401 JSON。`POST /api/auth/password` 对 Tauri Origin 的预检为 204，错误口令为 400 JSON 并回显该 Origin。未登录 `/` 与 `/files` 仍 302 到 Access。Windows 与 Android 客户端登录验收通过。service token 不进入安装包。退回 v1.1.1 时连同当时的 Access 策略一起恢复。
@@ -737,7 +737,7 @@ sudo systemctl daemon-reload && sudo systemctl restart cloudflared
 
 跨 schema 由管理员在维护窗口完成。优先前向修复以保留新写入。必须回退时先停止 Workbench，并把当前数据库和同名 WAL/SHM 保存到权限为 0700 的独立目录。用 `node scripts/deploy-state.mjs snapshot <迁移前快照> <部署记录中的 SHA-256>` 验证哈希、SQLite 完整性和旧 schema 后，才恢复已验证的快照。旧 WAL/SHM 需与原库一起保全，恢复的快照以独立文件启动。最后恢复配置和指针并复检。
 - 每次部署在切换前生成 `/var/lib/antifieldcloud/backups/db-predeploy-*.sqlite`（0600，**保留最新 2 个**：`MAX_PREDEPLOY_SNAPSHOTS=2`，供自动回滚；明文快照属威胁模型明确豁免项，见 `docs/SECURITY.md` §4）。
-- schema 只向上，仓库当前是 v22。v22 删除旧 QQ 表，外部告警通道只保留 webhook。v21 增加设备登记、nonce 与会话 `device_id`。迁移单向，没有 down。旧代码遇到更高 schema 会拒绝启动。现行库仍是 schema 21 时，同 schema 回滚保留现行数据库及 WAL。schema 22 迁移之后，恢复 v1.2.3 必须先换回迁移前的 schema 21 快照。
+- schema 只向上，仓库与现行库都是 v22。v22 删除旧 QQ 表，外部告警通道只保留 webhook。v21 增加设备登记、nonce 与会话 `device_id`。迁移单向，没有 down。旧代码遇到更高 schema 会拒绝启动。恢复 v1.2.3 必须先换回迁移前快照 `db-predeploy-20261116T135240676Z.sqlite`，不能只切换 release。
 - 关闭 mcbot 对接：设 `MCBOT_ENABLED=false` 并重启应用。只读模式清空控制 Token 后重启，游戏发言返回 503。更早的 release 指针见 CHANGELOG。
 - fail2ban drop-in 回滚：删除 `/etc/systemd/system/nftables.service.d/10-fail2ban-restore.conf` → `sudo systemctl daemon-reload`；
   不影响应用数据；回滚后 nftables restart 需手工 `systemctl restart fail2ban`。

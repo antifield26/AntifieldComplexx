@@ -4,7 +4,7 @@
 
 ## 2026-11-16
 
-- **v1.2.4** · workbench、mcbot、client、ops：删除 Workbench 旧 QQ 管线与表（schema 22）、OpenCode HTML 兼容层、契约 v1、固定 409 写入口、目标草案和 PWA。Minecraft Bot 页收成状态、会话、事件记录，会话展示内存中的 DSH 步骤。尚未部署。恢复 v1.2.3 必须使用 schema 21 快照。
+- **v1.2.4** · workbench、mcbot、client、ops：删除 Workbench 旧 QQ 管线与表（schema 22）、OpenCode HTML 兼容层、契约 v1、固定 409 写入口、目标草案和 PWA。Minecraft Bot 页收成状态、会话、事件记录，会话展示内存中的 DSH 步骤。2026-11-16 已部署。恢复 v1.2.3 必须使用 schema 21 快照。
 
 ## 2026-11-14
 

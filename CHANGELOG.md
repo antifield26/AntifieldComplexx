@@ -6,7 +6,7 @@
 
 模块：workbench、mcbot、client、ops
 
-本版尚未部署。生产仍是 v1.2.3 / schema 21。
+本版已于 2026-11-16 部署。生产是 v1.2.4 / schema 22。Workbench `/opt/antifieldcloud/releases/20261116T135139Z`，mcbot `/opt/mcbot/releases/20261116T135658Z`。恢复 v1.2.3 必须使用迁移前快照 `db-predeploy-20261116T135240676Z.sqlite`。验收见 `docs/ACCEPTANCE.md`。
 
 - schema 22 删除 Workbench 旧 QQ 表与 QQ 告警入队，外部告警只保留 webhook。迁移之后恢复 v1.2.3 必须使用 schema 21 快照。
 - 删除 Workbench 旧 QQ 收发、发布、OpenCode Chat、机器人管理页，以及 `CHATBOT_*`、`DSH_QQ_MANAGED`、`OPENCODE_HTML_MODE`。生产 QQ 仍由 DSH 管理。
@@ -15,7 +15,7 @@
 - 删除固定返回 409 的 Bot 写入口、契约 v1 读取、历史卡片代理和自然语言目标草案。在线模式、急停、停任务和只读状态保留。
 - 去掉 PWA 安装与离线壳。站点图标和 Tauri 图标保留。
 - 插件页只读取 DSH Web 进程。QQ 插件与 Minecraft Bot 工具分别在各自的 Agent 中，页面不列出这两项，也不把它们装进 Web 进程。
-- 插件安装查询先执行 `pnpm view`，再调用 `npm`。两者缺失或 `npm` 指向主目录时，安装框显示「无法获取插件信息」。`install-pnpm.sh` 把 npm 12.2.2 与 pnpm 10.34.9 装到 `/usr/local/bin`。Web 策略指定该 pnpm。2026-11-16 生产主机已装好这两个命令，Web 单元未重启，隔离查询能返回包名和版本。
+- 插件安装查询先执行 `pnpm view`，再调用 `npm`。两者缺失或 `npm` 指向主目录时，安装框显示「无法获取插件信息」。`install-pnpm.sh` 把 npm 12.2.2 与 pnpm 10.34.9 装到 `/usr/local/bin`。Web 策略指定该 pnpm。2026-11-16 生产主机已装好这两个命令，仓库策略已写入正在运行的 DSH release，并只重启了 `antifield-dsh-web`。隔离查询能返回包名和版本。真实安装与卸载尚未做。公网冒烟的 Access 探测改为 `GET /api/version`，期望 401；`/sw.js` 与 `/offline.html` 期望 404。
 
 ## [v1.2.3] - 2026-11-14
 

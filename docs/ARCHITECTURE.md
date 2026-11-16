@@ -11,7 +11,7 @@ Internet
  └─ mc.<domain> ──── SakuraFRP（现状保留，不走应用）
 
 Raspberry Pi 5
- ├─ antifieldcloud.service（127.0.0.1:3000；仓库 schema v22，生产仍是 schema 21）
+ ├─ antifieldcloud.service（127.0.0.1:3000；schema v22）
  │   ├─ app 主机：React 与 /api
  │   ├─ ai 主机：会话校验后反代 DSH Web（127.0.0.1:3080），HTML 原样转发
  │   └─ mcbot 对接：127.0.0.1:3010，契约只接受 v2。只轮询只读接口，并代理对话、在线模式和急停
@@ -44,7 +44,7 @@ SQLite 在 `/var/lib/antifieldcloud/db.sqlite`。文件在 `files/<id 前两位>
 ### 2.2 mcbot 请求与轮询路径（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
 - 组件：`server/src/mcbot/client.ts`（HTTP 客户端）、`server/src/mcbot/service.ts`（轮询/缓存/游标/告警映射/控制代理）、`server/src/http/routes/mcbot.ts`（HTTP 路由）；`app.ts` 构造 `McbotService` 并挂到 `AppContext.mcbot`，`main.ts` 在 listen 后启动轮询、退出时 `stop()`（`onClose` 同样 stop，幂等）。
-- 上游：独立附属服务 mcbot，本版 **v1.2.4**（生产进程仍是 `/opt/mcbot/releases/20261114T043045Z` 的 v1.2.3），仅 `127.0.0.1:3010`，契约只接受 `contractVersion=2`；v0.6.1 起 `splitOutgoing` 逐行把行首 `/` 中和为全角 `／`（防御纵深）；应用是纯 HTTP 客户端，不消费 SSE、不访问其 RCON/DSH 凭据/记忆数据。同一 `bootId` 的事件序号空洞写入 meta `mcbot.event_gap`，快照字段为 `eventGap`。生产自主工具由 DSH 插件经私有 Unix socket 调用。管理员对话另挂 DSH goal 与 todo，不增加 mcbot 工具名。
+- 上游：独立附属服务 mcbot，本版 **v1.2.4**（生产进程 `/opt/mcbot/releases/20261116T135658Z`），仅 `127.0.0.1:3010`，契约只接受 `contractVersion=2`；v0.6.1 起 `splitOutgoing` 逐行把行首 `/` 中和为全角 `／`（防御纵深）；应用是纯 HTTP 客户端，不消费 SSE、不访问其 RCON/DSH 凭据/记忆数据。同一 `bootId` 的事件序号空洞写入 meta `mcbot.event_gap`，快照字段为 `eventGap`。生产自主工具由 DSH 插件经私有 Unix socket 调用。管理员对话另挂 DSH goal 与 todo，不增加 mcbot 工具名。
 - 轮询：`setInterval(MCBOT_POLL_MS 默认 5000)` + 启动立即一轮；单飞 `inFlight` Promise，上一轮未结束复用同一 Promise（不并发/不堆积）；每轮 `Promise.allSettled([GET /status, GET /events/recent?limit=200])`（覆盖一次突发）。成功后更新 `statusSnapshot/version/contractVersion/lastPollAt/lastSuccessAt/failedPolls`；失败只更新 `reachable/stale/error` 并保留旧快照。`stale`：未连通且（从未成功时连续 3 轮失败，或距上次成功 > 3×轮询间隔）。`reachable=true` 但 `/events/recent` 或游标失败时 `error≠null`，前端必须展示可见警告。
 - 客户端安全/边界：读 Token 用于 `/status`、`/events/recent`、`/admin/chat`；控制 Token 用于在线模式、停止、急停和管理员对话；`MCBOT_URL` 启动校验 loopback + http(s) 且仅根地址（拒绝 userinfo/路径/查询/片段）；`redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（`readCappedBody` 边读边计数，Content-Length 超限直接拒绝）；错误统一 `mcbotError(code/statusCode/upstreamCode)`，message 大小写不敏感地移除上游 URL 与两枚 Token；上游 4xx 稳定码归一化为 `mcbot_<code>`，401/403 → `mcbot_auth_failed`，5xx 的 `task_disabled`/`control_disabled` 保留稳定码，其它 5xx/非 JSON → `mcbot_upstream_error`，网络/超时/重定向 → `mcbot_unavailable`。契约不是 v2 时读取拒绝。
 - 事件缓存：合并 `/events/recent` 与现有缓存，按 `id` 去重、按时间 newest-first、最多 `MCBOT_EVENT_CACHE_LIMIT=100` 条且序列化总字节 ≤`MCBOT_EVENT_CACHE_MAX_BYTES=512 KiB`；只存内存，不落库/不写日志（聊天事件正文也只存在这里）。
@@ -188,7 +188,7 @@ SQLite（WAL）核心表（schema v22）：
 - nftables 默认拒绝入站；22 仅直连/校园网段（新建连接限速 20/min），25565 仅同网段，25575 仅 loopback，DHCP 仅 eth0/wlan0；
   出站不限制。改动前确认当前 SSH 来源在允许网段内。SSH 为仅公钥（`00-` drop-in），旧回滚备份归档在 `/var/backups/antifieldcloud/`。
 - QQ 由 DSH 管理。Workbench 不读取 `CHATBOT_*`。Cloudflare Access 仍需对 `/healthz` 与公开分享 bypass；`smoke.ps1` 可选用 Access service token。
-- mcbot 本版 v1.2.4（最低 v0.6.0，契约只接受 v2），仅监听 `127.0.0.1:3010`。生产进程仍是 `/opt/mcbot/releases/20261114T043045Z` 的 v1.2.3，本版尚未部署。应用 env 由 `bootstrap-env.sh` 纳管 `MCBOT_*`，Token 由 root 执行 `scripts/sync-mcbot-tokens.sh` 同步。启用顺序为 mcbot 就绪 → 同步 Token → `MCBOT_ENABLED=true` → 重启应用。关闭对接设 `MCBOT_ENABLED=false` 并重启。部署本版后 schema 为 22，恢复 v1.2.3 必须先换回迁移前的 schema 21 快照。冒烟期望见 `docs/DEPLOY.md`。
+- mcbot 本版 v1.2.4（最低 v0.6.0，契约只接受 v2），仅监听 `127.0.0.1:3010`。生产进程是 `/opt/mcbot/releases/20261116T135658Z`。应用 env 由 `bootstrap-env.sh` 纳管 `MCBOT_*`，Token 由 root 执行 `scripts/sync-mcbot-tokens.sh` 同步。启用顺序为 mcbot 就绪 → 同步 Token → `MCBOT_ENABLED=true` → 重启应用。关闭对接设 `MCBOT_ENABLED=false` 并重启。现行 schema 为 22，恢复 v1.2.3 必须先换回迁移前快照 `db-predeploy-20261116T135240676Z.sqlite`。冒烟期望见 `docs/DEPLOY.md`。
 - fail2ban：dbfile 持久化封禁；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后以 `systemd-run --collect --on-active=3` 异步重启 fail2ban，从数据库恢复 set；手工 `systemctl reload nftables` 不触发 `ExecStartPost`，仍需 `systemctl restart fail2ban`。
 - 世界备份/健康探针 timer 由 root 运行；世界备份 unit 只读整机、仅 `/var/lib/antifieldcloud` 可写、flock 串行、4h 超时。
 

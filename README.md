@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台：统一登录与单一入口，整合云盘、知识库、多文件分享、Minecraft 状态与白名单、mcbot（只读状态、在线模式、急停、管理员对话、事件流与告警）、DeepSeek Harness AI 工作区、QQ 官方机器人、主机指标与告警，以及应用归档、世界备份和恢复演练。生产已开启整包加密和 Google Drive 异地副本；模板默认关闭。
 
-> 状态：v1.2.4。schema **v22**，mcbot 契约 v2。生产仍是 2026-11-14 部署的 v1.2.3（schema 21）。本版尚未部署；迁移后再退回 v1.2.3 必须使用 schema 21 快照。Web、QQ 与 mcbot Agent 使用 DeepSeek Harness。OpenCode **v2.2.5** 已从 Pi 退役，离线档供回滚。当前状态见 [ACCEPTANCE](docs/ACCEPTANCE.md)。
+> 状态：v1.2.4。schema **v22**，mcbot 契约 v2。生产 Workbench 是 2026-11-16 部署的 `/opt/antifieldcloud/releases/20261116T135139Z`。恢复 v1.2.3 必须使用 schema 21 快照。Web、QQ 与 mcbot Agent 使用 DeepSeek Harness。OpenCode **v2.2.5** 已从 Pi 退役，离线档供回滚。当前状态见 [ACCEPTANCE](docs/ACCEPTANCE.md)。
 > 退回 v1.1.1 的迁移前快照和现行回滚指针见 [DEPLOY](docs/DEPLOY.md)。
 > 部署与运维见 [DEPLOY](docs/DEPLOY.md)，备份与恢复见 [BACKUP](docs/BACKUP.md)，契约见 [API](docs/API.md)，版本边界见 [ROADMAP](docs/ROADMAP.md)。
 > 未完成事项见 [BACKLOG](docs/BACKLOG.md)。整包 age 与 Google Drive 异地副本已开启。世界归档和密钥包仍由 PC 拉取。
@@ -64,7 +64,7 @@
 
 ### mcbot Minecraft Bot（v0.8.0 引入；v1.0.5 常驻/生存/目标；v1.0.6 统一寻路；v1.0.7 兜底重决策；v1.0.8 契约 v2；v1.0.9 事件缺口；v1.0.10 活动范围；v1.0.11 本地反射；v1.0.12 世界记忆；v1.0.13 记忆坐标；v1.1.0 DSH 工具）
 
-- 独立附属服务 `mcbot`（本版 **v1.2.3**；最低 v0.6.0，契约 v2，仅监听 `127.0.0.1:3010`）；应用通过服务端轮询 `GET /status` 与 `GET /events/recent?limit=200`（默认 5s）获取状态与最近事件，**浏览器不直连 mcbot**。生产进程为 v1.2.3（`/opt/mcbot/releases/20261114T043045Z`），同 schema 回滚 v1.2.2 使用 `/opt/mcbot/releases/20261113T072417Z`。回滚到 v1.2.1 使用 `/opt/mcbot/releases/20261112T115627Z`，保留现行数据库及 WAL。回滚到 v1.2.0 使用 `/opt/mcbot/releases/20261111T105117Z`。回滚到 v1.1.1 使用 `/opt/mcbot/releases/20261110T022539Z`。回滚到 v1.1.0 使用 `/opt/mcbot/releases/20261108T080545Z`。发言仅契约 v2，使用控制 Token；契约 v1 仍可读状态并执行既有控制。同一启动周期内的事件序号空洞出现在 `eventGap`，面板仍显示当前状态。
+- 独立附属服务 `mcbot`（本版 **v1.2.4**；最低 v0.6.0，契约只接受 v2，仅监听 `127.0.0.1:3010`）；应用通过服务端轮询 `GET /status` 与 `GET /events/recent?limit=200`（默认 5s）获取状态与最近事件，**浏览器不直连 mcbot**。生产进程为 v1.2.4（`/opt/mcbot/releases/20261116T135658Z`）。同契约回滚指回 `/opt/mcbot/releases/20261114T043045Z`。更早的 mcbot release：v1.2.2 为 `/opt/mcbot/releases/20261113T072417Z`，v1.2.1 为 `/opt/mcbot/releases/20261112T115627Z`，v1.2.0 为 `/opt/mcbot/releases/20261111T105117Z`，v1.1.1 为 `/opt/mcbot/releases/20261110T022539Z`，v1.1.0 为 `/opt/mcbot/releases/20261108T080545Z`。发言使用控制 Token。同一启动周期内的事件序号空洞出现在 `eventGap`，面板仍显示当前状态。
 - v1.0.5：在线模式 `auto/always/off` 持久化、空闲自动进食/换装、自动补货默认开启、安全区清怪任务、多步目标（task/deposit/home）与失败分类；目标重启后保持 paused，不自动执行。
 - v1.0.6：确定性 A*（只读现有地形，支持 1 格抬高/2 格下落/台阶半砖）、受控路点执行、AI 路点建议（OpenCode 可用时默认启用）、安全传送兜底与 `navigation` 状态；不挖掘/不放置/不跑酷。
 - v1.0.7：寻路兜底（安全传送或停止）进入自主会话既有重决策，30 秒去重、每会话最多 6 次；提示只含固定中文事实，不带坐标。面板过期文案用 `lastSuccessAt`，没有成功轮询时显示“尚无成功轮询”。
@@ -143,7 +143,7 @@
 npm ci
 npm run dev              # 服务端（Node 原生 TS，默认 127.0.0.1:3000）
 npm run dev:web          # Vite 开发服务器 :5173
-npm run build            # 构建前端到 apps/workbench/web/dist（含 PWA 静态资源）
+npm run build            # 构建前端到 apps/workbench/web/dist
 npm run test             # node --test：服务端 + 运维脚本
 npm run test:coverage    # 服务端/脚本测试 + 覆盖率门禁
 npm run test:web         # 前端 Vitest
@@ -154,8 +154,8 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC，本版 v1.2.3，2026-11-14 已部署，证据见 ACCEPTANCE）：OpenCode 2.2.5 已退役，安装与回滚见 [DEPLOY](docs/DEPLOY.md)。应用部署 `.\scripts\deploy.ps1 -PiHost <直连 IP>`。部署之后的冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.2.3 -ExpectedSchemaVersion 21 -ExpectedMcbotVersion 1.2.3 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.3 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`（最低兼容 mcbot v0.6.0；配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 mcbot 时用 `-SkipMcbot`）。生产 `/healthz` 回答 1.2.3 / schema 21。
-Pi 上同步/校验 mcbot Token（root，本版 mcbot v1.2.3，最低 v0.6.0）：`sudo bash scripts/sync-mcbot-tokens.sh`、`sudo bash scripts/sync-mcbot-tokens.sh --check`（只比较不写盘，不回显 Token；失败会原子替换 env）。
+部署（PC，本版 v1.2.4，2026-11-16 已部署，证据见 ACCEPTANCE）：OpenCode 2.2.5 已退役，安装与回滚见 [DEPLOY](docs/DEPLOY.md)。应用部署 `.\scripts\deploy.ps1 -PiHost <直连 IP>`。部署之后的冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.2.4 -ExpectedSchemaVersion 22 -ExpectedMcbotVersion 1.2.4 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.3 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`（最低兼容 mcbot v0.6.0；配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 mcbot 时用 `-SkipMcbot`）。生产 `/healthz` 回答 1.2.4 / schema 22。
+Pi 上同步/校验 mcbot Token（root，本版 mcbot v1.2.4，最低 v0.6.0）：`sudo bash scripts/sync-mcbot-tokens.sh`、`sudo bash scripts/sync-mcbot-tokens.sh --check`（只比较不写盘，不回显 Token；失败会原子替换 env）。
 
 ## 目录
 
@@ -211,11 +211,11 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，需 QQ 后台开启接收所有消息并由群主授权获取全部消息。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量按清单覆盖，同毫秒写入会进入下一次增量；时钟回拨仍记 `clockSkew`，归档时间不早于最近一份本机归档。Web 导入归档按 90 天保留；告警持续 firing 每 24h 重通知；`.backup.lock` 有 30s 心跳续租。
-- **发布状态**：annotated Tag `v1.2.3` 指向 2026-11-14 的发布记录。发布页附带 Windows x64 安装包、Android arm64 压缩包和 SHA256SUMS。运行中的 Workbench 在该发布之后包含插件列表代理。沿革见 [CHANGELOG](CHANGELOG.md)。
+- **发布状态**：annotated Tag `v1.2.3` 仍指向 2026-11-14 的发布记录。v1.2.4 已部署，尚未打 Tag。沿革见 [CHANGELOG](CHANGELOG.md)。
 - **mcbot 告警只有事件语义**：上游 `alert` 映射为 `status='event'` 历史事件，不参与 firing/resolved 状态机，也没有恢复通知/冷却；上游告警状态需在 mcbot 侧查看（本应用只记录与转发）。
 - **mcbot 聊天/事件不持久化**：事件流与聊天只存在进程内存（最多 100 条且序列化 ≤512 KiB），应用或 mcbot 重启即丢失；历史接口只返回 mcbot 自己的 samples/alerts，不保存聊天正文。
 - **mcbot 轮询延迟与单实例**：状态/事件最多滞后一个轮询周期（默认 5s），控制结果最终一致；单进程内存缓存，不支持多实例/多副本；mcbot 不可达/数据过期/部分轮询失败时展示缓存与可见警告并降级。
-- **mcbot 依赖独立服务**：需部署 mcbot **v1.2.3**（最低 v0.6.0，仅 loopback、契约 v2）并同步 Token；应用不管理 mcbot 生命周期、不读取其 RCON 或 DSH 凭据；旧版无 `/events/recent` 时事件流显示升级提示。生产进程是 v1.2.3（`/opt/mcbot/releases/20261114T043045Z`）。
+- **mcbot 依赖独立服务**：需部署 mcbot **v1.2.4**（最低 v0.6.0，仅 loopback、契约 v2）并同步 Token；应用不管理 mcbot 生命周期、不读取其 RCON 或 DSH 凭据；旧版无 `/events/recent` 时事件流显示升级提示。生产进程是 v1.2.4（`/opt/mcbot/releases/20261116T135658Z`）。
 - **mcbot 控制面**：应用上的任务开始、目标写、自主开始、移动和游戏发言返回 409，由管理员对话决定是否调用现有工具。在线模式、只读状态和急停仍走应用。急停不经过模型。控制 Token 仍需按需轮换。
 
 详细设计与验收标准见 `docs/ARCHITECTURE.md`、`docs/SECURITY.md`、`docs/DEPLOY.md`、`docs/BACKUP.md`、`docs/CHATBOT.md`、`docs/API.md`、`docs/UI-SPEC.md`。

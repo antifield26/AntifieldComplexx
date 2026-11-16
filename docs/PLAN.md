@@ -12,11 +12,11 @@ Workbench 不再提供旧 QQ 收发、发布、OpenCode Chat 或机器人管理�
 
 DSH Web 启用插件页 `ui-plugin-manager` 与清单插件 `plugin-package-inventory-deepseek`。页面经 `/api/pluginManager/`、`/api/pluginInventory/`、`/api/remote.mux` 与带连字符的 `/api/plugin-manager/detail-file` 查看、安装和卸载。上传、设置写入和凭据写入仍拒绝，描述接口除外。原始路径里的 `%` 拒绝。模型侧 `tool-plugin-manager` 保持关闭。Minecraft Agent 的最小策略不因插件页放宽。
 
-schema 22。契约保持 v2。DSH 0.2.2-rc.3，QQ 插件 0.5.5。本版尚未部署。
+schema 22。契约保持 v2。DSH 0.2.2-rc.3，QQ 插件 0.5.5。本版已于 2026-11-16 部署。
 
 ## 回滚
 
-运行中的 Workbench 仍是 `20261114T082631Z`（v1.2.3，schema 21）。现行库仍是 schema 21 时，同 schema 回滚先把 Workbench 指回 `20261114T051811Z` 并只重启应用，保留现行数据库及 WAL。schema 22 迁移之后，恢复 v1.2.3 必须使用迁移前的 schema 21 快照。再退把 Workbench 指回 `20261114T042643Z`、DSH 指回 `20261114T043420Z`。v1.2.2 使用 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`、DSH `20261113T080907Z`。跨 schema 退回 v1.1.1 必须恢复 schema 20 快照 `db-predeploy-20261111T104848131Z.sqlite`、当时的 release、Access 策略与公网界面。步骤见 [DEPLOY](DEPLOY.md)。
+运行中的 Workbench 是 `20261116T135139Z`（v1.2.4，schema 22），mcbot 是 `20261116T135658Z`。恢复 v1.2.3 必须先换回迁移前快照 `db-predeploy-20261116T135240676Z.sqlite`，再把 Workbench 指回 `20261114T082631Z` 并只重启应用。不能只切换 release。再退把 Workbench 指回 `20261114T042643Z`、DSH 指回 `20261114T043420Z`。v1.2.2 使用 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`、DSH `20261113T080907Z`。跨 schema 退回 v1.1.1 必须恢复 schema 20 快照 `db-predeploy-20261111T104848131Z.sqlite`、当时的 release、Access 策略与公网界面。步骤见 [DEPLOY](DEPLOY.md)。
 
 ## 未完成
 

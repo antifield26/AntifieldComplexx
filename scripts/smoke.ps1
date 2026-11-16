@@ -240,7 +240,7 @@ if (-not $SkipPublic) {
   }
   if ($accessArgs.Count -gt 0) {
     Check "Cloudflare Access service token" {
-      $code = Get-HttpStatus "$AppUrl/api/chatbots/status" -ExtraArgs $accessArgs
+      $code = Get-HttpStatus "$AppUrl/api/version" -ExtraArgs $accessArgs
       if ($code -ne "401") { throw "HTTP $code（预期 401：带 Access token 后到达应用但未登录）" }
       "HTTP 401（Access 通过、应用鉴权生效）"
     }
