@@ -11,7 +11,7 @@
 - 物理孤儿只回收超期、数据库无行、且符合 id 形状的文件。
 - 5 格垂直墙在禁止挖掘和放置时没有规范路径，只能绕行、停止或按既有规则回基地。
 - `inspect_chest` 的实机路径没有单独触发，由离线测试覆盖。
-- 远程 DSH 插件页只显示内置插件，没有看到 QQ 插件和 Minecraft Bot 插件，见 [BACKLOG](BACKLOG.md)。生产安装与卸载尚未做。
+- 远程 DSH 插件页只读取 Web 进程，不列出 QQ Agent 与 Minecraft Bot Agent 的插件。插件查询依赖 `/usr/local` 下的 npm 与 pnpm；指向主目录的 npm 会被 ProtectHome 拒绝。见 [BACKLOG](BACKLOG.md)。生产安装与卸载尚未做。
 - 预部署数据库快照保持明文 0600，供同 schema 回滚使用。私钥丢失后加密归档无法解密。
 
 ## 声明矩阵

@@ -32,7 +32,7 @@ Windows 构建 NSIS。Android 的正式路径使用仓库脚本、SDK 36 和既�
 
 ## DeepSeek Harness
 
-CI 用 `deploy/dsh/package-lock.json` 独立安装。DSH 与 SDK 固定为 0.2.2-rc.3，QQ 插件固定为 0.5.5。`sudo bash deploy/dsh/stage.sh` 安装三个 systemd 单元、专用账号和 socket 目录。后续更新由管理员原子切换 `current`。
+CI 用 `deploy/dsh/package-lock.json` 独立安装。DSH 与 SDK 固定为 0.2.2-rc.3，QQ 插件固定为 0.5.5。`sudo bash deploy/dsh/stage.sh` 安装三个 systemd 单元、专用账号和 socket 目录，并把 npm 12.2.2 与 pnpm 10.34.9 装到 `/usr/local/bin`。`npm` 必须留在该前缀下，不能是指向主目录的符号链接：Web 服务启用 ProtectHome，而 `pnpm view` 会调用 `npm`。Web 策略把插件查询指向 `/usr/local/bin/pnpm`。模型侧插件管理工具保持关闭。已在运行的 Web 进程使用 PATH 中的这两个命令；二进制就位后不必为查询重启。下次启动才读到绝对路径。2026-11-16 生产主机已按此装好，Web 单元未重启，隔离查询能返回包名和版本。后续更新由管理员原子切换 `current`。
 
 凭据放在 `/etc/antifieldcloud/dsh`，权限 0600，由 systemd `LoadCredential` 注入。Web、QQ 与 mcbot Agent 使用各自的模型和平台凭据。保持 Cloudflare Access。插件页不新增 Access bypass。
 

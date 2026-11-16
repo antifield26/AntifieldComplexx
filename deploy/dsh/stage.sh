@@ -8,13 +8,14 @@ base=/opt/antifield-dsh
   echo "请在 ARM64 Pi 上以 root 执行，不接受路径参数" >&2
   exit 2
 }
+bash "$source_dir/install-pnpm.sh"
 release="$base/releases/$(date -u +%Y%m%dT%H%M%SZ)"
 install -d -m 0755 "$base/releases"
 mkdir -m 0755 -- "$release"
 trap 'echo "DSH 候选安装失败，检查受限 release 与安装日志" >&2' ERR
 assets=(
   package.json package-lock.json patch-qq.mjs qq-policy.mjs qq-memory.mjs qq-memory-cli.mjs
-  qq-agent.mjs qq-watchdog.mjs web-broker.mjs runtime-status.mjs web-policy.yml web-account.yml web-account.conf web-scope.yml web-workspace.mjs
+  qq-agent.mjs qq-watchdog.mjs web-broker.mjs runtime-status.mjs web-policy.yml web-account.yml web-account.conf web-scope.yml web-workspace.mjs install-pnpm.sh
   mcbot-agent.mjs mcbot-minimal.yml dsh-mcbot.mjs
 )
 for asset in "${assets[@]}"; do

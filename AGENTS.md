@@ -154,7 +154,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 ## 8. 已知环境事实（不要重复踩坑）
 
-- **当前生产**：仍是 v1.2.3 / schema 21。Workbench `/opt/antifieldcloud/releases/20261114T082631Z`，mcbot `/opt/mcbot/releases/20261114T043045Z`，DSH `/opt/antifield-dsh/releases/20261114T051442Z`（0.2.2-rc.3，QQ 插件 0.5.5）。插件列表代理已在该 Workbench 中放行 `/api/pluginManager/` 与 `/api/pluginInventory/`。2026-11-16 远程打开 DSH 时只看到内置插件，没有看到 QQ 插件和 Minecraft Bot 插件。现行库仍是 schema 21 时，同 schema 回滚先把 Workbench 指回 `20261114T051811Z` 并只重启应用。schema 22 迁移后恢复 v1.2.3 必须使用 schema 21 快照。再退与跨 schema 快照见 `docs/DEPLOY.md`。沿革见 CHANGELOG。
+- **当前生产**：仍是 v1.2.3 / schema 21。Workbench `/opt/antifieldcloud/releases/20261114T082631Z`，mcbot `/opt/mcbot/releases/20261114T043045Z`，DSH `/opt/antifield-dsh/releases/20261114T051442Z`（0.2.2-rc.3，QQ 插件 0.5.5）。插件列表代理已在该 Workbench 中放行 `/api/pluginManager/` 与 `/api/pluginInventory/`。插件页只读取 DSH Web 进程。QQ 插件在 `antifield-dsh-qq`，Minecraft Bot 工具在 `antifield-dsh-mcbot-agent`，页面不列出这两项。插件查询使用 `/usr/local/bin/pnpm` 与同目录的 npm。npm 指向主目录时，ProtectHome 会拒绝执行，安装框显示无法获取插件信息。现行库仍是 schema 21 时，同 schema 回滚先把 Workbench 指回 `20261114T051811Z` 并只重启应用。schema 22 迁移后恢复 v1.2.3 必须使用 schema 21 快照。再退与跨 schema 快照见 `docs/DEPLOY.md`。沿革见 CHANGELOG。
 - mcbot 部署默认保留最新 3 个 release，并保护 current 与 previous。
 - Pi：`antifield@192.0.2.10` 直连（TEST-NET 占位；实际值见 `.local/DEPLOYMENT.md`）；WiFi 示例 `198.51.100.10` 与 PC 不通（AP 隔离）；直连 SSH 偶发超时，脚本需重试。
 - 校园网有 Portal 认证（占位 `https://portal.<domain>`；实际端点见 `.local`）；树莓派重启后认证可能失效，表现为 Cloudflare 7844 出站阻断、tunnel 1033/公网 530；需从 Pi 出口重新完成认证，再 `systemctl reset-failed cloudflared && systemctl restart cloudflared`。

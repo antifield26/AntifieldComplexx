@@ -275,11 +275,13 @@ if (-not $SkipPublic) {
       }
       "说明页，PWA 404"
     } else {
-      foreach ($path in @("/manifest.webmanifest", "/sw.js", "/offline.html")) {
+      $manifest = Get-HttpStatus "$AppUrl/manifest.webmanifest" -ExtraArgs $accessArgs
+      if ($manifest -ne "200") { throw "/manifest.webmanifest HTTP $manifest" }
+      foreach ($path in @("/sw.js", "/offline.html")) {
         $code = Get-HttpStatus "$AppUrl$path" -ExtraArgs $accessArgs
-        if ($code -ne "200") { throw "$path HTTP $code" }
+        if ($code -ne "404") { throw "$path HTTP $code（离线壳已删除，应为 404）" }
       }
-      "管理界面，manifest+sw+offline 200"
+      "管理界面，manifest 200，离线壳 404"
     }
   }
   Check "公开分享页 404/410" {
