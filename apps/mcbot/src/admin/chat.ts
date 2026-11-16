@@ -1,10 +1,12 @@
 /**
- * 管理员对话。文本只留在本进程内存，不落库。
- * 世界动作仍走自主工具校验；急停直接关闭会话，不经过模型。
+ * 管理员对话。文本和时间线只留在本进程内存，不落库。
+ * 提交时记下用户发言；回合结束后追加助手、工具、goal 与 todo。
+ * 与本次发言相同的 user 步骤不重复。最多 80 步。急停清空时间线，不经过模型。
  */
 import { randomUUID } from 'node:crypto'
 import type { AutonomyService } from '../autonomy/service.ts'
 import { OpenCodeSessionError } from '../ai/session.ts'
+import { boundSteps, type SessionStep } from '../ai/steps.ts'
 
 const MAX_MESSAGES = 40
 const MAX_CHARS = 2000
@@ -27,6 +29,7 @@ export type AdminChatCode = 'invalid_request' | 'chat_busy' | 'admin_unavailable
 
 export class AdminChat {
   private readonly messages: AdminChatMessage[] = []
+  private readonly steps: SessionStep[] = []
   private turn: AdminChatTurn | null = null
   private idle: NodeJS.Timeout | null = null
   private readonly autonomy: AutonomyService
@@ -35,8 +38,12 @@ export class AdminChat {
     this.autonomy = autonomy
   }
 
-  snapshot (): { messages: AdminChatMessage[], turn: AdminChatTurn | null } {
-    return { messages: [...this.messages], turn: this.turn ? { ...this.turn } : null }
+  snapshot (): { messages: AdminChatMessage[], turn: AdminChatTurn | null, steps: SessionStep[] } {
+    return {
+      messages: [...this.messages],
+      turn: this.turn ? { ...this.turn } : null,
+      steps: this.steps.map(step => ({ ...step }))
+    }
   }
 
   submit (raw: string): { ok: true, turnId: string } | { ok: false, code: AdminChatCode } {
@@ -48,6 +55,7 @@ export class AdminChat {
     const turnId = randomUUID()
     this.turn = { id: turnId, status: 'pending', error: null }
     this.push({ id: randomUUID(), role: 'user', text: message, at: new Date().toISOString() })
+    this.pushStep({ kind: 'user', text: message })
     this.clearIdle()
     void this.runTurn(turnId, message)
     return { ok: true, turnId }
@@ -57,6 +65,7 @@ export class AdminChat {
     this.clearIdle()
     this.turn = null
     this.messages.length = 0
+    this.steps.length = 0
     await this.autonomy.stopAdmin('emergency')
   }
 
@@ -67,9 +76,13 @@ export class AdminChat {
       this.push({
         id: randomUUID(),
         role: 'assistant',
-        text: reply || '没有返回内容。',
+        text: reply.text || '没有返回内容。',
         at: new Date().toISOString()
       })
+      for (const step of reply.steps) {
+        if (step.kind === 'user' && step.text === message) continue
+        this.pushStep(step)
+      }
       this.turn = { id: turnId, status: 'ok', error: null }
       this.armIdle()
     } catch (error) {
@@ -85,12 +98,13 @@ export class AdminChat {
   }
 
   /** 会话已被空闲清理时关闭本地记录并重开一次。 */
-  private async deliver (message: string, allowReopen: boolean): Promise<string> {
+  private async deliver (message: string, allowReopen: boolean): Promise<{ text: string, steps: SessionStep[] }> {
     const opened = await this.autonomy.ensureAdmin()
     if (!opened.ok) throw new Error(opened.code === 'admin_busy' ? 'admin_busy' : 'admin_unavailable')
     try {
       await this.autonomy.promptAdmin(message)
-      return (await this.autonomy.waitAdmin()).trim()
+      const result = await this.autonomy.waitAdmin()
+      return { text: result.text.trim(), steps: result.steps }
     } catch (error) {
       if (allowReopen && error instanceof OpenCodeSessionError && error.status === 404) {
         await this.autonomy.stopAdmin('reopen')
@@ -108,6 +122,13 @@ export class AdminChat {
   private push (message: AdminChatMessage): void {
     this.messages.push(message)
     if (this.messages.length > MAX_MESSAGES) this.messages.splice(0, this.messages.length - MAX_MESSAGES)
+  }
+
+  private pushStep (step: SessionStep): void {
+    this.steps.push(step)
+    const kept = boundSteps(this.steps)
+    this.steps.length = 0
+    this.steps.push(...kept)
   }
 
   private armIdle (): void {

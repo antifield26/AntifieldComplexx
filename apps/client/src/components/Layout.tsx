@@ -3,7 +3,6 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Activity,
-  Bot as Chatbot,
   BookOpen,
   FolderOpen,
   Gamepad2,
@@ -23,8 +22,6 @@ import { useAppMeta } from '../meta/MetaContext'
 import { useToast } from './Toast'
 import { Avatar } from './Avatar'
 import { Logo } from './Logo'
-import { PwaInstallPrompt } from './PwaInstallPrompt'
-import { PwaUpdatePrompt } from './PwaUpdatePrompt'
 import { cx } from '../lib/classnames'
 import { registerBackHandler } from '../lib/navigation-guard'
 
@@ -43,7 +40,6 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/shares', label: '分享', icon: Share2, requiresShares: true },
   { to: '/trash', label: '回收站', icon: Trash },
   { to: '/minecraft', label: 'Minecraft', icon: Gamepad2 },
-  { to: '/chatbots', label: '机器人', icon: Chatbot },
   { to: '/activity', label: '活动', icon: Activity },
 ]
 
@@ -54,7 +50,6 @@ const PAGE_TITLES: Record<string, string> = {
   '/shares': '分享管理',
   '/trash': '回收站',
   '/minecraft': 'Minecraft',
-  '/chatbots': '机器人',
   '/activity': '活动',
   '/settings': '设置',
   '/more': '更多',
@@ -148,7 +143,7 @@ const BOTTOM_TABS: NavItem[] = [
   { to: '/more', label: '更多', icon: Menu },
 ]
 
-const MORE_PATHS = ['/more', '/knowledge', '/shares', '/trash', '/chatbots', '/activity', '/settings']
+const MORE_PATHS = ['/more', '/knowledge', '/shares', '/trash', '/activity', '/settings']
 
 /** 应用外壳：桌面固定侧栏；移动端顶部栏 + 抽屉导航（含焦点陷阱）+ 底部 Tab。 */
 export function Layout() {
@@ -314,8 +309,6 @@ export function Layout() {
         </div>
       ) : null}
 
-      <PwaInstallPrompt />
-      <PwaUpdatePrompt />
     </div>
   )
 }

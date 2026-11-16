@@ -10,10 +10,10 @@ import { fileURLToPath } from 'node:url'
 import { DeepSeekHarness } from '@deepseek-ai/dsh-sdk-client'
 import { validateBinding } from './dsh-mcbot.mjs'
 import { publishRuntimeStatus } from './runtime-status.mjs'
+import { completedTurn } from './session-steps.mjs'
 
 const runtime = fileURLToPath(new URL('.', import.meta.url))
 const MAX_BYTES = 256 * 1024
-const TEXT_LIMIT = 16_000
 const MAX_TEXT_RUNS = 2
 const ADMIN_PROMPT_LIMIT = 4_000
 const ADMIN_IDLE_MS = 30 * 60 * 1000
@@ -107,6 +107,7 @@ function makeRun(config, tools, options = {}) {
       result: null,
       pending: false,
       idle: null,
+      steps: [],
       async start() {
         await harness.start()
         if (tools && !existsSync(env.DSH_MCBOT_BINDING + '.ready')) {
@@ -126,8 +127,7 @@ function makeRun(config, tools, options = {}) {
 
 async function prompt(run, text) {
   const result = await run.harness.session(run.id).run([{ type: 'text', text }])
-  if (['error', 'cancelled', 'aborted'].includes(result.finishReason)) throw new Error('模型回合未完成')
-  return result.finalResponse.slice(0, TEXT_LIMIT)
+  return completedTurn(result)
 }
 
 function send(res, status, data) {
@@ -167,7 +167,7 @@ export function startAgent(config) {
         textRuns.add(run)
         res.once('close', () => { if (!res.writableEnded) void run.close().catch(fatalCleanup) })
         try {
-          send(res, 200, { text: await prompt(run, data.prompt) })
+          send(res, 200, { text: (await prompt(run, data.prompt)).text })
         } finally {
           await run.close().catch(fatalCleanup)
           textRuns.delete(run)
@@ -218,7 +218,11 @@ export function startAgent(config) {
           if (planning) pauseAdminIdle(run)
           run.pending = true
           run.result = prompt(run, data.text).then(
-            (text) => ({ text }),
+            (value) => {
+              if (!planning) return { text: value.text }
+              run.steps = value.steps
+              return value
+            },
             () => ({ error: 'turn_failed' }),
           ).finally(() => {
             run.pending = false
@@ -226,7 +230,9 @@ export function startAgent(config) {
           })
           send(res, 200, { ok: true })
         } else if (req.url === waitPath) {
-          const result = run.result ? await run.result : { text: '' }
+          const result = run.result
+            ? await run.result
+            : (planning ? { text: '', steps: run.steps } : { text: '' })
           send(res, result.error ? 502 : 200, result)
         } else if (req.url === stopPath) {
           await (planning ? closeAdmin(run) : closeAutonomy(run))

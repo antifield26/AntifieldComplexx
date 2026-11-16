@@ -16,6 +16,7 @@ import type { Config } from '../config.ts'
 import { buildEnvironment, CHEST_BLOCK_NAMES, formatEnvironment } from '../ai/environment.ts'
 import type { AutonomySessionClient, DshAdminSession, DshAutonomySession, SessionPermission } from '../ai/session.ts'
 import { OpenCodeSessionError } from '../ai/session.ts'
+import type { SessionStep } from '../ai/steps.ts'
 import type { EventBus } from '../events/bus.ts'
 import type { Logger } from '../logger.ts'
 import type { ChatSender } from '../minecraft/chat.ts'
@@ -107,7 +108,7 @@ export interface AutonomyServiceDeps {
   chatSender: ChatSender
   movement: MovementManager
   tasks: TaskController
-  opencode: AutonomySessionClient | (DshAutonomySession & DshAdminSession)
+  opencode: AutonomySessionClient | (DshAutonomySession & DshAdminSession) | null
   getBot: () => Bot | null
   goalBusy?: () => boolean
   worldMemory?: WorldMemoryStore
@@ -257,6 +258,10 @@ export class AutonomyService {
       return { ok: false, code: 'autonomy_busy', autonomy: this.snapshot() }
     }
     if (!this.deps.config.aiEnabled) return { ok: false, code: 'autonomy_disabled', autonomy: this.snapshot() }
+    const session = this.deps.opencode
+    if (!session || (!('openRun' in session) && !('registerMcp' in session))) {
+      return { ok: false, code: 'autonomy_unavailable', autonomy: this.snapshot() }
+    }
     const bot = this.deps.getBot()
     if (!bot?.entity) return { ok: false, code: 'autonomy_unavailable', autonomy: this.snapshot() }
     const task = this.deps.state.task
@@ -325,7 +330,7 @@ export class AutonomyService {
       return { ok: true, autonomy: this.snapshot() }
     } catch (error) {
       if (run.stopRequested) return this.stoppedDuringStart(run)
-      const code = 'openRun' in this.deps.opencode && error instanceof OpenCodeSessionError && error.status === 409
+      const code = this.deps.opencode && 'openRun' in this.deps.opencode && error instanceof OpenCodeSessionError && error.status === 409
         ? 'autonomy_busy'
         : this.errorCode(error)
       await this.finalize(run, 'failed', code)
@@ -334,9 +339,10 @@ export class AutonomyService {
   }
 
   private async removeMcp (): Promise<void> {
-    if (!this.mcpCleanupRequired || 'openRun' in this.deps.opencode) return
+    const client = this.deps.opencode
+    if (!client || !this.mcpCleanupRequired || 'openRun' in client) return
     try {
-      await this.deps.opencode.removeMcp(AUTONOMY_MCP_SERVER)
+      await client.removeMcp(AUTONOMY_MCP_SERVER)
     } catch (error) {
       if (!(error instanceof OpenCodeSessionError && error.status === 404)) throw error
     }
@@ -345,9 +351,10 @@ export class AutonomyService {
 
   private retryDshCleanup (): void {
     const id = this.dshCleanupId
-    if (!id || this.dshCleanupPending) return
+    const client = this.deps.opencode
+    if (!id || this.dshCleanupPending || !client) return
     this.dshCleanupPending = true
-    void this.deps.opencode.deleteSession(id).then(() => {
+    void client.deleteSession(id).then(() => {
       this.dshCleanupId = null
     }).catch(() => {
       this.logger.warn('DSH 自主子进程清理重试失败')
@@ -357,8 +364,10 @@ export class AutonomyService {
   }
 
   private async prepareRun (run: ActiveRun): Promise<void> {
-    if ('openRun' in this.deps.opencode) {
-      run.sessionId = await this.deps.opencode.openRun(run.token, buildToolDefinitions())
+    const client = this.deps.opencode
+    if (!client) throw new OpenCodeSessionError('invalid', 'DSH 会话不可用')
+    if ('openRun' in client) {
+      run.sessionId = await client.openRun(run.token, buildToolDefinitions())
       if (!run.stopRequested) this.markRunning(run)
       return
     }
@@ -366,7 +375,7 @@ export class AutonomyService {
     if (run.stopRequested) return
     // 注册请求超时也可能已被上游接收，清理标记先于请求设置。
     this.mcpCleanupRequired = true
-    await this.deps.opencode.registerMcp(AUTONOMY_MCP_SERVER, this.mcpUrl(), run.token)
+    await client.registerMcp(AUTONOMY_MCP_SERVER, this.mcpUrl(), run.token)
     if (run.stopRequested) return
     await this.sleep(this.deps.config.autonomyMcpWarmupMs)
     if (run.stopRequested) return
@@ -374,7 +383,7 @@ export class AutonomyService {
       { action: '*', resource: '*', effect: 'deny' },
       { action: AUTONOMY_PERMISSION_PREFIX, resource: '*', effect: 'allow' }
     ]
-    run.sessionId = await this.deps.opencode.createSession(`mcbot-autonomy-${run.runId.slice(0, 8)}`, permissions)
+    run.sessionId = await client.createSession(`mcbot-autonomy-${run.runId.slice(0, 8)}`, permissions)
     if (run.stopRequested) return
     this.markRunning(run)
   }
@@ -421,7 +430,7 @@ export class AutonomyService {
       return { ok: true, runId: this.admin.runId }
     }
     const client = this.deps.opencode
-    if (!('openAdmin' in client) || !this.deps.config.aiEnabled) return { ok: false, code: 'admin_unavailable' }
+    if (!client || !('openAdmin' in client) || !this.deps.config.aiEnabled) return { ok: false, code: 'admin_unavailable' }
     const run = this.blankRun('管理员对话')
     this.admin = run
     try {
@@ -442,16 +451,16 @@ export class AutonomyService {
   async promptAdmin (text: string): Promise<void> {
     const run = this.admin
     const client = this.deps.opencode
-    if (!run?.active || !run.sessionId || !('promptAdmin' in client)) {
+    if (!client || !run?.active || !run.sessionId || !('promptAdmin' in client)) {
       throw new OpenCodeSessionError('invalid', 'admin session is not active')
     }
     await client.promptAdmin(run.sessionId, text)
   }
 
-  async waitAdmin (): Promise<string> {
+  async waitAdmin (): Promise<{ text: string, steps: SessionStep[] }> {
     const run = this.admin
     const client = this.deps.opencode
-    if (!run?.active || !run.sessionId || !('waitAdmin' in client)) {
+    if (!client || !run?.active || !run.sessionId || !('waitAdmin' in client)) {
       throw new OpenCodeSessionError('invalid', 'admin session is not active')
     }
     return client.waitAdmin(run.sessionId)
@@ -463,7 +472,7 @@ export class AutonomyService {
     run.stopRequested = true
     run.abort.abort()
     const client = this.deps.opencode
-    if (run.sessionId && 'stopAdmin' in client) {
+    if (client && run.sessionId && 'stopAdmin' in client) {
       try {
         await client.stopAdmin(run.sessionId)
       } catch {
@@ -645,11 +654,15 @@ export class AutonomyService {
   }
 
   private async promptRun (run: ActiveRun, signal: AbortSignal, cause?: string): Promise<void> {
-    await this.decisionRequest(run, signal, () => this.deps.opencode.prompt(run.sessionId ?? '', this.buildPrompt(run, cause), signal))
+    const client = this.deps.opencode
+    if (!client) throw new OpenCodeSessionError('invalid', 'DSH 会话不可用')
+    await this.decisionRequest(run, signal, () => client.prompt(run.sessionId ?? '', this.buildPrompt(run, cause), signal))
   }
 
   private async waitForAssistant (run: ActiveRun, signal: AbortSignal): Promise<void> {
-    await this.decisionRequest(run, signal, () => this.deps.opencode.wait(run.sessionId ?? '', signal))
+    const client = this.deps.opencode
+    if (!client) throw new OpenCodeSessionError('invalid', 'DSH 会话不可用')
+    await this.decisionRequest(run, signal, () => client.wait(run.sessionId ?? '', signal))
     if (run.finishRequested) await this.sleep(200)
   }
 
@@ -740,16 +753,17 @@ export class AutonomyService {
         const bot = this.deps.getBot()
         if (bot?.currentWindow) await bot.closeWindow(bot.currentWindow).catch(() => undefined)
       } catch { /* best effort */ }
+      const client = this.deps.opencode
       try {
-        if (run.sessionId) {
-          await this.deps.opencode.interrupt(run.sessionId).catch(() => undefined)
+        if (client && run.sessionId) {
+          await client.interrupt(run.sessionId).catch(() => undefined)
         }
       } catch { /* best effort */ }
       await taskCleanup
       try {
-        if (run.sessionId) {
-          await this.deps.opencode.deleteSession(run.sessionId).catch(() => {
-            if ('openRun' in this.deps.opencode) {
+        if (client && run.sessionId) {
+          await client.deleteSession(run.sessionId).catch(() => {
+            if ('openRun' in client) {
               this.dshCleanupId = run.sessionId
               errorCode = 'autonomy_agent_cleanup_failed'
               outcome = 'failed'
@@ -827,7 +841,8 @@ export class AutonomyService {
 
   /** DSH 私有工具入口。自主会话与管理员会话各自校验 Bearer。 */
   async handleDshTool (bearer: string, body: unknown): Promise<McpHttpResult> {
-    if (!('openRun' in this.deps.opencode) && !('openAdmin' in this.deps.opencode)) {
+    const client = this.deps.opencode
+    if (!client || (!('openRun' in client) && !('openAdmin' in client))) {
       return { status: 404, body: { error: 'autonomy_disabled' } }
     }
     const run = this.matchingRun(bearer)

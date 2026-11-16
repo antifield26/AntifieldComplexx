@@ -432,16 +432,15 @@ sudo sh -c 'P=$(grep -E "^OPENCODE_PASSWORD=" /etc/opencode/opencode.env | head 
     $out = ""
     for ($attempt = 0; $attempt -lt 6; $attempt++) {
       $out = (Invoke-PiSsh $command.Trim() -TimeoutSeconds 30 | Out-String).Trim()
-      if ($out -match 'botmsg' -and $out -match 'searxng' -and $out -match 'connected|ready') { break }
+      if ($out -match 'searxng' -and $out -match 'connected|ready') { break }
       Start-Sleep -Seconds 2
     }
-    if ($out -notmatch 'botmsg') { throw "MCP 输出中未发现 botmsg（重试后）：$(($out -split "`n")[0])" }
     if ($out -notmatch 'searxng') { throw "MCP 输出中未发现 searxng（重试后）：$(($out -split "`n")[0])" }
     if ($out -notmatch 'connected|ready') { throw "MCP 服务未显示 connected/ready（重试后）：$(($out -split "`n")[0])" }
-    "botmsg+searxng 已连接"
+    "searxng 已连接"
   }
   SoftCheck "MCP 进程数量（<= $MaxMcpProcesses）" {
-    $countText = (Invoke-PiSsh "pgrep -fc 'chatbot-tool-mcp.mjs|searxng-mcp.mjs' 2>/dev/null || echo 0" -TimeoutSeconds 30 | Out-String).Trim()
+    $countText = (Invoke-PiSsh "pgrep -fc 'searxng-mcp.mjs' 2>/dev/null || echo 0" -TimeoutSeconds 30 | Out-String).Trim()
     $count = [int]$countText
     if ($count -gt $MaxMcpProcesses) { throw "MCP 进程数 $count 超过阈值 $MaxMcpProcesses（可能重复 spawn/残留）" }
     "count=$count"
@@ -507,20 +506,6 @@ if (-not $SkipEnvDrift) {
     }
     "0 个非纳管键"
   }
-}
-
-# v0.7.3 Chatbot 上下文文档目录：默认关闭时只提示；启用时校验目录/属主/opencode 可读。
-SoftCheck "Chatbot 上下文文档目录（CHATBOT_AI_CONTEXT_READ_ENABLED）" {
-  if ($ExpectedDshVersion) { return "SKIP: QQ 由 DSH 管理" }
-  $enabled = (Get-PiEnvValue "CHATBOT_AI_CONTEXT_READ_ENABLED").ToLowerInvariant()
-  if (@("1", "true", "yes", "on") -notcontains $enabled) { return "SKIP: 文档模式默认关闭" }
-  $dir = (Get-PiEnvValue "CHATBOT_CONTEXT_DIR").Trim()
-  if ([string]::IsNullOrWhiteSpace($dir)) { throw "CHATBOT_AI_CONTEXT_READ_ENABLED=true 但 CHATBOT_CONTEXT_DIR 为空" }
-  $safeDir = $dir.Replace("'", "'\''")
-  $out = (Invoke-PiSsh "stat -c '%a %U %G' '$safeDir' 2>/dev/null; sudo -u opencode test -r '$safeDir' && echo readable || echo unreadable; sudo -u antifieldcloud test -w '$safeDir' && echo writable || echo unwritable" | Out-String)
-  if ($out -notmatch "readable") { throw "OpenCode 用户不可读上下文目录（检查目录属主/组权限）：$dir" }
-  if ($out -notmatch "writable") { throw "应用用户不可写上下文目录：$dir" }
-  "目录可读写：$dir（$($out.Trim() -replace "`r?`n", '; ')）"
 }
 
 Check "内存 cgroup 控制器可用" {
@@ -652,7 +637,6 @@ if (-not $SkipScriptHash) {
     )
     if (-not $ExpectedDshVersion) {
       $pairs += @(
-        @{ Local = "scripts/chatbot-tool-mcp.mjs"; Remote = "/opt/botmsg-mcp/chatbot-tool-mcp.mjs" },
         @{ Local = "scripts/searxng-mcp.mjs"; Remote = "/opt/searxng-mcp/searxng-mcp.mjs" }
       )
     }

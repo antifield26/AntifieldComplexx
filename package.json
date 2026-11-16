@@ -1,6 +1,6 @@
 {
   "name": "antifieldcomplexx",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "private": true,
   "license": "MIT",
   "description": "AntifieldComplexx monorepo（apps/workbench + apps/client + apps/mcbot）",
@@ -32,7 +32,6 @@
     "check:naming": "node scripts/check-naming.mjs",
     "check:docs": "node scripts/check-mcbot-claims.mjs",
     "provision": "node scripts/provision.mjs",
-    "backup": "node scripts/backup.mjs",
-    "cleanup:legacy-memory": "node scripts/cleanup-legacy-memory.mjs"
+    "backup": "node scripts/backup.mjs"
   }
 }

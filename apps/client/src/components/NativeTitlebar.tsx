@@ -8,7 +8,7 @@ import { isNativeRuntime } from '../lib/native'
 const TITLES: Record<string, string> = {
   '/': '首页', '/login': '登录', '/files': '文件', '/knowledge': '知识库',
   '/shares': '分享', '/trash': '回收站', '/minecraft': 'Minecraft',
-  '/chatbots': '机器人', '/activity': '活动', '/settings': '设置', '/more': '更多',
+  '/activity': '活动', '/settings': '设置', '/more': '更多',
 }
 
 export function NativeTitlebar() {

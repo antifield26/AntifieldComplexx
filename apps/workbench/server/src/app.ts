@@ -32,7 +32,6 @@ import { readSessionToken } from './auth/cookies.ts'
 import { DeviceAuthenticator } from './auth/device-auth.ts'
 import { DEVICE_BODY_LIMIT } from './auth/device-sign.ts'
 import { registerErrorHandler } from './http/errors.ts'
-import { requireAuth } from './http/guards.ts'
 import { registerAuthRoutes } from './http/routes/auth.ts'
 import { registerDeviceRoutes } from './http/routes/devices.ts'
 import { registerFileRoutes } from './http/routes/files.ts'
@@ -44,12 +43,6 @@ import { registerAlertRoutes } from './http/routes/alerts.ts'
 import { registerBackupRoutes } from './http/routes/backups.ts'
 import { registerUploadRoutes } from './http/routes/uploads.ts'
 import { registerMetricsRoutes } from './http/routes/metrics.ts'
-import { ChatbotService } from './chatbot/service.ts'
-import { OpenCodeBotAi } from './chatbot/ai.ts'
-import { SearxngSearchClient } from './chatbot/search.ts'
-import { registerBotRoutes } from './http/routes/chatbots.ts'
-import { registerBotWebhookRoutes } from './http/routes/chatbot-webhook.ts'
-import { registerBotAiToolRoutes } from './http/routes/chatbot-ai-tool.ts'
 import { McbotService } from './mcbot/service.ts'
 import { registerLofiiRoutes } from './http/routes/mcbot.ts'
 import { applyClientCors, isClientOrigin } from './http/client-cors.ts'
@@ -72,14 +65,11 @@ export interface AppContext {
   backups: BackupService
   uploads: UploadService
   metrics: MetricsService
-  chatbots: ChatbotService
   proxy: OpenCodeProxy
-  /** v0.8.0 mcbot Minecraft Chatbot 对接（禁用时 snapshot 为 enabled:false）。 */
+  /** mcbot 对接（禁用时 snapshot 为 enabled:false）。 */
   mcbot: McbotService
   /** listen 成功后启动指标采样（metricsEnabled=false 时空操作；重复调用幂等）。 */
   startMetrics(): void
-  /** listen 成功后启动 Chatbot 投递/发布队列（Chatbot 未启用时为空操作；重复调用幂等）。 */
-  startBots(): void
   /** listen 成功后启动 mcbot 状态/事件轮询（未启用时为空操作；重复调用幂等）。 */
   startLofii(): void
   runMaintenance(): void
@@ -167,82 +157,6 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     files,
     log: (level, message, detail) => app.log[level](detail ?? {}, message),
   })
-  const chatbots = new ChatbotService({
-    db,
-    config,
-    log: (level, message, detail) => {
-      const payload = detail ? { detail } : {}
-      if (level === 'error') app.log.error(payload, message)
-      else if (level === 'warn') app.log.warn(payload, message)
-      else app.log.info(payload, message)
-    },
-    audit: (action, target, detail) => audit(db, 'chatbot', action, target, detail, null),
-    ai: new OpenCodeBotAi({
-      db,
-      config,
-      log: (level, message, detail) => {
-        const payload = detail ? { detail } : {}
-        if (level === 'error') app.log.error(payload, message)
-        else if (level === 'warn') app.log.warn(payload, message)
-        else app.log.info(payload, message)
-      },
-    }),
-    ...(config.chatbotSearchEnabled
-      ? {
-          search: new SearxngSearchClient({
-            baseUrl: config.chatbotSearchUrl,
-            timeoutMs: config.chatbotSearchTimeoutSeconds,
-            maxResults: config.chatbotSearchMaxResults,
-            language: config.chatbotSearchLanguage,
-            safeSearch: config.chatbotSearchSafeSearch,
-            maxSnippetChars: config.chatbotSearchMaxSnippetChars,
-            engines: config.chatbotSearchEngines,
-          }),
-        }
-      : {}),
-    providers: {
-      status: async () => {
-        const data = await dashboard.get()
-        return {
-          应用版本: config.appVersion,
-          Minecraft: data.minecraft.online ? '在线' : '离线',
-          玩家: `${data.minecraft.players.online}/${data.minecraft.players.max}`,
-          服务: `${data.services.minecraft}/${data.services.cloudflared}/${data.services.opencode}`,
-          备份待确认: data.backup?.pendingCount ?? null,
-          生成时间: data.generatedAt,
-        }
-      },
-      backup: async () => {
-        const backup = (await dashboard.get()).backup
-        if (!backup) return { 状态: '未知' }
-        return {
-          ok: backup.ok,
-          最近拉取: backup.lastPullAt,
-          待确认: backup.pendingCount,
-          密钥包: backup.secretsOk,
-          错误: backup.lastError,
-        }
-      },
-      world: async () => {
-        const backup = (await dashboard.get()).backup
-        return { 世界备份: backup?.world ?? null, 拉取: backup?.worldPull ?? null, 演练: backup?.drill ?? null }
-      },
-      minecraft: async () => {
-        const status = await mc.status()
-        return {
-          online: status.online,
-          玩家: `${status.players.online}/${status.players.max}`,
-          version: status.version,
-          error: status.error,
-        }
-      },
-      files: async (query: string) =>
-        files.search(query, 10).items.map((item) => ({
-          name: item.name,
-          sizeLabel: item.size >= 1024 * 1024 ? `${Math.round(item.size / 1024 / 1024)} MB` : `${Math.max(1, Math.round(item.size / 1024))} KB`,
-        })),
-    },
-  })
   // McbotService 在 AlertService 之后创建；健康读取在首轮评估前绑定。
   const mcbotHealth: { read: (() => { enabled: boolean; reachable: boolean; stale: boolean }) | null } = {
     read: null,
@@ -258,7 +172,6 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       const status = await mc.status()
       return { online: status.online, error: status.error }
     },
-    ...(!config.dshQqManaged ? { notifyEvent: (event, durable) => chatbots.notifyAlert(event, durable) } : {}),
     mcbotHealth: () => mcbotHealth.read?.() ?? null,
   })
   // mcbot 轮询依赖 AlertService.recordExternal；禁用时无定时器、无网络请求。
@@ -381,7 +294,6 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   app.addHook('onRequest', async (request, reply) => {
     const host = normalizeHost(request.headers.host)
     if (proxy.isAiHost(host)) {
-      if (await proxy.serveShim(request, reply)) return reply
       await proxy.handle(request, reply)
       return reply
     }
@@ -466,15 +378,6 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   registerBackupRoutes(app, config, backups, db)
   registerUploadRoutes(app, config, uploads)
   registerMetricsRoutes(app, metrics)
-  if (!config.dshQqManaged) {
-    registerBotRoutes(app, config, chatbots, auth)
-    registerBotWebhookRoutes(app, config, chatbots)
-    registerBotAiToolRoutes(app, chatbots)
-  } else {
-    app.get('/api/chatbots/status', { preHandler: [requireAuth] }, async (_request, reply) => {
-      return reply.code(410).send({ error: { code: 'chatbot_managed_by_dsh', message: 'QQ 机器人由 DeepSeek Harness 管理' } })
-    })
-  }
   registerLofiiRoutes(app, config, mcbot, db)
 
   registerErrorHandler(app)
@@ -520,27 +423,12 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     await mcbot.stop()
     await alerts.stop()
     metricsSampler.stop()
-    // ARCH-04：关闭前有限等待 Chatbot 在途回复/工具缓冲/投递排空，避免部署/重启丢回复或重复投递。
-    // 最多等 15s，超时仍继续关闭（不阻塞 systemd stop），并记录警告。
-    const drain = chatbots.waitForIdle().catch((error: unknown) => {
-      app.log.warn({ err: error }, 'Chatbot 关闭排空失败')
-    })
-    const timeout = new Promise<void>((resolve) => {
-      const timer = setTimeout(() => resolve(), 15_000)
-      timer.unref?.()
-    })
-    await Promise.race([drain, timeout])
-    chatbots.stop()
     proxy.close()
   })
 
   function startMetrics(): void {
     if (!config.metricsEnabled) return
     metricsSampler.start()
-  }
-
-  function startBots(): void {
-    chatbots.start()
   }
 
   function startLofii(): void {
@@ -586,11 +474,9 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     backups,
     uploads,
     metrics,
-    chatbots,
     proxy,
     mcbot,
     startMetrics,
-    startBots,
     startLofii,
     runMaintenance,
   }

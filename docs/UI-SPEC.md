@@ -2,19 +2,19 @@
 
 产品名是 AntifieldComplexx，中文界面。Android AI 为独立隔离页面，返回条避开状态栏和刘海，远端没有设备能力。
 
-MC「目标执行」卡可展开「用一句话生成草案」。只在当前页面内存解析已有固定能力，不能识别数量、坐标、否定或条件时明确拒绝，不忽略剩余要求。生成和编辑不调用控制 API。用户可修改标题及每步任务；「确认创建草案」只创建待开始目标，随后使用既有「开始」二次确认。只读／忙碌时禁止提交，同一渲染周期重复提交只发送一次；提交失败保留草案，成功清空，离页提示未保存内容，账号持久化缓存不保存草案。
+Minecraft Bot 页只有三块：Bot 状态、会话、事件记录。任务、移动和游戏内发言由会话里的模型或游戏内口令发起。页面不提供目标草案。
 
 - 单一暗色青色品牌，深浅分层、青蓝光感、短 opacity／transform 过渡，遵守减少动画设置。
 - Windows 自绘标题栏提供拖动、最大化、最小化、还原与关闭，原生权限限定本地 main。
-- Android 底部首页／文件／MC／更多，更多集中知识库、分享、回收站、机器人接入说明、活动与设置。适配安全区、键盘及至少 44px 触控区域。
+- Android 底部首页／文件／MC／更多，更多集中知识库、分享、回收站、活动与设置。适配安全区、键盘及至少 44px 触控区域。
 - Android 使用产品 AC 自适应图标；固定顶栏／底栏不参与 WebView 容器拉伸，保留内容惯性滚动。
 - 首页优先常用入口、异常和关键状态，趋势与详情下移；未知服务及高负载明确提示。
-- Bot 优先目标、进度、阻塞原因与下一步；提交前复核控制、连接、目标及任务，移动／聊天／控制保留确认，迟到轮询不能覆盖新状态。
+- 会话时间线展示用户文本、助手文本、工具成败，以及目标或待办的动作和短标题。进行中每 1 秒轮询，空闲每 5 秒。迟到轮询不能覆盖新状态。
 - 分块加载保留导航；断网保留旧画面，恢复只刷新读取，写操作不自动重发。
 - 普通页面、视图和排序按账号／来源记忆，筛选与滚动仅内存；退出／吊销清理，未保存内容离开须确认。
 - 原生文件走签名桥并可取消，关闭预览撤销句柄。Android AI 为独立隔离页面，返回条避开状态栏和刘海，远端无设备能力。
 
-首页 AI 工作区使用统一登录入口。服务卡展示已配置的 DSH 服务和就绪状态。`/chatbots` 说明 QQ 已由独立 DSH 服务管理。设置页列出本账号设备。公网界面默认开启。关闭后，公网管理页显示「请使用客户端」，分享页由服务端渲染。loopback 仍打开完整界面。
+首页 AI 工作区使用统一登录入口。服务卡展示已配置的 DSH 服务和就绪状态。设置页列出本账号设备。公网界面默认开启。关闭后，公网管理页显示「请使用客户端」，分享页由服务端渲染。loopback 仍打开完整界面。
 
 ## 1. 定位与基调
 
@@ -129,7 +129,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 ### 4.5 Minecraft `/minecraft`（服务器 / Minecraft Bot 双标签）
 
-- 页头与内容由当前标签决定：服务器标签标题“Minecraft”、副标题“服务器只读状态与白名单管理”；Minecraft Bot 标签标题“Minecraft Bot”、副标题“只读状态、在线模式、管理员对话、事件流与历史”。
+- 页头与内容由当前标签决定：服务器标签标题“Minecraft”、副标题“服务器只读状态与白名单管理”；Minecraft Bot 标签标题“Minecraft Bot”、副标题“Bot 状态、会话与事件记录”。
 - **标签栏**（仅 `/api/version.mcbotEnabled=true` 时显示）：`role=tablist` + 两个 `role=tab` 按钮（“服务器”“Minecraft Bot”），`aria-selected`/`aria-controls`/`tabIndex` 随激活标签变化，面板 `role=tabpanel` 与 `aria-labelledby` 联动；左右方向键循环、Home/End 跳转，焦点随选中移动；`?tab=mcbot` 或 `#mcbot` 深链进入 Minecraft Bot 标签，切回服务器清理由该标签写入的 `?tab=mcbot` 与 `#mcbot`。路由仍是 `/minecraft`。侧栏桌面为“Minecraft”，紧凑为“MC”。
 - mcbot 未启用（`mcbotEnabled=false` 或旧服务端不下发）时不渲染标签栏，直接展示服务器内容，页面行为与旧版一致。
 - **服务器标签**（原 `/minecraft` 内容）：
@@ -232,17 +232,16 @@ CSS 变量（`web/src/styles/tokens.css`）：
   多文件时解锁后展示文件清单并逐项下载（不生成 zip）；410 显示具体失效原因，404 显示不存在。
 - 下载次数按分享会话计一次（页面标注说明）。
 
-### PWA / 手机
+### 手机
 
-- `manifest.webmanifest` + 图标；安装提示在 Settings/About 与底部；可关闭并记忆。
-- Service Worker 只缓存静态壳/资源/offline/manifest/图标；绝不缓存 `/api/*`、`/s/*`、文件内容。
+- 不提供 PWA 安装、更新提示或离线壳。站点图标保留。
 - Files 增加“拍照上传”（`accept=image/* capture=environment`）；390px 无横向滚动。
 
 ### 告警
 
 - Dashboard“告警”卡片：当前 active 条件、最近历史、webhook 状态、严重度中文标签。
 - 历史状态含 `firing/resolved/unknown/event`：`event` 显示“已记录”并使用中性色调，表示 mcbot 等外部服务的事件记录，**不当作活跃告警**；状态筛选含“已记录”；`mcbot_*` 事件名有中文映射（血量过低/任务失败/断线/箱子已满/防御撤退/告警）。
-- 事件带 `deliveries` 时，Webhook 与 QQ 各一行：完成分别显示「已送达」「入队处理完成」；`skipped` 显示「跳过」；`pending` 且 `attempts>0` 显示「待重试」，否则「待投递」；`dead` 显示「投递失败」并附脱敏原因。有投递详情时，`skipped` 不再显示旧的「通知发送失败」。`deliveries` 为 `null` 且存在 `deliveryError` 时仍显示「通知发送失败」。QQ 的实际发送结果在机器人管理页查看。本卡片只读，没有重投按钮。
+- 事件带 `deliveries` 时只显示 webhook 一行：完成显示「已送达」；`skipped` 显示「跳过」；`pending` 且 `attempts>0` 显示「待重试」，否则「待投递」；`dead` 显示「投递失败」并附脱敏原因。有投递详情时，`skipped` 不再显示旧的「通知发送失败」。`deliveries` 为 `null` 且存在 `deliveryError` 时仍显示「通知发送失败」。本卡片只读，没有重投按钮。
 - Settings“监控告警”：只读阈值/检查间隔/webhook 是否配置/最近评估；“测试 Webhook”按钮（POST /api/alerts/test）。
 - 未配置 webhook 时仍显示面板告警，不阻塞。
 
@@ -254,7 +253,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 改密/恢复码表单含 TOTP；密码 ≥12；429 显示 `details.retryAfterSec`。
 - `/api/version` 元数据驱动域名、回收站天数、上传上限、功能开关与 mcbot 标签/控制显隐（`mcbotEnabled`/`mcbotControlEnabled`）。
 - a11y：移动抽屉焦点陷阱、Dropdown 方向键、FormField aria-required、ConfirmDialog describedby、NotFound 标题。
-- OpenCode Web：不展示自定义“新会话”按钮；代理只接管原生按钮 click/pointerup，并 opt-out Rocket Loader 改写模块脚本。
+- DSH Web：HTML 原样转发，不注入垫片，也不改写模块脚本。
 
 ## 12. 备份与恢复界面
 
@@ -272,16 +271,13 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 不支持格式/mkv/avi 回退下载；错误区分格式、网络、415/416；不缓存媒体、不做转码、不引入外部播放器。
 - 移动端视频 16:9，播放器原生控件；表格/卡片仍可下载。
 
-### OpenCode 兼容
+### DSH Web
 
-- `OPENCODE_HTML_MODE`：`shim`（默认）、`attributes`（只 opt-out Rocket Loader）、`passthrough`（无垫片，需 Cloudflare 关闭注入）。
-- 无垫片验证通过后不再注入任何脚本；失败时只保留最小隐藏 click/pointerup 接管，不添加可见按钮。
-- 代理返回 `x-af-oc-mode` 诊断头；Cloudflare 后台规则见 DEPLOY。
+- HTML 原样转发。未配置 `DSH_WEB_URL` 时反代仍可指向 OpenCode 回滚地址，应用不因此拒绝启动。
 
-### 分享/PWA
+### 分享
 
 - 公开分享不展示“仅自己可见”备注；一次性 URL 创建成功后禁止误关。
-- PWA 缓存名随构建版本更新并清理旧缓存；SW 仍不缓存 API/媒体/文件内容。
 - `PUBLIC_APP_SHELL` 默认开启，浏览器仍打开完整界面。关闭且请求主机是应用公网主机时，管理页显示「请使用客户端」；分享链接改为服务端页面，展示文件名、大小和下载链接，需要密码时提交表单。`127.0.0.1`、`localhost` 与 `::1` 仍打开完整界面。生产尚未关闭该开关。
 
 ## 13. 大文件分片上传
@@ -326,113 +322,9 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 - 单请求仍受 100 MiB/Cloudflare 代理限制；分片块 8 MiB 远低于限制，5 GiB 文件约 640 块。
 
-## 15. 机器人页（QQ 官方 Bot）
+## 15. 机器人页
 
-机器人页是 QQ 官方 Bot 管理入口，包含概览、配置、目标、投递与发布、角色与记忆、诊断六个分区；平台仅 QQ，AI 仅普通消息 Chat，命令仅 C2C 私聊可用。
-
-### 入口与布局
-
-- 侧栏“机器人”（`Bot` 图标，路由 `/chatbots`），页面标题“机器人”，副标题“QQ 官方 Bot 通知、Chat 与只读命令、角色与记忆、诊断”。
-- 顶部工具栏：左侧“当前 Bot”下拉（`label` 关联 select；无 Bot 时显示“暂无 Bot”并禁用），右侧“新建 Bot”主按钮 + “刷新”。
-- 标签页（`role=tablist`，6 个：“概览/配置/目标/投递与发布/角色与记忆/诊断”）：左右方向键/Home/End 切换，`aria-selected`/`aria-controls` 与面板联动；面板可聚焦。
-- 未启用（`CHATBOT_ENABLED=false` 或 `chatbot_key_missing/chatbot_key_invalid`）：不请求 Bot 列表，展示 `Card` 指引：
-  设置 `CHATBOT_ENABLED=true`、生成/写入 `CHATBOT_SECRET_KEY`（示例 `openssl rand -base64 32`）、重启服务、点击“重新检测”；
-  不显示任何密钥值，说明密钥只保存在服务端。
-
-### 概览
-
-- 状态卡：功能开关、密钥已配置、Bot 数/启用数、目标数、待投递/待发布计数、出站可用性（`outbound.degraded` 为异常/正常/未启用，显示最近成功发送时间）、最近错误（`lastError` 脱敏展示，有 `lastErrorHint` 时追加中文提示）；AI 工具隔离状态（`aiToolIsolation`）降级时显示 warning 与降级次数/时间。
-  `outbound.degraded=true` 时显示红色“Bot 出站异常”提示，包含窗口内失败数、历史失败/死信数与中文错误提示，并提供“查看投递与发布”入口；历史死信不单独视为当前异常。
-- 概览提示：命令与 Chat 均为只读，发布需 TOTP + `PUBLISH` 双确认；`/help`、`/memory`、`/role`（私聊）、`/reset`、`/forget confirm` 为全用户自助命令；QQ 仅文本，入站图片默认交 AI 理解。
-- Bot 列表/选择：名称、平台（QQ 官方）、启用徽章、目标数、密钥版本、最近检查时间；点击切换到该 Bot（并进入配置分区）。
-- “出站网络”卡片：外网可达/延迟、QQ 平台探测状态与延迟（不再显示设备在线/代理主机端口）；“检测”按钮调用 `POST /api/chatbots/connectivity/check`，
-  页面每 60 秒读取 `GET /api/chatbots/connectivity`；不可达时显示 warning，不展示任何 AppSecret。
-- 空态：“还没有机器人” + “新建 Bot”（仅 QQ）；加载中 `SkeletonText`；错误 `InlineError` + 重试。
-
-### 配置
-
-- 左列表单：名称、平台（固定 QQ 官方 Bot，新建时只读展示）、**AppID**（5–32 位数字，公开配置）+ **AppSecret**（`type=password`，只提交不回显）。
-  不再有 Webhook Secret/Public Key/Signing Secret 等其它平台字段。
-- 密钥输入 `type=password`、`autocomplete=new-password`，编辑时留空表示保持原值，**永不回显**；不写入 localStorage/DOM 默认值。
-- 开关“启用 Bot”（默认关）；保存/删除（`ConfirmDialog`，危险按钮默认焦点“取消”）。
-- **“检查连接”**：编辑已有 Bot 时显示“检查连接”按钮（`Stethoscope` 图标，`loading` 态禁用重复点击）；调用 `POST /api/chatbots/:id/check`，
-  结果区显示“全部通过/存在异常项”徽章、检查时间、项数（“共 N 项，不含任何密钥”），逐项列表：名称、通过/异常徽章、脱敏 detail 与状态图标
-  （QQ 自检项为 `access_token`）；失败时 `InlineError` + “重新检查”。不展示 AppSecret/access_token 或完整平台 URL。
-- 右列接入信息：`webhookUrl` + 复制按钮、`setupSteps` 有序列表（QQ 开放平台后台步骤）、`keyVersion`/时间等只读元数据；
-  提示“URL 只用于 QQ 开放平台后台，AppSecret 不会显示”。setup 步骤包含回调地址 `op=13` 校验、事件订阅与 `/reset`/`/forget confirm` 用法说明。
-- 平台提示：QQ 群/频道只有 @Bot 消息进入 Bot（平台限制），C2C 私聊直接进入 Chat；仅支持文本；图片默认交给 AI 理解；
-  先把 Bot 拉群并 @Bot 触发，再到目标分区从“最近入站目标”登记。
-- 校验：必填/长度/数字规则在前端即时提示，服务端 `invalid_chatbot_config` 错误映射到表单顶部；非 QQ 平台值不再提供入口。
-- AI 提示词固定为「角色卡 + 固定安全边界 + 记忆 + 用户」，不存在 `CHATBOT_AI_TASK_PROMPT`/`CHATBOT_AI_CHAT_PROMPT`；本页不提供提示词编辑。
-- 个人角色卡由用户在私聊通过 `/role` 管理，默认 lofii 为内置角色；本页不展示角色正文，也不提供正文编辑入口（仅“角色与记忆”元数据管理）。
-
-### 目标
-
-- 表单：QQ 目标 ID（`user_openid`/`group_openid`/`channel_id`）、名称、类型（频道/用户/群组）；群聊目标额外显示“群消息模式”（仅 @ / 名字提及 默认；接受全部消息、由模型决定是否回复，实验性）、三个开关“允许命令”（仅用户目标显示）、“接收通知”“允许 Chat”
-  （命令默认关、通知默认开、Chat 默认关）、静默时段两个 `time` 输入（可选，`HH:mm`，Asia/Shanghai；起止需同时填写且不能相同，窗口内通知延后到结束）。
-  - “触发方式”字段不存在：QQ 群/频道默认仅 @Bot；群聊/频道不接受斜杠命令。
-- 最近入站目标：表单下方列出最近的命令/Chat 目标（用户名或用户 ID 尾号、类型徽章、私聊徽章、QQ 外部 ID），最多展示 8 条；
-  “登记”按钮把外部 ID/类型/建议名称填入上方表单，不立即删除；列表按已配置目标的 externalId 查重，已登记目标的入站记录自动隐藏，删除目标后恢复显示；不展示消息正文。
-- 列表：目标名（含“编辑名称”入口，可内联保存标题）、平台目标 ID（等宽截断）、类型徽章、群聊目标“群消息模式”下拉（仅 @ / 名字；全部消息（实验））、三个开关（用户目标显示“允许命令”，其余目标不显示；通知/Chat 可直接 PATCH）、每行“测试”按钮（向该目标发送测试消息，便于在 QQ 中确认 openid 对应关系）、删除按钮（确认）；配置静默时段的目标显示“静默 HH:mm–HH:mm”徽章。
-- 说明：命令自 仅在 C2C 私聊可用，群聊/频道不再接受斜杠命令；私聊命令需“目标允许命令 + 用户白名单（类型=用户且允许命令）”同时满足；自助命令 `/memory`、`/role`（私聊）、`/reset`、`/forget confirm` 不要求白名单；
-  `允许 Chat` 只授权普通消息 AI 对话，不授予斜杠命令；发布只支持频道/群组；QQ 目标填 `user_openid`/`group_openid`/`channel_id`。全量群消息需 QQ 后台开启“接收所有消息”、开放平台订阅 `GROUP_MESSAGE_CREATE`，并由群主在 QQ 群设置 → 机器人中将可获取消息范围设为“获取群内全部消息”。
-- 空态/错误/保存中禁用重复提交；每 Bot 最多 100 个目标，重复 `409` 提示；静默起止缺失、格式错误或相同均在前端拦截；
-  最近入站目标读取失败不影响已配置目标列表。
-
-### 角色与记忆
-
-- 顶部隐私说明（`notice`）：“私聊角色卡正文不通过 Web 暴露，用户可用 /role 自助管理；群聊角色卡由管理员编辑，只在对应群聊提示词中使用；记忆条目只展示元数据。”
-- 群聊角色卡 Card：标题“群聊角色卡”，描述“每个群聊目标一张共享角色卡，用于该群所有成员；覆盖私聊个人卡，停用/删除后回退到内置角色。”
-  表格列：群聊目标（label，`title` 放 externalId）、角色名（未配置显示“未配置”）、状态（已启用/已停用/未配置）、更新时间、操作（新建/编辑、停用/启用、删除）。
-  “新建/编辑”打开 Modal：角色名字（1–32，不能含空格/方括号/换行）、角色设定 textarea（1–1000，固定安全边界仍追加），保存后刷新；删除使用 `ConfirmDialog`，说明删除后回退内置角色且不可撤销。
-- 角色卡 Card：标题“角色卡”，描述“私聊用户通过 `/role` 设置的个人角色；一只 Bot 内每位用户一张，停用后回退到内置角色。”
-  表格列：用户（优先 `userName`，否则截断 `userId`，`title` 放完整 ID）、角色名（截断）、状态（已启用/已停用徽章）、更新时间、操作（停用/启用、删除）。
-  删除使用 `ConfirmDialog`：标题“删除角色卡”，说明“删除后该用户将回退到内置角色，且其私聊会话会被清理；此操作不可撤销。”
-- 结构化记忆 Card：标题“长期记忆”，描述“用户记忆用于私聊；群聊记忆按群目标共享，只包含“用户名：记忆”结构。两侧都只展示元数据，正文不通过 Web 暴露。”。
-  左栏“用户记忆”表格列：用户、条目数、类型分布（资料/偏好/事实/项目/任务/关系/事件计数，0 不显示）、记忆状态（开启/暂停）、最近更新、操作（查看条目/删除全部）。
-  右栏“群聊记忆”表格列：群聊目标（label，`title` 放 externalId）、条目数、类型分布、最近更新、操作（查看条目/删除全部）；窄屏两栏改为上下排列。
-  用户记忆删除确认“清除该用户长期记忆”，说明会删除结构化条目、状态与旧摘要且不可撤销、已有对话会话保留；群聊记忆删除确认“删除群聊记忆”，说明只清空该群共享条目、不影响群目标/角色卡/用户私聊记忆；成功后刷新对应列表。
-- 条目详情 Modal/Drawer：标题“记忆条目”，表格列：类型、重要度（1–5）、置信度（0–1，百分比展示）、更新时间、过期时间（永不过期为“—”）；操作“删除”单条并二次确认；
-  **不展示 key/value 或任何正文**；用户记忆与群聊记忆共用该 Modal，按传入 scope 查询条目。分页与加载失败重试与现有表格一致。`/memory` 的启停由用户私聊自助操作，本页不提供改开关入口（仅展示状态）。
-- 角色卡/记忆 Card 各自分页（每页 20，>20 才显示分页、展示“第 x / y 页 · 共 n 条”）、加载态、`InlineError` + 重试、空态文案；群聊角色卡列表按群目标一次加载，不分页；用户记忆与群聊记忆各自分页。
-  启停成功 Toast“角色卡已启用/已停用”，删除成功 Toast 并刷新列表；操作期间禁用该行/其它操作按钮避免重复提交。
-- 不展示私聊角色设定、记忆 key/value 或旧摘要正文；不提供私聊角色正文查看/编辑入口；群聊角色正文仅管理员在编辑 Modal 中读写；`userId` 只作标识用途。
-
-### 诊断
-
-- 顶部隐私说明：“诊断只展示事件元数据与脱敏错误：不展示消息正文、平台用户名或任何 Token/Secret。”
-- “最近事件”Card：描述“入站 Webhook/消息的去重记录；按到达时间倒序，可按时间范围与结果筛选。”
-  - 筛选：时间范围（最近 1 小时/24 小时/7 天）、结果（全部结果/成功/拒绝/限流/忽略/错误）、刷新按钮（并行刷新事件与错误，Toast 反馈）。
-  - 表格列：时间、类型（`kind`：command/chat/ignored，等宽小字）、结果（徽标：`received` 已接收 info、`ok` 成功 success、`denied` 拒绝 warning、
-    `rate_limited` 限流 warning、`ignored` 忽略 muted、`error` 错误 danger；未知按原文 muted）、目标（短 ID + `title` 完整值）、用户（短 ID + `title`）、详情（截断短码 + `title`）；
-    空态“暂无入站事件”，错误 `InlineError` + 重试；分页 20（>20 显示）。
-- “最近错误”Card：描述“失败/死信的投递与发布任务（最多 10 条）；展示队列错误原文与服务端中文提示，不包含消息正文。”
-  每条显示状态徽标、来源（投递类型/发布）、时间、错误原文（等宽、红字）、`lastErrorHint` 中文提示（有 Info 图标）；无错误时空态“最近没有失败记录”。
-- 不提供事件正文/用户名/目标名查看；不展示 AppSecret/access_token。
-
-### 投递与发布
-
-- **单列布局**：指标卡、投递记录、发布表单/任务卡在同一 `.bot-delivery-grid` 内纵向单列排列，桌面与窄屏一致；内部发布表单字段仍可窄屏单列。
-- 顶部“近 24 小时指标”卡：投递成功数、成功率（sent/(sent+failed)）、失败/死信、发布 sent/失败、最近发送时间、事件数；
-  有 `lastError` 时显示脱敏错误条，有 `lastErrorHint` 时追加中文提示；数据来自 `GET /api/chatbots/:id/metrics?hours=24`。
-- 投递列表：类型（通知/回复/发布/测试）、状态徽章（queued/sending/sent/failed/dead）、尝试次数、时间、错误摘要（错误原文 + 中文提示）；
-  `failed/dead` 行提供“重新投递”（20 次/小时限流，成功 Toast）；列表上方另有“重试失败/死信”批量按钮（最多 20 条，确认弹窗提示可能重发历史通知，排除部分已发送文本）。
-- 发布表单（仅文本）：目标（仅频道/群组）、文本（显示 QQ 单条上限 2000 字符；超过提示错误 `publish_text_too_long`，不静默截断）、
-  定时时间（可空；≤30 天）、**TOTP 验证码**（6 位、`autocomplete=one-time-code`，必填）、
-  **二次确认输入**（必须输入 `PUBLISH`，与 TOTP 共同构成双确认）；提交后进入列表。不提供媒体选择器与多附件。
-- 发布列表：状态、目标、文本摘要、定时/发送时间、错误（含中文提示）；`queued/draft` 可“取消”（确认）。
-- 提交中禁用按钮；`totp_required`、`invalid_code`、`publish_confirm_required`、`rate_limited`、`chatbot_health_unsupported` 用字段错误/Toast 明确提示；
-  不展示 AppSecret/access_token/完整平台 URL。
-
-### 响应式与可访问性
-
-- 390 px：工具栏纵向堆叠，Bot 选择/按钮全宽；6 个标签两行/三行换行且不溢出（`flex:1 1 30%`、文本省略）；
-  标签页键盘可操作；表单单列；诊断筛选控件换行，分页按钮可换行。
-- **窄屏表格**：角色/记忆/诊断表格放入 `.chatbots-table-scroll` 容器内横向滚动（`overflow-x:auto`、最小宽度 660px，卡片化视图隐藏）；
-  页面本身不横向滚动；目标/投递/发布既有表格行为不变。
-- 所有开关有可访问名称（`aria-label` 含目标名）；表格有 `caption`/列标题；危险操作焦点默认在取消；图标按钮有 `aria-label`。
-- 不引入第三方组件库；沿用现有 `Button/Card/Modal/Toast/Table/Badge/FormField/ConfirmDialog/InlineError/EmptyState` 与 tokens；
-  新样式集中在 `web/src/styles/v06.css`，在 `main.tsx` 引入。
+Workbench 不再提供机器人管理页。侧栏没有“机器人”，路由 `/chatbots` 与 `/bots` 不存在。生产 QQ 由 DSH 管理。
 
 ## 16. 备份加密/异地副本与审计界面
 
@@ -461,24 +353,23 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - **设置告警**：告警配置展示 `offsiteMaxAgeHours`（异地副本超期，小时，0 表示关闭）与世界备份/演练阈值；未配置异地副本时不误导为异常。
 - **`/api/version` 与元数据**：`MetaContext` 消费 `schemaVersion/backupArchiveEncryption/backupAgeRecipientConfigured/backupOffsiteStatusConfigured/audit`；
   `/api/version` 失败重试一次并回退默认值；`audit.failureCount>0` 时可展示提示“审计写入存在失败（诊断）”，不展示明细。
-- **PWA 更新提示**：新版本可用时显示静默更新提示条（不强制刷新、不丢表单），由 `PwaUpdatePrompt` 控制；离线壳不缓存 API。
 - **导航与错误**：hash 路由异常/未知页面回退首页并提示；轮询失败静默保留上次数据并提供手动刷新；`ConfirmDialog` 默认焦点在“取消”，
-  危险操作需二次确认；错误码 `archive_encrypted`、`chatbot_ai_tool_isolation_unavailable`、`backup_busy`、`restore_busy`、`plan_expired` 有专门中文文案。
-- **响应式**：加密/异地状态卡与警告条在 390 px 纵向堆叠、不横向滚动；表格仍使用 `.chatbots-table-scroll`/既有滚动容器。
+  危险操作需二次确认；错误码 `archive_encrypted`、`backup_busy`、`restore_busy`、`plan_expired` 有专门中文文案。
+- **响应式**：加密/异地状态卡与警告条在 390 px 纵向堆叠、不横向滚动；表格使用既有滚动容器。
 
 ### 前端工程
 
 - 样式集中在 `web/src/styles/v07.css`（在 `main.tsx` 引入），不引入第三方组件库；测试覆盖长任务超时、恢复持久化、
   加密/异地状态卡、prepare 警告、断点 `fileId`、`archive_encrypted` 文案与 MetaContext 降级。
 
-## 17. Minecraft Bot 面板（`/minecraft?tab=mcbot`，v0.8.0 引入；v1.2.3 改为管理员对话）
+## 17. Minecraft Bot 面板（`/minecraft?tab=mcbot`）
 
-Minecraft Bot 面板是 `/minecraft` 的第二个标签页。标签文字是“Minecraft Bot”。状态来自 `GET /api/mcbot/status`（5s 轮询，页面隐藏时暂停），历史来自 `GET /api/mcbot/history`，对话来自 `GET /api/mcbot/chat`。面板写操作只有在线模式、发送对话和急停。仅当 `/api/version.mcbotEnabled=true` 时显示入口。`controlReady` 要求启用、可达且 `controlEnabled=true`；否则对话输入、发送和急停禁用。状态快照先经 `safemcbotStatus` 归一化，缺失嵌套段显示“—”而不是整页崩溃；面板轮询使用请求序号 + AbortController，旧响应不会覆盖新响应。
+Minecraft Bot 面板是 `/minecraft` 的第二个标签页。标签文字是“Minecraft Bot”。页面只有三块：Bot 状态、会话、事件记录。状态来自 `GET /api/mcbot/status`（5s 轮询，页面隐藏时暂停），会话来自 `GET /api/mcbot/chat`。面板写操作只有在线模式、发送对话、停止和急停。仅当 `/api/version.mcbotEnabled=true` 时显示入口。`controlReady` 要求启用、可达且 `controlEnabled=true`；否则对话输入、发送和急停禁用。状态快照先经 `safemcbotStatus` 归一化，缺失嵌套段显示“—”而不是整页崩溃；面板轮询使用请求序号 + AbortController，旧响应不会覆盖新响应。
 
 ### 入口与布局
 
-- 标签栏与深链见 §4.5。内容自上而下：全局状态提示条 → 在线模式卡 → 状态卡 → 管理员对话卡 → 事件流卡 → 历史记录卡。
-- 面板不提供任务开始、目标创建、自主启动、移动或游戏内发言按钮。这些动作由对话里的模型决定，或由游戏内口令发起。
+- 标签栏与深链见 §4.5。内容自上而下：全局状态提示条 → Bot 状态（含在线模式与急停）→ 会话 → 事件记录。
+- 面板不提供任务开始、目标草案、目标读写、自主启动、移动、游戏内发言或历史表格。这些动作由对话里的模型决定，或由游戏内口令发起。
 - 在线模式卡标题“在线模式”，说明“只决定 Bot 何时保持在线。任务、移动和目标由管理员对话决定。”展示 `auto/always/off`。切换前确认，标题“切换在线模式”。只读时禁用“常驻在线”。
 - 全局提示条可以同时出现：
   - 等待首次轮询：`notice-muted`“正在等待 mcbot 首次轮询结果；轮询完成前状态可能为空，控制操作暂不可用。”
@@ -491,12 +382,12 @@ Minecraft Bot 面板是 `/minecraft` 的第二个标签页。标签文字是“M
 
 ### 状态卡
 
-- 标题“mcbot 状态”，描述“mcbot 每 5 秒被轮询一次；页面隐藏时暂停请求，刷新失败时保留上次成功的数据。”
+- 标题“Bot 状态”，描述“连接、血量、饥饿、任务、TPS 与版本。在线模式和急停也在这里。”状态每 5 秒轮询；页面隐藏时暂停请求，刷新失败时保留上次成功的数据。
 - 头部操作：可达/不可达徽章（带圆点）、控制可用/控制未启用徽章、刷新按钮（`aria-label`、loading 态）。
 - 刷新失败时卡片内 `InlineError`“<错误>（显示上次成功获取的数据）”+ 重试；无快照时 `EmptyState`“暂无 mcbot 状态快照”。
 - 状态栅格（缺失字段显示“—”）：运行状态（中文徽章：空闲（动态下线）/连接中/已连接/重连等待/冷却中）、Minecraft 连接（已连接（用户名）/未连接）、服务器在线/上限（服务器不可达时提示）、TPS（1m/5m/15m，RCON 不可用时提示）、mcbot 血量/饥饿（维度作 hint）、AI 队列（排队/处理中，失败次数与最近延迟；AI 关闭时“—”）、记忆（玩家数/轮数）、mcbot 版本 + 契约版本、运行时长、白名单数量（上游 lastError 作 hint）、告警联动（已启用/未启用）、事件流条数（“内存环”）。
 - 附加警告：上次 Minecraft 断线（相对时间 + 原因 + 累计重连次数）、AI 最近错误（文本）。
-- 脚注：上次轮询相对时间（`lastPollAt`）；“契约版本 < 1”时提示契约版本过低；`contractVersion` 非 number（缺失/`undefined`）时显示“—”，不显示 `vundefined`。
+- 脚注：上次轮询相对时间（`lastPollAt`）；契约版本是数字且不是 2 时提示“mcbot 契约不是 v2”；`contractVersion` 非 number（缺失/`undefined`）时显示“—”，不显示 `vundefined`。
 - 寻路 Fact：有 `navigation` 时显示状态/来源/最近兜底；`lastFallbackReason` 非空时在其下显示“兜底原因：”加该短文本。旧版无 `navigation` 时不显示这一格。
 
 ### 自主会话事实
@@ -505,8 +396,8 @@ Minecraft Bot 面板是 `/minecraft` 的第二个标签页。标签文字是“M
 
 ### 管理员对话
 
-- 卡片标题“管理员对话”，描述“用一句话说明要做什么。模型按这句话决定是否使用现有任务和规划工具。”
-- 记录区 `role=log`、`aria-label`“管理员对话记录”。空态“还没有对话。任务、移动和游戏内聊天都从这里发起。”用户行前缀“你”，助手行前缀“Bot”。
+- 卡片标题“会话”。输入说明“用一句话说明要做什么。模型按这句话决定是否使用现有任务和规划工具。”
+- 记录按时间展示完整步骤：用户文本、助手文本、工具名与成功或失败、目标或待办的动作和短标题。不展示工具参数、令牌、提示词或世界记忆正文。空态“还没有会话。”输入说明见卡片描述。`aria-label` 为“会话内容”。
 - `textarea` `rows=3`、`maxLength=2000`、`aria-label`“管理员对话”。允许 ASCII `/`。本地拒绝 C0，提示“内容不能包含控制字符”。空内容提示“请输入要说的话”。
 - 发送调用 `POST /api/mcbot/chat`，成功后清空输入并重新读取对话。进行中时输入和发送禁用。`controlReady` 时，回合 `pending` 每 1 秒轮询 `GET /api/mcbot/chat`，否则每 5 秒；页面隐藏时暂停。
 - 急停按钮“急停”。确认标题“急停”，正文“确定停止当前任务、自主会话和管理员对话？”，说明“空闲时也算成功。已经发生的世界动作不会回滚。”确认按钮“急停”，取消“取消”。成功 Toast“已急停”；部分失败 Toast“急停未全部完成：”加失败腿名。急停不调用模型。
@@ -514,24 +405,15 @@ Minecraft Bot 面板是 `/minecraft` 的第二个标签页。标签文字是“M
 
 ### 事件流
 
-- 卡片标题“事件流”，描述“mcbot 内存事件环的最近事件（按时间倒序，最多显示 100 条）。”；右上角条数徽章。
-- 旧版 mcbot（`eventsSupported=false`）显示 warning：“mcbot 需升级到 v0.6.0 才能显示事件流（当前 mcbot 未提供 /events/recent 或事件契约）。”
+- 卡片标题“事件记录”，描述“mcbot 内存事件环的最近事件（按时间倒序，最多显示 100 条）。”；右上角条数徽章。
+- 旧版 mcbot（`eventsSupported=false`）显示 warning：“mcbot 需升级到 v0.6.0 才能显示事件记录（当前 mcbot 未提供 /events/recent 或事件契约）。”
 - 类型筛选按钮组（全部/聊天/任务/状态/移动/告警/自主，`aria-pressed`）；列表项 = 类型徽章（聊天 accent、任务 info、状态 muted、移动 info、告警 warning）+ 相对时间 + 纯文本正文：聊天事件显示“用户名：内容”或“mcbot：内容”，其余显示结构化摘要（任务动作/状态、连接状态/其他玩家、移动动作/目标/状态/错误、告警类型/级别/内容）；`data` 一律视为不可信 unknown，不使用 HTML 注入。
 - 空态区分“暂无事件”与“暂无「<类型>」事件”；脚注说明事件来自 mcbot 内存环、重启清空、本页不保存历史。
-
-### 历史记录
-
-- 卡片标题“历史记录”，描述“最近 24 小时的告警或采样记录，只读表格。”；右上角“告警/采样”分段切换 + 刷新按钮。
-- 告警表：时间、类型（中文映射，未知显示原文）、级别（critical/error/warning/info → 中文徽章与色调）、内容（纯文本）；空态“暂无告警记录”。
-- 采样表：时间、连接（在线/离线徽章）、状态（中文）、任务（名称·状态或“—”）、血量/饥饿、TPS、队列、内存/RSS（MB）；空态“暂无采样记录”。
-- 脚注：“最近 24 小时 · 最多 100 条；采样由 mcbot 每 60 秒写入一次，时间按 Asia/Shanghai 展示。”
-- 响应形状异常（`kind` 不匹配/缺数组/服务端 `502 mcbot_upstream_error`）显示可见错误与重试，不进入永久骨架屏；只透传对象行。
-- 只读：不展开 `details`，不提供修改/删除/导出；`details` 中的任意字段不渲染。
 
 ### 确认、降级与隐私
 
 - 二次确认：切换在线模式和急停使用统一 `ConfirmDialog`（危险操作默认焦点“取消”，加载中禁止重复提交）。发送管理员对话不再二次确认。
 - 降级矩阵：禁用 → 仅说明，`eventGap` 为 null；首次加载失败 → 卡片错误 + 重试；等待首次轮询 → 提示且控制禁用；不可达 → 缓存数据 + 警告 + 控制禁用；stale → 警告，时间用 `lastSuccessAt`，null 时为“尚无成功轮询”（不用失败轮询的 `lastPollAt`）；**事件缺口 → 可见缺口区间，状态卡仍显示**；**可达但事件/游标失败 → 可见部分失败警告，对话在控制可用时仍可尝试**；控制未启用 → 对话和急停禁用。
-- 隐私与安全：不展示 mcbot URL/Token/内部路径/记忆正文/模型 prompt；事件与对话纯文本渲染；历史只显示白名单字段；对话和急停在控制未就绪时禁用。管理员对话允许 `/`。mcbot 本机游戏发言仍拒绝任意 ASCII `/` 与 C0。
+- 隐私与安全：不展示 mcbot URL/Token/内部路径/记忆正文/模型 prompt/工具参数；事件与对话纯文本渲染；对话和急停在控制未就绪时禁用。管理员对话允许 `/`。mcbot 本机游戏发言仍拒绝任意 ASCII `/` 与 C0。
 - 历史错误码/错误提示使用中文映射（含 `mcbot_cursor_failed`/`mcbot_not_found`/`mcbot_history_disabled`），未知码原样显示；查表使用 own-property，不命中原型链。
 - 响应式/可访问性：390 px 下状态栅格与双列卡片纵向堆叠、不横向滚动；标签键盘可操作；图标按钮有 `aria-label`；表单 label 关联；错误 `role="alert"`；不引入第三方组件库。

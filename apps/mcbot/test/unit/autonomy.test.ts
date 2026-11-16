@@ -208,7 +208,7 @@ test('DSH 自主急停立即撤销 Bearer，清理重试完成后才能再次启
     assistantText: async () => '',
     openAdmin: async () => 'session-admin-unused',
     promptAdmin: async () => {},
-    waitAdmin: async () => '',
+    waitAdmin: async () => ({ text: '', steps: [] }),
     stopAdmin: async () => {}
   }
   const service = new AutonomyService({ ...s, logger: createLogger('error'), opencode: agent })
@@ -242,7 +242,7 @@ test('管理员 Bearer 可调用工具，finish 不结束对话', async () => {
       return 'session-admin-1'
     },
     promptAdmin: async () => {},
-    waitAdmin: async () => 'ok',
+    waitAdmin: async () => ({ text: 'ok', steps: [] }),
     stopAdmin: async () => { stopped.push('stop') }
   }
   const service = new AutonomyService({

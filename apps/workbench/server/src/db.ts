@@ -768,6 +768,47 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE sessions ADD COLUMN device_id TEXT REFERENCES devices(id) ON DELETE CASCADE;
   CREATE INDEX idx_sessions_device ON sessions(device_id);
   `,
+  `
+  -- v1.2.4：删除 Workbench 旧 QQ 管线表。外部告警只保留 webhook。
+  DELETE FROM external_alert_deliveries WHERE channel = 'qq';
+  CREATE TABLE external_alert_deliveries_v22 (
+    event_id INTEGER NOT NULL REFERENCES alert_events(id) ON DELETE CASCADE,
+    channel TEXT NOT NULL CHECK(channel IN ('webhook')),
+    delivery_key TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('pending', 'done', 'dead', 'skipped')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT NOT NULL,
+    last_error TEXT,
+    PRIMARY KEY (event_id, channel)
+  );
+  INSERT INTO external_alert_deliveries_v22
+    (event_id, channel, delivery_key, status, attempts, next_attempt_at, last_error)
+  SELECT event_id, channel, delivery_key, status, attempts, next_attempt_at, last_error
+  FROM external_alert_deliveries;
+  DROP TABLE external_alert_deliveries;
+  ALTER TABLE external_alert_deliveries_v22 RENAME TO external_alert_deliveries;
+  CREATE INDEX idx_external_alert_due ON external_alert_deliveries(channel, next_attempt_at, event_id)
+    WHERE status = 'pending';
+
+  DROP TABLE chatbot_chat_roles;
+  DROP TABLE chatbot_group_roles;
+  DROP TABLE chatbot_memory_items;
+  DROP TABLE chatbot_memory_state;
+  DROP TABLE chatbot_inbound_targets;
+  DROP TABLE chatbot_ai_memories;
+  DROP TABLE chatbot_ai_sessions;
+  DROP TABLE chatbot_events;
+  DROP TABLE chatbot_publish_jobs;
+  DROP TABLE chatbot_deliveries;
+  DROP TABLE chatbot_targets;
+  DROP TABLE chatbots;
+
+  DELETE FROM meta WHERE key IN (
+    'chatbot_group_memory_owner_migrated_v1',
+    'chatbot_group_memory_migrated_v1',
+    'chatbot_ai_tool_mode'
+  );
+  `,
 ]
 
 export interface OpenOptions {

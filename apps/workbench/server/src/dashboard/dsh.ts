@@ -12,8 +12,9 @@ type DshService = keyof typeof UNITS
 
 export function agentServiceUnits(config: Config): Record<string, string> {
   return {
-    ...(config.dshWebUrl ? { dsh_web: UNITS.dsh_web } : { opencode: 'opencode' }),
-    ...(config.dshQqManaged ? { dsh_qq: UNITS.dsh_qq } : {}),
+    ...(config.dshWebUrl
+      ? { dsh_web: UNITS.dsh_web, dsh_qq: UNITS.dsh_qq }
+      : { opencode: 'opencode' }),
     ...(config.dshWebUrl && config.mcbotEnabled ? { dsh_mcbot: UNITS.dsh_mcbot } : {}),
   }
 }

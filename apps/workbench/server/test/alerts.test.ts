@@ -86,18 +86,6 @@ test('告警读取注入的超大状态统一降级为 unknown，不采信文件
   }
 })
 
-function enableQqTarget(fx: AlertFixture): void {
-  fx.config.chatbotEnabled = true
-  fx.db.prepare(
-    `INSERT INTO chatbots (id, platform, name, enabled, config_json, secret_ciphertext, secret_iv, secret_tag, key_version, created_at, updated_at)
-     VALUES ('qq-1', 'qq', 'QQ', 1, '{}', 'x', 'x', 'x', 1, ?, ?)`,
-  ).run(T0, T0)
-  fx.db.prepare(
-    `INSERT INTO chatbot_targets (id, chatbot_id, external_id, label, kind, allow_commands, allow_notifications, created_at)
-     VALUES ('target-1', 'qq-1', 'user-1', '我', 'user', 0, 1, ?)`,
-  ).run(T0)
-}
-
 function events(fx: AlertFixture): { id: number; event: string; status: string; severity: string; title: string; delivered_at: string | null; delivery_error: string | null }[] {
   return fx.db
     .prepare('SELECT id, event, status, severity, title, delivered_at, delivery_error FROM alert_events ORDER BY id ASC')
@@ -150,7 +138,7 @@ test('磁盘阈值：首次 firing、冷却内去重、冷却后重复通知与�
     assert.equal(events(fx).length, 1)
     assert.equal(
       (fx.db.prepare('SELECT COUNT(*) AS c FROM external_alert_deliveries').get() as { c: number }).c,
-      2,
+      1,
       '冷却期内不新增投递任务',
     )
 
@@ -600,9 +588,8 @@ test('offsite_overdue：阈值 0 时关闭条件，即使状态文件存在也�
   }
 })
 
-test('recordExternal：status=event、不写 alert_state、异步 webhook + Chatbot 通知', async () => {
+test('recordExternal：status=event、不写 alert_state、异步 webhook', async () => {
   const calls: { url: string; init?: RequestInit }[] = []
-  const notified: { id: number; event: string; status: string; severity: string; title: string }[] = []
   const fx = alertFixture({
     config: { alertWebhookUrl: WEBHOOK, alertWebhookSecret: 'whsec-test' },
     deps: {
@@ -610,10 +597,8 @@ test('recordExternal：status=event、不写 alert_state、异步 webhook + Chat
         calls.push({ url: String(url), init })
         return { ok: true, status: 200 } as unknown as Response
       }) as unknown as typeof fetch,
-      notifyEvent: (event) => notified.push(event),
     },
   })
-  enableQqTarget(fx)
   try {
     const id = fx.alerts.recordExternal({
       event: 'mcbot_low_health',
@@ -663,9 +648,13 @@ test('recordExternal：status=event、不写 alert_state、异步 webhook + Chat
       delivered_at: string | null
     }
     assert.ok(delivered.delivered_at)
-    assert.equal(notified.length, 1)
-    assert.equal(notified[0]?.status, 'event')
-    assert.equal(notified[0]?.event, 'mcbot_low_health')
+    const channels = fx.db.prepare(
+      "SELECT channel, status FROM external_alert_deliveries WHERE event_id = ?",
+    ).all(id) as unknown as { channel: string; status: string }[]
+    assert.deepEqual(
+      channels.map((row) => ({ channel: row.channel, status: row.status })),
+      [{ channel: 'webhook', status: 'done' }],
+    )
   } finally {
     fx.close()
   }
@@ -675,7 +664,6 @@ test('企业微信业务失败进入告警重试，并以同一个投递键发�
   const calls: RequestInit[] = []
   const fx = alertFixture({
     config: {
-      dshQqManaged: true,
       alertWebhookType: 'wecom',
       alertWebhookUrl: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=fixture-key',
     },
@@ -714,7 +702,7 @@ test('企业微信业务失败进入告警重试，并以同一个投递键发�
   }
 })
 
-test('recordExternal：webhook 失败只异步记录 delivery_error；未配置 webhook 不阻断通知', async () => {
+test('recordExternal：webhook 失败只异步记录 delivery_error；未配置 webhook 记为跳过', async () => {
   const attempts: string[] = []
   const failure = alertFixture({
     config: { alertWebhookUrl: WEBHOOK },
@@ -751,16 +739,15 @@ test('recordExternal：webhook 失败只异步记录 delivery_error；未配置 
     failure.close()
   }
 
-  const notified: string[] = []
+  let fetchCalls = 0
   const noWebhook = alertFixture({
     deps: {
-      notifyEvent: (event) => notified.push(event.event),
       fetch: (async () => {
+        fetchCalls += 1
         throw new Error('不应调用 webhook')
       }) as unknown as typeof fetch,
     },
   })
-  enableQqTarget(noWebhook)
   try {
     const id = noWebhook.alerts.recordExternal({
       event: 'mcbot_alert',
@@ -775,20 +762,22 @@ test('recordExternal：webhook 失败只异步记录 delivery_error；未配置 
       delivery_error: string | null
     }
     assert.match(row.delivery_error ?? '', /未配置/)
-    assert.deepEqual(notified, ['mcbot_alert'], '未配置 webhook 也要通知 Chatbot')
+    assert.equal(fetchCalls, 0)
+    const channel = noWebhook.db.prepare(
+      "SELECT channel, status FROM external_alert_deliveries WHERE event_id = ?",
+    ).get(id) as { channel: string; status: string }
+    assert.equal(channel.channel, 'webhook')
+    assert.equal(channel.status, 'skipped')
   } finally {
     noWebhook.close()
   }
 })
 
-test('外部告警重启可补投且 webhook 最多并发两条，QQ 独立完成', async () => {
+test('外部告警重启可补投且 webhook 最多并发两条', async () => {
   const fx = alertFixture({ config: { alertWebhookUrl: WEBHOOK } })
-  enableQqTarget(fx)
-  const notified: number[] = []
   const keys: string[] = []
   const workers = new AlertService(fx.db, fx.config, {
     now: fx.clock.now,
-    notifyEvent: (event) => notified.push(event.id),
     fetch: async (_url, init) => {
       keys.push(new Headers(init?.headers).get('Idempotency-Key') ?? '')
       return new Promise((_resolve, reject) => {
@@ -797,11 +786,10 @@ test('外部告警重启可补投且 webhook 最多并发两条，QQ 独立完�
     },
   })
   try {
-    const ids = Array.from({ length: 4 }, () => fx.alerts.recordExternal({
+    Array.from({ length: 4 }, () => fx.alerts.recordExternal({
       event: 'mcbot_alert', severity: 'warning', title: '测试', message: '测试', details: {},
     }))
     const first = workers.processExternalDeliveries()
-    assert.deepEqual(notified, ids)
     assert.equal(keys.length, 2)
     assert.ok(keys.every(Boolean))
     await workers.stop()
@@ -809,7 +797,6 @@ test('外部告警重启可补投且 webhook 最多并发两条，QQ 独立完�
     const replayed: string[] = []
     const restarted = new AlertService(fx.db, fx.config, {
       now: fx.clock.now,
-      notifyEvent: (event) => notified.push(event.id),
       fetch: async (_url, init) => {
         replayed.push(new Headers(init?.headers).get('Idempotency-Key') ?? '')
         return new Response(null, { status: 204 })
@@ -819,17 +806,15 @@ test('外部告警重启可补投且 webhook 最多并发两条，QQ 独立完�
     await restarted.processExternalDeliveries()
     assert.deepEqual(replayed.slice(0, 2), keys)
     assert.equal(replayed.length, 4)
-    assert.deepEqual(notified, ids)
-    assert.equal(fx.db.prepare("SELECT COUNT(*) AS n FROM external_alert_deliveries WHERE status = 'done'").get()?.n, 8)
+    assert.equal(fx.db.prepare("SELECT COUNT(*) AS n FROM external_alert_deliveries WHERE status = 'done'").get()?.n, 4)
   } finally {
     await workers.stop()
     fx.close()
   }
 })
 
-test('recordExternal：ALERTS_ENABLED=false 时不写库、不投递、不通知', async () => {
+test('recordExternal：ALERTS_ENABLED=false 时不写库、不投递', async () => {
   let fetchCalls = 0
-  const notified: string[] = []
   const fx = alertFixture({
     config: { alertsEnabled: false, alertWebhookUrl: WEBHOOK },
     deps: {
@@ -837,7 +822,6 @@ test('recordExternal：ALERTS_ENABLED=false 时不写库、不投递、不通知
         fetchCalls += 1
         return { ok: true, status: 200 } as unknown as Response
       }) as unknown as typeof fetch,
-      notifyEvent: (event) => notified.push(event.event),
     },
   })
   try {
@@ -852,18 +836,13 @@ test('recordExternal：ALERTS_ENABLED=false 时不写库、不投递、不通知
     await new Promise((resolve) => setTimeout(resolve, 10))
     assert.equal(events(fx).length, 0)
     assert.equal(fetchCalls, 0)
-    assert.equal(notified.length, 0)
   } finally {
     fx.close()
   }
 })
 
-test('recordExternal：同一 dedupe_key 不新增行、不重复通知；空键仍各自写入', async () => {
-  const notified: number[] = []
-  const fx = alertFixture({
-    deps: { notifyEvent: (event) => notified.push(event.id) },
-  })
-  enableQqTarget(fx)
+test('recordExternal：同一 dedupe_key 不新增行；空键仍各自写入', async () => {
+  const fx = alertFixture()
   const base = {
     event: 'mcbot_low_health',
     severity: 'warning' as const,
@@ -891,13 +870,11 @@ test('recordExternal：同一 dedupe_key 不新增行、不重复通知；空键
     assert.ok(rows.every((row) => row.status === 'event'))
     assert.equal(
       (fx.db.prepare('SELECT COUNT(*) AS c FROM external_alert_deliveries').get() as { c: number }).c,
-      8,
+      4,
       '重复幂等键不新增投递任务',
     )
     const stateCount = (fx.db.prepare('SELECT COUNT(*) AS c FROM alert_state').get() as { c: number }).c
     assert.equal(stateCount, 0, '外部告警不得写入 alert_state')
-    await fx.alerts.processExternalDeliveries()
-    assert.deepEqual(notified, [first, other, plain, plainAgain])
   } finally {
     fx.close()
   }
@@ -1062,56 +1039,47 @@ test('主机告警关闭后重启沿用同一幂等键续投', async () => {
   }
 })
 
-test('Webhook 失败时 QQ 仍入队，没有目标时跳过', async () => {
+test('Webhook 失败保持 pending，未配置时记为跳过且不请求', async () => {
   const fx = alertFixture({
     config: { alertWebhookUrl: WEBHOOK },
     deps: hostDeps({
-      notifyEvent: (event) => {
-        fx.db.prepare(
-          `INSERT INTO chatbot_deliveries (id, chatbot_id, target_id, kind, dedupe_key, payload_json, status, attempts, created_at, updated_at)
-           VALUES (?, 'qq-1', 'target-1', 'notification', ?, '{}', 'queued', 0, ?, ?)`,
-        ).run(`delivery-${event.id}`, `alert:${event.id}:qq-1:target-1`, T0, T0)
-      },
       fetch: (async () => {
         throw new Error('webhook down')
       }) as unknown as typeof fetch,
     }),
   })
   try {
-    enableQqTarget(fx)
     fx.db.prepare('UPDATE backup_state SET last_backup_at = ? WHERE id = 1').run(T0)
     await fx.alerts.evaluateOnce()
-    const qq = fx.db.prepare(
-      "SELECT status FROM external_alert_deliveries WHERE channel = 'qq'",
-    ).get() as { status: string }
-    const webhook = fx.db.prepare(
-      "SELECT status, attempts FROM external_alert_deliveries WHERE channel = 'webhook'",
-    ).get() as { status: string; attempts: number }
-    assert.equal(qq.status, 'done')
-    assert.equal(webhook.status, 'pending')
-    assert.equal(webhook.attempts, 1)
-    assert.equal((fx.db.prepare('SELECT COUNT(*) AS c FROM chatbot_deliveries').get() as { c: number }).c, 1)
+    const rows = fx.db.prepare(
+      'SELECT channel, status, attempts FROM external_alert_deliveries',
+    ).all() as unknown as { channel: string; status: string; attempts: number }[]
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0]?.channel, 'webhook')
+    assert.equal(rows[0]?.status, 'pending')
+    assert.equal(rows[0]?.attempts, 1)
   } finally {
     fx.close()
   }
 
-  const skipped: string[] = []
+  let fetchCalls = 0
   const closed = alertFixture({
-    config: { alertWebhookUrl: WEBHOOK, chatbotEnabled: true },
     deps: hostDeps({
-      notifyEvent: (event) => skipped.push(event.event),
-      fetch: (async () => new Response(null, { status: 204 })) as unknown as typeof fetch,
+      fetch: (async () => {
+        fetchCalls += 1
+        return new Response(null, { status: 204 })
+      }) as unknown as typeof fetch,
     }),
   })
   try {
     closed.db.prepare('UPDATE backup_state SET last_backup_at = ? WHERE id = 1').run(T0)
     await closed.alerts.evaluateOnce()
-    const qq = closed.db.prepare(
-      "SELECT status, last_error FROM external_alert_deliveries WHERE channel = 'qq'",
+    const row = closed.db.prepare(
+      "SELECT status, last_error FROM external_alert_deliveries WHERE channel = 'webhook'",
     ).get() as { status: string; last_error: string | null }
-    assert.equal(qq.status, 'skipped')
-    assert.match(qq.last_error ?? '', /没有可通知/)
-    assert.deepEqual(skipped, [])
+    assert.equal(row.status, 'skipped')
+    assert.match(row.last_error ?? '', /未配置/)
+    assert.equal(fetchCalls, 0)
   } finally {
     closed.close()
   }
@@ -1213,7 +1181,7 @@ test('告警列表返回投递详情，历史事件没有投递箱记录时为 n
     const detail = listed.items[0]?.deliveries
     assert.equal(detail?.webhook?.status, 'done')
     assert.equal(detail?.webhook?.attempts, 1)
-    assert.equal(detail?.qq?.status, 'skipped')
+    assert.equal(Object.keys(detail ?? {}).join(','), 'webhook')
     assert.equal(listed.total >= 1, true)
     assert.ok(listed.state.length >= 1)
     assert.equal(typeof listed.config.webhookConfigured, 'boolean')

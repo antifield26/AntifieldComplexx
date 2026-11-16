@@ -17,7 +17,6 @@ import { MinecraftClient } from './minecraft/bot.ts'
 import { CommandExecutor } from './minecraft/commands.ts'
 import { OpenCodeClient } from './ai/opencode.ts'
 import { PathAdvisor } from './ai/path-advisor.ts'
-import { OpenCodeSessionClient } from './ai/session.ts'
 import { DshAgentClient } from './ai/dsh.ts'
 import { AdminChat } from './admin/chat.ts'
 import { IntentClassifier } from './ai/intent.ts'
@@ -251,7 +250,6 @@ async function main (): Promise<void> {
     enabled: config.pathAiEnabled,
     available: pathAdvisor.available
   })
-  const sessionClient = dshClient ?? new OpenCodeSessionClient(config, logger.withScope('opencode.session'))
   const intent = new IntentClassifier(config, logger.withScope('intent'), aiClient)
   const ai = new AiChatService({
     config,
@@ -271,7 +269,7 @@ async function main (): Promise<void> {
     chatSender,
     movement,
     tasks,
-    opencode: sessionClient,
+    opencode: dshClient,
     getBot: () => client.getBot(),
     goalBusy: () => goals?.isBusy() ?? false
   })

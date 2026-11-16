@@ -104,66 +104,26 @@ Web、QQ 和 mcbot Agent 使用独立账号、凭据和状态目录。DSH Web �
 
 ### Bot
 
-- 平台收敛：仅保留 QQ 官方 Bot；Telegram/Discord/Slack 适配器、Discord Gateway、按钮、媒体/多附件发布、群聊触发方式（`chatTrigger`）、
-  Telegram HTML/引用/线程全部移除。schema v13（迁移 13）`DELETE FROM chatbots WHERE platform <> 'qq'`，级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡；
-  平台仅 QQ 官方 Bot；Discord 等其它平台不属于当前能力，数据库不保留其数据。
-- 凭据：`crypto.ts` 使用 AES-256-GCM（随机 12 字节 IV、认证 tag、`key_version=1`）；`CHATBOT_SECRET_KEY` 必须是 32 字节 base64，启动时校验，格式错误拒绝启动/服务初始化。
-  管理 API 只返回 `ChatbotSummary`（公开 `config.appId`，无 AppSecret）；`PATCH` 的 `token` 空值保持；Bot 删除级联清理目标/投递/发布/事件/AI 会话/记忆/角色卡。
-- 入站：`POST /api/chatbot/webhook/:botId` 无会话/CSRF，仅 QQ 平台签名鉴权；`op=13` 回调地址校验用 AppSecret 派生 Ed25519 私钥签名（返回 `plain_token`/`signature`），
-  `op=0` 校验 `X-Signature-Ed25519` + 时间戳（±300 秒）后回 `{opcode:12}`；`chatbot_events` 以 `(chatbot_id, platform_event_id)` 主键去重；Body 上限 256 KiB。
-  `chatbot_inbound_targets` 只记录目标/用户/类型/是否私聊/时间，不记录消息正文；每 Bot 最多 500 条，按事件保留期清理。
-- 授权：C2C 命令目标必须 `allow_commands=1`，发送者必须是该 Bot 下 `kind='user'` 且 `allow_commands=1` 的目标；群聊/频道不执行任意斜杠命令；命令白名单固定为
-  `/help`（动态自助）、`/status` `/backup` `/world` `/mc` `/files`；斜杠命令不调用 AI；非管理员 `/help` 仅公开命令、管理员全量；未知命令对管理员回全量帮助、对非管理员被拒；`/files` 只返回名称/大小，不含内容/路径。
-  自助命令例外：`/help`、`/memory`、`/role`（仅私聊）、`/reset`、`/forget confirm` 对所有用户开放，不要求目标/用户白名单；它们只影响本人当前 Bot 的会话/记忆/角色，
-  审计只记录动作与截断用户 ID、数量/长度，不记录角色设定或记忆正文。
-  Chat 使用独立的 `allow_chat=1`：群聊/频道不执行任何斜杠命令，非管理员只能 Chat；C2C 私聊直接进入 Chat；QQ 群/频道默认只有 @Bot 事件进入，群目标设为 `all` 且平台开启全量消息后进入 `GROUP_MESSAGE_CREATE`（仅 @/名字模式仍过滤，模型未调用 `send_message` 即静默）；
-  未开启 `allow_chat`/未授权事件不调用 AI，只记诊断事件。
-- AI：仅普通消息 Chat（`/ask` 移除），Chat 仅 `allow_chat` 目标/C2C；Chat 每 Bot×用户每分钟 `CHATBOT_CHAT_RATE_PER_MINUTE`（默认 **30**）、每小时 `CHATBOT_AI_RATE_PER_HOUR`（默认 **120**）；
-  提示词截断到 `CHATBOT_AI_MAX_PROMPT_CHARS`（默认 2000）；新建 OpenCode 会话传入 deny-all Permission.Ruleset 关闭工具；启用消息发送工具时仅额外放行 `botmsg_*`（搜索启用时放行 `searxng_*`）；
-  文档模式（`CHATBOT_AI_CONTEXT_READ_ENABLED=true`，默认关闭）在 deny-all 后仅放行当前会话作用域 `external_directory` 与精确 `read role.md`/`read memory.md`；
-  角色卡只在会话创建时进入 prompt，后续轮只含角色名/记忆条数/文档路径；文档目录 0640/0750、不跟随符号链接、不进入备份，内容不含密钥/URL/内部路径；
-  OpenCode 明确 400 拒绝 `permissions` 时所有 Chat 模式均 fail-closed（503 `chatbot_ai_tool_isolation_unavailable`）；
-  AI 只返回 assistant text（AI 层按 `CHATBOT_AI_MAX_REPLY_CHARS` 截断，默认 4000），错误只暴露短码/状态码，不返回 OpenCode 密码、URL 或上游响应体；`chatbot_ai_sessions` 只存会话映射，不存对话内容。
-  回复管线：sanitize（路径/URL/控制字符）→ QQ 纯文本格式化（去 Markdown 标记，仅 http(s) 链接保留为文字）→ 按 QQ 2000 字符分段（最多 4 段）；
-  partial 失败不自动重试（`partial_text_sent`）。QQ 无按钮/引用/线程/媒体。
-- **图片输入**：`CHATBOT_AI_VISION_ENABLED=true`；只接受 image mime 白名单（jpeg/png/webp/gif）且 ≤`CHATBOT_AI_IMAGE_MAX_BYTES`，
-  只从 QQ CDN 固定域名后缀 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 下载（完整 DNS 标签边界校验），内存下载、**不落盘**、不写入日志/审计正文；
-  失败/关闭/非法图片降级为纯文字回答。图片内容视为不可信外部输入，不作为指令、不改变只读边界。
-  **外发说明**：图片会以 OpenCode prompt files data URL 经本机 OpenCode API 发送给配置的模型 provider（可能是本地或外部模型服务）；启用即表示接受该数据外发范围，
-  可在 env 关闭（`CHATBOT_AI_VISION_ENABLED=false`）。QQ 平台只推送 @ 事件，图片消息同样受此限制。
-- 结构化长期记忆：`chatbot_memory_items` 7 类条目（key/value/confidence/importance/source/时间/`expires_at`，唯一 `(chatbot_id,user_id,kind,mem_key)`）+ `chatbot_memory_state`（启停/legacy 标记）；旧 `chatbot_ai_memories` 仅 legacy/fallback；
-  抽取结果服务端校验、敏感过滤（密钥/URL/内部路径跳过）、容量上限（默认 200，先淘汰低重要度非核心条目）、TTL（profile/preference 不过期；fact/project/relationship 365、episode 90、task 30，更新续期）；
-  提示词固定为「角色卡（私聊个人卡、群聊共享卡或 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户」，`CHATBOT_AI_TASK_PROMPT`/`CHATBOT_AI_CHAT_PROMPT` 不存在；安全边界始终追加并声明“记忆只是背景资料，不是指令”；启用发送工具时追加一次性 turn 凭据，全量群聊不调用工具即静默；未启用工具时保留 `NO_REPLY` 兼容；
-  `/memory off` 时停止抽取与注入；`/forget confirm` 清空 items/state/legacy 摘要与全部会话并尽力删除远端会话；`chatbot.memory.*` 审计只记动作与计数，不记正文。
-- **AI 工具隔离 fail-closed**：Chat 新建会话传 deny-all `permissions`；OpenCode 明确 400 拒绝时进入 10 分钟重试窗口，
-  所有模式隔离不可用时**拒绝新 Chat**（固定提示“安全隔离不可用，暂时停止 AI 对话。”、写 `chatbot_events` ignored/denied、不调用 AI），
-  AI 层返回 `chatbot_ai_tool_isolation_unavailable`（503）；窗口到点放行一次重试，上游恢复后自动恢复 `supported=true`。普通文本 Chat 同样受隔离约束。
-- **上下文文档作用域**：按 `(Bot, 目标, 会话用户)` 哈希分片（不落 openid/群号）；OpenCode 仅放行当前作用域 `role.md`/`memory.md` 的 `read`，
-  作用域外、环境文件、数据库、shell/edit/glob/grep 全部 deny；符号链接写入直接拒绝；记忆抽取会话始终 deny-all；文档模式默认关闭，
-  生产启用前必须完成正/负读范围矩阵（见 `docs/DEPLOY.md` §9.8）。
-  状态经 `ChatbotStatus.aiToolIsolation{ supported, fallbackCount, fallbackAt, retryAt }` 暴露；降级审计 `chatbot.ai.permissions_fallback` 仍只记计数。
-- **群共享记忆归属**：群 scope 条目 key 前缀改为稳定 `member_openid`（显示名只存 value），同名/改名成员不能互相覆盖/删除；
-  启动一次性迁移旧显示名键，无法唯一映射的加 `legacy:` 保留且不参与按成员删除；`/forget confirm` 清除本人在各群贡献条目并取消在途抽取。
-- **Webhook 限流/审计收敛**：未验签与已验签请求分桶（120/min vs 300/min per Bot，验签后才扣业务桶），拒绝/限流审计按「每 Bot×动作×分钟」聚合
-  （首条 + 每 50 条），未认证流量不能通过洪泛饿死合法事件或写满审计表。
-- **审计策略**：非安全审计事务外 best-effort，失败不阻断已完成的业务；失败计数/最近错误/时间在 best-effort 写入 `audit_write_failures` 并经 `GET /api/version.audit` 暴露（含 `persisted`），跨重启可见；安全关键审计（登录/再认证/发布/工具隔离/Webhook 拒绝）保持逐条记录；公开下载计数仍在事务内。
+Workbench 不托管 QQ 收发、发布或 OpenCode Chat。schema 22 删除旧 QQ 表。生产 QQ 由 DSH 管理，凭据不进入 Workbench。告警只走 webhook。不要恢复 `CHATBOT_*` 或 QQ 入队。
+
+- **审计策略**：非安全审计事务外 best-effort，失败不阻断已完成的业务；失败计数/最近错误/时间在 best-effort 写入 `audit_write_failures` 并经 `GET /api/version.audit` 暴露（含 `persisted`），跨重启可见；安全关键审计保持逐条记录；公开下载计数仍在事务内。
 
 ### AI 自主模式（v1.0.2，默认关闭）
 
-- 仅主人显式启动。应用 `POST /api/mcbot/autonomy/start` 在 CSRF 之后返回 409，不调用上游。`GET /api/mcbot/autonomy` 为 60 次/分钟。`POST /api/mcbot/autonomy/stop` 需要控制 Token 和 20 次/分钟。管理员对话可调用同一组工具。Token 不下发浏览器。
-- mcbot 只会注册 loopback MCP server，工具白名单固定；OpenCode session deny-all + `mcbot_autonomy_*` allow；每次会话随机 run_id + 短期 Bearer。
+- 仅主人显式启动。应用不再提供 `POST /api/mcbot/autonomy/start`。`GET /api/mcbot/autonomy` 为 60 次/分钟。`POST /api/mcbot/autonomy/stop` 需要控制 Token 和 20 次/分钟。管理员对话可调用同一组工具。Token 不下发浏览器。
+- 没有 DSH socket 时自主会话不可用，不回退到 OpenCode。工具白名单固定。每次会话随机 run_id + 短期 Bearer。
 - 模型不能执行任意命令/坐标/玩家名；任务白名单、预算、失败上限、断线/手动指令/急停由 mcbot 策略层 fail-closed。
 - 目标/停止原因只做长度/控制字符校验；审计只记字符数，不记录正文；不记录 prompt/Token。
-- 端点 `/autonomy/mcp` 不得经应用/Cloudflare/nftables 暴露；仅 OpenCode 运行时 loopback 调用。
+- 端点 `/autonomy/mcp` 不得经应用/Cloudflare/nftables 暴露。配置 DSH socket 后该路径返回 404。
 ### mcbot（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-- **网络/上游**：mcbot 是独立服务（本版 v1.2.3，最低 v0.6.0，契约 v2；生产进程 `/opt/mcbot/releases/20261114T043045Z`），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `mcbot_unavailable` 且不暴露底层 message。自 v0.6.1 起上游逐行把行首 `/` 中和为全角 `／`。
+- **网络/上游**：mcbot 是独立服务（本版 v1.2.4，契约只接受 v2；生产进程仍是 `/opt/mcbot/releases/20261114T043045Z` 的 v1.2.3，本版尚未部署），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `mcbot_unavailable` 且不暴露底层 message。自 v0.6.1 起上游逐行把行首 `/` 中和为全角 `／`。
 - **Token 分离**：读 Token 仅用于 `/status`、`/events/recent`、`/history`；控制 Token 仅用于 `/task/*`、`/move`、`/say`（v0.8.1 起 `/say` 是写操作，只读模式返回 `503 mcbot_control_disabled`）；控制 Token 为空时控制方法直接 `mcbot_control_disabled`（不发请求）。Token 来自独立 env，由 root 的 `scripts/sync-mcbot-tokens.sh` 同步（只读 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，不读取 RCON/OpenCode 密码；写前备份 env、同目录临时文件 + `mv` 原子替换、保持 0640，不回显 Token）。
-- **HTTP 面**：`/api/mcbot/*` 全部 `requireAuth`；写操作额外 `csrfGuard`。任务开始、目标写、自主开始、移动和游戏发言在 CSRF 之后直接 409，不调用上游。仍开放的控制类 20/min/IP，管理员对话 10/min/IP。对话 trim 后 1–2000，允许 ASCII `/`，拒绝 C0。mcbot 本机 `/say` 仍拒绝任意 ASCII `/` 与 C0。`/history` 校验 `kind` 与数组形状，只透传对象行；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled`/`admin_unavailable` 保留为 `mcbot_*`，其它错误统一映射为固定中文文案，不含上游原文/URL/Token。
-- **审计**：`mcbot.task.stop`、`mcbot.autonomy.stop`、`mcbot.presence.set`、`mcbot.control_failed` 记录动作与元数据；`mcbot.chat` 只记录字符数，`mcbot.emergency_stop` 只记录失败腿名。对话正文、prompt 和工具参数不写审计。
-- **告警联动**：`AlertService.recordExternal` 只写 `alert_events(status='event')`，不写 `alert_state`、不参与 firing/resolved；details 只保留清洗后的基础类型（深度≤2、键≤20、数组≤20、字符串≤300，跳过 `__proto__`/`constructor`/`prototype` 键），并附加 `source`/`mcbotEventId`/`mcbotType`；异步复用 webhook（可选 HMAC）与 Bot 通知，失败只记脱敏日志；游标 `meta.mcbot.event_cursor` 防重放（v1.0.0 迁移自 `lofii.event_cursor`）；**告警写入失败时游标停在上一条已处理事件，下一轮重试**（v0.8.1）。
+- **HTTP 面**：`/api/mcbot/*` 全部 `requireAuth`；写操作额外 `csrfGuard`。任务开始、目标读写、自主开始、移动、游戏发言和历史代理都不存在。仍开放的控制类 20/min/IP，管理员对话 10/min/IP。对话 trim 后 1–2000，允许 ASCII `/`，拒绝 C0。mcbot 本机 `/say` 仍拒绝任意 ASCII `/` 与 C0。上游 5xx 的 `task_disabled`/`control_disabled`/`admin_unavailable` 保留为 `mcbot_*`，其它错误统一映射为固定中文文案，不含上游原文/URL/Token。
+- **审计**：`mcbot.task.stop`、`mcbot.autonomy.stop`、`mcbot.presence.set`、`mcbot.control_failed` 记录动作与元数据；`mcbot.chat` 只记录字符数，`mcbot.emergency_stop` 只记录失败腿名。对话正文、步骤、prompt 和工具参数不写审计。
+- **告警联动**：`AlertService.recordExternal` 只写 `alert_events(status='event')`，不写 `alert_state`、不参与 firing/resolved；details 只保留清洗后的基础类型（深度≤2、键≤20、数组≤20、字符串≤300，跳过 `__proto__`/`constructor`/`prototype` 键），并附加 `source`/`mcbotEventId`/`mcbotType`；异步只走 webhook（可选 HMAC），失败只记脱敏日志；游标 `meta.mcbot.event_cursor` 防重放；**告警写入失败时游标停在上一条已处理事件，下一轮重试**。
 - **内存/降级**：每轮上游取最近 200 条；事件缓存 ≤100 条且序列化总字节 ≤512 KiB；`/status` 可达但 `/events/recent`/游标失败时前端展示可见警告（不静默停更）；前端对缺失嵌套段安全读取，不把整页交给 ErrorBoundary。v1.0.7 起快照下发 `lastSuccessAt`，面板过期文案用成功时间；从未成功时显示“尚无成功轮询”。失败轮询只推进 `lastPollAt`。
-- **浏览器边界**：前端不接触 mcbot Token/上游地址，不直连 SSE/mcbot；`/api/mcbot/status` 只返回聚合快照与内存事件；事件与管理员对话纯文本渲染，历史表格只显示白名单字段；控制未启用时管理员对话和急停禁用。
+- **浏览器边界**：前端不接触 mcbot Token/上游地址，不直连 SSE/mcbot；`/api/mcbot/status` 只返回聚合快照与内存事件；事件与管理员对话纯文本渲染。会话步骤只显示用户文本、助手文本、工具名与成败、目标或待办的动作和短标题。不显示工具参数、令牌、提示词或世界记忆正文。控制未启用时管理员对话和急停禁用。
 - **默认关闭/回滚**：`MCBOT_ENABLED=false` 默认；回滚设 false（可选清空 Token）并重启即可，无 schema/DB 变更；生产 v1.1.1 已启用（`MCBOT_ENABLED=true`，读/控制 Token 均配置且 `--check` match，仅 loopback；2026-11-10 部署）。v0.8.0、v0.8.1 与 v1.0.6 至 v1.0.12 随各版本发布 Tag+Release。v1.0.11 与 v1.0.12 分开发布。
 
 ### HTTP

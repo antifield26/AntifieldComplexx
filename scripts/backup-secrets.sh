@@ -125,22 +125,24 @@ run_as_opencode() {
   fi
 }
 
-# 密钥包按当前 QQ 接收者选择 Agent 运行时。切换前仍保存 OpenCode 备份。
-agent_runtime=opencode
-if [[ ! -f /etc/antifieldcloud/env ]]; then
-  json_error "缺少 /etc/antifieldcloud/env，无法做密钥备份"
-fi
-qq_managed=$(sed -nE 's/^[[:space:]]*DSH_QQ_MANAGED[[:space:]]*=//p' /etc/antifieldcloud/env | tail -n 1 | tr -d "'\"[:space:]")
-case "${qq_managed,,}" in
-  1|true|yes|on) agent_runtime=dsh ;;
-  ""|0|false|no|off) ;;
-  *) json_error "DSH_QQ_MANAGED 配置无效" ;;
-esac
-
 read_setting() {
   sed -nE "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*//p" "$1" |
     tail -n 1 | sed -E "s/[[:space:]]+$//; s/^\"(.*)\"$/\1/; s/^'(.*)'$/\1/"
 }
+
+# 密钥包按 DSH Web 是否成对配置选择 Agent 运行时。未配置时仍保存 OpenCode 回滚档。
+agent_runtime=opencode
+if [[ ! -f /etc/antifieldcloud/env ]]; then
+  json_error "缺少 /etc/antifieldcloud/env，无法做密钥备份"
+fi
+dsh_web=$(read_setting /etc/antifieldcloud/env DSH_WEB_URL)
+dsh_socket=$(read_setting /etc/antifieldcloud/env DSH_WEB_SSO_SOCKET)
+if [[ -n "$dsh_web" || -n "$dsh_socket" ]]; then
+  if [[ -z "$dsh_web" || -z "$dsh_socket" ]]; then
+    json_error "DSH Web 配置不完整"
+  fi
+  agent_runtime=dsh
+fi
 
 mcbot_required=false
 mcbot_included=false

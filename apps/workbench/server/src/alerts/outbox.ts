@@ -1,7 +1,7 @@
 /**
- * 告警投递箱。主机告警与外部事件共用同一张表，Webhook 与 QQ 分通道重试。
+ * 告警投递箱。主机告警与外部事件共用同一张表，只走 Webhook 重试。
  * 仅保存事件引用、幂等标识和脱敏错误；不保存通道凭据。
- * 同一主机条件（firing/resolved/unknown）按通道串行；外部事件保持并行。
+ * 外部事件保持并行。
  */
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
@@ -9,23 +9,19 @@ import { transaction } from '../db.ts'
 
 interface Job {
   event_id: number
-  channel: 'webhook' | 'qq'
+  channel: 'webhook'
   delivery_key: string
   attempts: number
 }
 
 export interface InsertPlan {
   webhook: 'pending' | 'skipped'
-  qq: 'pending' | 'skipped'
   webhookError?: string | null
-  qqError?: string | null
 }
 
 interface Options {
-  qqDisabled?: boolean
   now: () => Date
   webhook: (id: number, key: string, signal: AbortSignal) => Promise<boolean>
-  notify: (id: number) => void
   webhookResult: (id: number, at: string | null, error: string | null) => void
   errorText: (error: unknown) => string
   warn: (error: unknown) => void
@@ -45,8 +41,8 @@ export class ExternalAlertOutbox {
     this.options = options
   }
 
-  /** 与事件同一事务写入两条通道。关闭的通道直接记为 skipped，不进入领取。 */
-  insert(eventId: number, plan: InsertPlan = { webhook: 'pending', qq: 'pending' }): void {
+  /** 与事件同一事务写入 webhook 通道。关闭时直接记为 skipped，不进入领取。 */
+  insert(eventId: number, plan: InsertPlan = { webhook: 'pending' }): void {
     const insert = this.db.prepare(
       `INSERT INTO external_alert_deliveries
        (event_id, channel, delivery_key, status, attempts, next_attempt_at, last_error)
@@ -54,7 +50,6 @@ export class ExternalAlertOutbox {
     )
     const now = this.options.now().toISOString()
     insert.run(eventId, 'webhook', randomUUID(), plan.webhook, now, plan.webhook === 'skipped' ? (plan.webhookError ?? null) : null)
-    insert.run(eventId, 'qq', randomUUID(), plan.qq, now, plan.qq === 'skipped' ? (plan.qqError ?? null) : null)
   }
 
   start(): void {
@@ -88,31 +83,7 @@ export class ExternalAlertOutbox {
 
   async process(): Promise<void> {
     if (!this.claiming || this.controller.signal.aborted) return
-    if (!this.options.qqDisabled) this.drainQq()
     await this.drainWebhooks()
-  }
-
-  /** QQ 入队是同步的，同一轮在遇到第一个 await 之前处理完当前到期任务。 */
-  private drainQq(): void {
-    const seen = new Set<number>()
-    const signal = this.controller.signal
-    for (;;) {
-      if (!this.claiming || signal.aborted) return
-      const jobs = this.due('qq', 20).filter((job) => !seen.has(job.event_id))
-      if (jobs.length === 0) return
-      for (const job of jobs) {
-        if (!this.claiming || signal.aborted) return
-        seen.add(job.event_id)
-        try {
-          transaction(this.db, () => {
-            this.options.notify(job.event_id)
-            this.finish(job, 'done', null)
-          })
-        } catch (error) {
-          this.fail(job, error)
-        }
-      }
-    }
   }
 
   /** Webhook 最多两条在途。本批结束后再领取下一批，失败行的下次时间在未来，不会紧循环重试。 */

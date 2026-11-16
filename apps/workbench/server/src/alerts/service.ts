@@ -21,7 +21,7 @@ import os from 'node:os'
 import { promisify } from 'node:util'
 import type { Config } from '../config.ts'
 import { transaction } from '../db.ts'
-import { readOutboundHealth } from '../chatbot/outbound.ts'
+
 import { nowIso } from '../util/time.ts'
 import { MAX_STATUS_FILE_BYTES, readStatusText } from '../util/status.ts'
 import { agentServiceUnits, dshReadiness, withDshReadiness } from '../dashboard/dsh.ts'
@@ -89,16 +89,6 @@ export interface AlertDeps {
    * 进程在但 stale 时把服务状态覆盖为 inactive。未注入时不改 systemd 结果。
    */
   mcbotHealth?: () => McbotHealth | null
-  /** 事件落库后通知 Chatbot 平台（不阻塞/不影响告警主流程）。 */
-  notifyEvent?: (event: {
-    id: number
-    event: string
-    severity: string
-    status: string
-    title: string
-    message: string
-    createdAt: string
-  }, durable?: boolean) => void
 }
 
 export interface AlertDeliveryDetail {
@@ -108,10 +98,9 @@ export interface AlertDeliveryDetail {
   error: string | null
 }
 
-/** 无投递箱行时为 null。某一通道没有行时该通道为 null。 */
+/** 无投递箱行时为 null。 */
 export interface AlertDeliveries {
   webhook: AlertDeliveryDetail | null
-  qq: AlertDeliveryDetail | null
 }
 
 export interface AlertEventItem {
@@ -384,10 +373,8 @@ export class AlertService {
     this.unknownThreshold = Math.max(1, deps.unknownThreshold ?? UNKNOWN_DEGRADE_THRESHOLD)
     this.serviceUnits = deps.serviceUnits ?? defaultServiceUnits(config)
     this.outbox = new ExternalAlertOutbox(db, {
-      qqDisabled: config.dshQqManaged,
       now: this.deps.now,
       webhook: (id, key, signal) => this.sendWebhook(this.externalEvent(id), signal, key),
-      notify: (id) => this.deps.notifyEvent?.(this.externalEvent(id), true),
       webhookResult: (id, at, error) => this.markDelivery(id, at, error),
       errorText: (error) => this.sanitizeError(error),
       warn: (error) => this.deps.log('warn', '外部告警投递异常', { error: this.sanitizeError(error) }),
@@ -433,7 +420,6 @@ export class AlertService {
   private async collectConditions(): Promise<AlertCondition[]> {
     const health = this.readPiHealth()
     const offsite = this.offsiteCondition()
-    const chatbotOutbound = this.chatbotOutboundCondition()
     const conditions: AlertCondition[] = [
       this.diskCondition(),
       this.tempCondition(health),
@@ -446,7 +432,6 @@ export class AlertService {
       this.worldPullCondition(),
       this.drillCondition(),
       ...(offsite ? [offsite] : []),
-      ...(chatbotOutbound ? [chatbotOutbound] : []),
       await this.minecraftCondition(),
       this.underVoltageCondition(health),
     ]
@@ -818,41 +803,6 @@ export class AlertService {
     }
   }
 
-  /**
-   * Bot 出站异常：仅统计当前窗口内、晚于最近成功发送的失败，避免历史死信长期误报。
-   * 无 enabled bot 或关闭开关时不注册条件，不影响现有告警条件数量。
-   */
-  private chatbotOutboundCondition(): AlertCondition | null {
-    if (!this.config.chatbotEnabled || !this.config.chatbotOutboundAlertEnabled) return null
-    const health = readOutboundHealth(this.db, this.config, this.deps.now())
-    if (!health.active) return null
-    const firing = health.degraded === true
-    const tokenIssue = health.lastError !== null && /qq_(access_token|credentials|secret)|appsecret/i.test(health.lastError)
-    const hint = health.lastErrorHint ?? '无'
-    return {
-      event: 'chatbot_outbound_down',
-      severity: tokenIssue ? 'critical' : 'warning',
-      status: firing ? 'firing' : 'ok',
-      title: 'Bot 出站异常',
-      message: firing
-        ? `近 ${health.windowMinutes} 分钟有 ${health.recentFailures} 条失败/死信；最近成功 ${health.lastSuccessAt ?? '无'}；${hint}`
-        : `近 ${health.windowMinutes} 分钟无新增失败；最近成功 ${health.lastSuccessAt ?? '无'}`,
-      details: {
-        queuedDeliveries: health.queuedDeliveries,
-        failedDeliveries: health.failedDeliveries,
-        deadDeliveries: health.deadDeliveries,
-        queuedPublishes: health.queuedPublishes,
-        failedPublishes: health.failedPublishes,
-        recentFailures: health.recentFailures,
-        windowMinutes: health.windowMinutes,
-        threshold: this.config.chatbotOutboundFailureThreshold,
-        lastSuccessAt: health.lastSuccessAt,
-        lastFailureAt: health.lastFailureAt,
-        lastErrorHint: health.lastErrorHint,
-      },
-    }
-  }
-
   private underVoltageCondition(health: PiHealthSnapshot | null): AlertCondition {
     if (!health) return this.unknown('undervoltage', '树莓派欠压', '无法读取 pi-health')
     return {
@@ -1157,26 +1107,13 @@ export class AlertService {
 
   // ---------- 查询与测试 ----------
 
-  /** 通道关闭或没有可通知目标时在入库时跳过，避免把空入队标成完成。 */
+  /** 未配置 webhook 时入库即跳过，避免把空投递标成完成。 */
   private channelPlan(): InsertPlan {
     const webhookOpen = this.config.alertWebhookUrl.trim().length > 0
-    const qqOpen = !this.config.dshQqManaged && this.config.chatbotEnabled && this.hasNotificationTarget()
     return {
       webhook: webhookOpen ? 'pending' : 'skipped',
-      qq: qqOpen ? 'pending' : 'skipped',
       webhookError: webhookOpen ? null : '未配置 webhook URL',
-      qqError: qqOpen ? null : this.config.dshQqManaged ? 'QQ 收发已迁移，告警使用 Webhook' : '未启用或没有可通知的目标',
     }
-  }
-
-  private hasNotificationTarget(): boolean {
-    const row = this.db.prepare(
-      `SELECT 1 AS ok FROM chatbots c
-       JOIN chatbot_targets t ON t.chatbot_id = c.id
-       WHERE c.enabled = 1 AND t.allow_notifications = 1
-       LIMIT 1`,
-    ).get() as { ok: number } | undefined
-    return row !== undefined
   }
 
   private attachDeliveries(eventId: number): void {
@@ -1203,22 +1140,20 @@ export class AlertService {
        WHERE event_id IN (${eventIds.map(() => '?').join(',')})`,
     ).all(...eventIds) as unknown as {
       event_id: number
-      channel: 'webhook' | 'qq'
+      channel: 'webhook'
       status: AlertDeliveryDetail['status']
       attempts: number
       next_attempt_at: string
       last_error: string | null
     }[]
     for (const row of rows) {
-      const current = map.get(row.event_id) ?? { webhook: null, qq: null }
-      const detail: AlertDeliveryDetail = {
+      const current = map.get(row.event_id) ?? { webhook: null }
+      current.webhook = {
         status: row.status,
         attempts: Number(row.attempts),
         nextAttemptAt: row.next_attempt_at,
         error: row.last_error ? this.sanitizeError(row.last_error) : null,
       }
-      if (row.channel === 'webhook') current.webhook = detail
-      else current.qq = detail
       map.set(row.event_id, current)
     }
     return map

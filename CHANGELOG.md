@@ -2,6 +2,20 @@
 
 记录按版本从新到旧排列。每个版本注明模块：workbench、mcbot、client、dsh、ops。
 
+## [v1.2.4] - 2026-11-16
+
+模块：workbench、mcbot、client、ops
+
+本版尚未部署。生产仍是 v1.2.3 / schema 21。
+
+- schema 22 删除 Workbench 旧 QQ 表与 QQ 告警入队，外部告警只保留 webhook。迁移之后恢复 v1.2.3 必须使用 schema 21 快照。
+- 删除 Workbench 旧 QQ 收发、发布、OpenCode Chat、机器人管理页，以及 `CHATBOT_*`、`DSH_QQ_MANAGED`、`OPENCODE_HTML_MODE`。生产 QQ 仍由 DSH 管理。
+- 删除 OpenCode HTML 兼容层。DSH Web 反代、Origin 校验和插件页代理保留，HTML 原样转发。未配置 DSH Web 地址时启动仍不失败。
+- Minecraft Bot 页收成 Bot 状态、会话、事件记录。会话展示内存中的 DSH 步骤，不落库，不展示工具参数、令牌、提示词或世界记忆正文。
+- 删除固定返回 409 的 Bot 写入口、契约 v1 读取、历史卡片代理和自然语言目标草案。在线模式、急停、停任务和只读状态保留。
+- 去掉 PWA 安装与离线壳。站点图标和 Tauri 图标保留。
+- 已知问题：远程 DSH 插件页只显示内置插件，没有列出 QQ 插件和 Minecraft Bot 插件。见 BACKLOG PLUGIN-02。
+
 ## [v1.2.3] - 2026-11-14
 
 模块：workbench、mcbot、client、dsh

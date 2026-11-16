@@ -16,7 +16,6 @@ import { SlidingWindowLimiter } from '../auth/limiter.ts'
 import { readSessionToken, SESSION_COOKIE } from '../auth/cookies.ts'
 import { hostFromOrigin, isLoopbackHostname, normalizeHost } from '../http/host.ts'
 import { requestMeta, resolveRequestMeta } from '../http/request-meta.ts'
-import { injectOpenCodeScriptOptOut, injectOpenCodeShim, OPENCODE_SHIM_PATH, OPENCODE_SHIM_SCRIPT } from './shim.ts'
 import { dshCookieFromHeader, requestDshCookie } from './dsh-session.ts'
 
 export { normalizeHost, hostFromOrigin }
@@ -244,93 +243,7 @@ export class OpenCodeProxy {
     this.audit?.(action, target, detail, ip)
   }
 
-  /**
-   * opencode Web HTML 处理：
-   * - shim：注入同源脚本并 opt-out Rocket Loader（默认，兼容当前上游）；
-   * - attributes：只加 data-cfasync，不注入 JS；
-   * - passthrough：完全交给原生代理（用于 Cloudflare 已关闭注入后的无垫片验证）。
-   * 返回 true 表示已接管响应；false 交回原来的 http-proxy 路径。
-   */
-  async serveShim(request: FastifyRequest, reply: FastifyReply): Promise<boolean> {
-    if (this.dsh) return false
-    const mode = this.config.opencodeHtmlMode
-    if (mode === 'passthrough') return false
-    const method = request.method
-    if (method !== 'GET' && method !== 'HEAD') return false
-    const rawUrl = request.raw.url ?? '/'
-    const path = rawUrl.split('?')[0] ?? '/'
-    const context = this.auth.authenticate(readSessionToken(request))
-    if (!context) return false
-    request.auth = context
-    const shimHost = normalizeHost(request.headers.host)
-    if (
-      !this.originAllowed(
-        request.headers.origin,
-        'http',
-        requestMeta(request).ip,
-        shimHost === '' || isLoopbackHostname(shimHost),
-      )
-    ) {
-      this.auditOriginRejected('http', request.headers.origin, requestMeta(request).ip)
-      reply.code(403).header('cache-control', 'no-store').send({
-        error: { code: 'origin_rejected', message: '请求来源不受信任' },
-      })
-      return true
-    }
-
-    if (mode === 'shim' && path === OPENCODE_SHIM_PATH) {
-      reply
-        .code(200)
-        .header('content-type', 'application/javascript; charset=utf-8')
-        .header('cache-control', 'no-cache')
-        .send(OPENCODE_SHIM_SCRIPT)
-      return true
-    }
-
-    const accept = request.headers.accept ?? ''
-    const htmlNavigation =
-      path === '/' ||
-      path === '/index.html' ||
-      (typeof accept === 'string' && accept.includes('text/html'))
-    if (!htmlNavigation) return false
-    if (path.startsWith('/api/') || path.startsWith('/_assets/') || path.startsWith('/__af/')) return false
-    if (!this.config.opencodePassword) return false
-
-    try {
-      const upstream = await fetch(`${this.config.opencodeUrl}${rawUrl}`, {
-        headers: {
-          accept: 'text/html',
-          authorization: this.basicAuth,
-        },
-        redirect: 'manual',
-        signal: AbortSignal.timeout(5000),
-      })
-      if (!upstream.ok) return false
-      const contentType = upstream.headers.get('content-type') ?? ''
-      if (!contentType.includes('text/html')) return false
-      const html =
-        mode === 'shim' ? injectOpenCodeShim(await upstream.text()) : injectOpenCodeScriptOptOut(await upstream.text())
-      const headers: Record<string, string> = {
-        'content-type': contentType,
-        'cache-control': 'no-store',
-        'x-af-oc-mode': mode,
-      }
-      if (mode === 'shim') headers['x-af-oc-shim'] = '1'
-      for (const name of ['content-security-policy', 'content-language', 'vary']) {
-        const value = upstream.headers.get(name)
-        if (value) headers[name] = value
-      }
-      reply.code(upstream.status).headers(headers)
-      if (method === 'HEAD') reply.send()
-      else reply.send(html)
-      return true
-    } catch (error) {
-      this.log?.error({ err: error }, 'opencode HTML 处理失败，回退原生代理')
-      return false
-    }
-  }
-
-  /** 在 Fastify onRequest 中调用；未认证时返回 302/401，认证后接管响应。 */
+  /** 在 Fastify onRequest 中调用；未认证时返回 302/401，认证后接管响应。HTML 原样转发。 */
   async handle(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     try {
       await this.handleUnsafe(request, reply)

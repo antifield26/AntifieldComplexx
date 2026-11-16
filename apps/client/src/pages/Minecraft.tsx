@@ -32,7 +32,7 @@ const TAB_COPY: Record<MinecraftTab, { title: string; description: string }> = {
   },
   mcbot: {
     title: 'Minecraft Bot',
-    description: '只读状态、在线模式、管理员对话、事件流与历史',
+    description: '连接与状态、会话和事件记录',
   },
 }
 

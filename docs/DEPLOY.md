@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.3）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.4）
 
 操作按本文件执行。涉及系统状态的步骤要逐条确认。公开仓库里的域名、地址和网段都是占位值，安装前按 `.local/DEPLOYMENT.md` 替换。该文件不提交。
 
@@ -6,7 +6,7 @@
 
 ## 当前运行与回滚
 
-运行中的 Workbench 是 `/opt/antifieldcloud/releases/20261114T082631Z`。它在发布记录之外包含插件列表代理：放行 `/api/pluginManager/` 与 `/api/pluginInventory/`，仍拒绝上传、设置写入、凭据写入，以及原始路径中的 `%`。同 schema 回滚把 Workbench 指回 `/opt/antifieldcloud/releases/20261114T051811Z`，只重启 `antifieldcloud`，保留现行数据库及 WAL。
+运行中的 Workbench 是 `/opt/antifieldcloud/releases/20261114T082631Z`（v1.2.3，schema 21）。它在发布记录之外包含插件列表代理：放行 `/api/pluginManager/` 与 `/api/pluginInventory/`，仍拒绝上传、设置写入、凭据写入，以及原始路径中的 `%`。现行库仍是 schema 21 时，同 schema 回滚把 Workbench 指回 `/opt/antifieldcloud/releases/20261114T051811Z`，只重启 `antifieldcloud`，保留现行数据库及 WAL。v1.2.4 把仓库 schema 升到 22，尚未部署。迁移执行后不能再把现行库直接指回 v1.2.3；恢复该版本必须先换回迁移前的 schema 21 快照。
 
 mcbot 是 `/opt/mcbot/releases/20261114T043045Z`。DSH 是 `/opt/antifield-dsh/releases/20261114T051442Z`（0.2.2-rc.3，QQ 插件 0.5.5）。再退时，Workbench 使用 `20261114T042643Z`，DSH 使用 `20261114T043420Z`。v1.2.2 使用 Workbench `20261113T072133Z`、mcbot `20261113T072417Z`、DSH `20261113T080907Z`。这些同 schema 回滚都保留现行数据库及 WAL。
 
@@ -64,7 +64,8 @@ curl -fsS http://127.0.0.1:3010/healthz
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
-- 当前 schema **v21**（2026-11-11 已部署）：设备登记、会话绑定与请求签名。迁移前生产库是 schema 20，快照为 `db-predeploy-20261111T104848131Z.sqlite`。迁移后的演练按 schema 21。客户端与 schema 21 绑定。回到 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略与公网界面。schema 20 增加外部告警 Webhook 和 QQ 入队状态。
+- 当前 schema **v22**（仓库，尚未部署）：删除 Workbench 旧 QQ 表，外部告警通道只保留 webhook。部署迁移之后，恢复 v1.2.3 必须使用迁移前的 schema 21 快照。
+- schema 21（2026-11-11 已部署，生产仍在此版本）：设备登记、会话绑定与请求签名。迁移前生产库是 schema 20，快照为 `db-predeploy-20261111T104848131Z.sqlite`。迁移后的演练按 schema 21。回到 v1.1.1 必须恢复该快照、v1.1.1 release、当时的 Access 策略与公网界面。schema 20 增加外部告警 Webhook 和 QQ 入队状态。
 - `PUBLIC_APP_SHELL` 默认 `true`，公网继续提供完整界面。设为 `false` 并重启后，应用公网主机只返回说明页「请使用客户端」和分享页；`127.0.0.1`、`localhost` 与 `::1` 仍提供完整界面。单独回滚该开关：改回 `true` 并重启，不改 schema。生产页面仍经 Access；`/api` 已在控制台放行到应用，见 §5.2。
 
 ## 1. 首次系统初始化（重装时执行）
@@ -83,9 +84,6 @@ sudo install -d -o antifieldcloud -g antifield -m 0750 /var/lib/antifieldcloud
 sudo install -d -o antifieldcloud -g antifieldcloud -m 0700 /var/lib/antifieldcloud/files /var/lib/antifieldcloud/tmp
 sudo install -d -o antifieldcloud -g antifield -m 2770 /var/lib/antifieldcloud/backups
 sudo install -d -o root -g root -m 0755 /opt/antifieldcloud/releases /etc/antifieldcloud
-# v0.7.3 Bot 上下文文档目录（OpenCode 组可读；默认关闭功能也要先建目录，避免启用时启动失败）
-sudo install -d -o antifieldcloud -g opencode -m 2750 /var/lib/antifieldcloud-context
-
 # 防火墙（仓库 deploy/nftables.conf；实际网段按 .local 修改后再安装）
 # ！先确认当前 SSH 来源在允许网段内，否则加载后会锁死 SSH。
 sudo cp -a /etc/nftables.conf /etc/nftables.conf.bak 2>/dev/null || true
@@ -139,7 +137,7 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
   - `BACKUP_IMPORT_MAX_BYTES=104857600`：Web 归档导入上限，实际还受 `MAX_UPLOAD_BYTES` 限制。
   - `BACKUP_IMPORT_RETENTION_DAYS=90`：Web 导入归档保留天数，0=永久；活动恢复计划引用的归档不删。
   - `ALERT_REPEAT_HOURS=24`：持续 firing 的重通知间隔（小时），0=关闭；新键优先于旧 `ALERT_COOLDOWN_MINUTES`。
-  - `OPENCODE_HTML_MODE=shim|attributes|passthrough`：默认 `shim`；Cloudflare 关闭注入并验证后可切 `passthrough`。
+  - Workbench 不读取 `CHATBOT_*`、`DSH_QQ_MANAGED` 或 `OPENCODE_HTML_MODE`。DSH Web 的 URL 与 socket 同时配置或同时留空。HTML 原样转发。生产残留键用 `bootstrap-env.sh --force --prune-unknown` 清理，先备份 env。
   - `CHUNKED_UPLOAD_ENABLED=true`：启用 5 GiB 分片上传（默认 true）。
   - `CHUNK_SIZE_BYTES=8388608`：块大小，1–100 MiB；Cloudflare 代理下建议 8 MiB。
   - `CHUNK_MAX_FILE_BYTES=5368709120`：单文件上限，默认 5 GiB，不得超过配额。
@@ -152,38 +150,6 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
   - `NOTE_ATTACHMENT_MAX_BYTES=26214400`、`NOTE_MAX_ATTACHMENTS=100`、`NOTE_VERSIONS_KEEP=20`：笔记附件与版本限制。
   - `SHARE_MAX_ITEMS=50`：单个分享最多文件数。
   - `METRICS_ENABLED=true`、`METRICS_SAMPLE_SECONDS=60`、`METRICS_RETENTION_DAYS=30`：指标采样与保留。
-  - `CHATBOT_ENABLED=false`：总开关；**默认关闭**，完成 QQ 平台联调后再显式改为 true 并重启。
-  - `CHATBOT_SECRET_KEY`：32 字节 base64（`openssl rand -base64 32` 等价），AES-256-GCM 加密 QQ AppSecret；必须与 DB 一起备份，
-    丢失后已存 AppSecret 只能重新录入。`bootstrap-env.sh --force` 复用旧值，**不要手工替换**。
-  - `CHATBOT_WEBHOOK_MAX_BODY_BYTES=262144`：Webhook 原始 body 上限（16 KiB–1 MiB）。
-  - `CHATBOT_DELIVERY_INTERVAL_SECONDS=30`（5–300）、`CHATBOT_DELIVERY_MAX_ATTEMPTS=5`（1–20）：队列扫描与最大尝试次数。
-  - `CHATBOT_OUTBOUND_ALERT_ENABLED=true`、`CHATBOT_OUTBOUND_FAILURE_WINDOW_MINUTES=60`（5–1440）、`CHATBOT_OUTBOUND_FAILURE_THRESHOLD=1`（1–100）：出站可用性告警。
-  - `CHATBOT_EVENT_RETENTION_DAYS=7`（1–90）：事件去重记录保留；已发送投递/发布固定 30 天清理。
-  - `CHATBOT_COMMAND_RATE_PER_MINUTE=120`（1–600，）：每 Bot × 用户命令限流。
-  - `CHATBOT_PUBLISH_MAX_SCHEDULED_DAYS=30`（1–365）、`CHATBOT_MAX_BOTS=10`（1–50）。
-  - `CHATBOT_AI_ENABLED=false`：普通消息 Chat 的 AI 总开关；关闭时 Chat 不调用 AI。
-  - `CHATBOT_AI_PROVIDER=`、`CHATBOT_AI_MODEL=`：可选 OpenCode provider/model，二者同时设置才指定模型；为空用 OpenCode 默认模型。
-  - `CHATBOT_AI_TIMEOUT_SECONDS=60`（10–180）：单次 AI 请求/等待超时。
-  - `CHATBOT_AI_MAX_PROMPT_CHARS=2000`（100–8000）：提示词截断。
-  - `CHATBOT_AI_RATE_PER_HOUR=120`（1–600，）：每 Bot×用户每小时 AI 调用上限（仅 Chat）。
-  - `CHATBOT_AI_SESSION_RETENTION_DAYS=7`（1–90）：`chatbot_ai_sessions` 映射保留；长期记忆保留独立（见下），会话清理不删除远端会话。
-  - `CHATBOT_CHAT_RATE_PER_MINUTE=30`（1–120，）：普通消息 Chat 每 Bot×用户每分钟上限；仍受 `CHATBOT_AI_RATE_PER_HOUR` 总量约束。
-  - `CHATBOT_AI_MEMORY_MAX_CHARS=4096`（512–16384）：每 Bot×用户长期记忆摘要上限。
-  - `CHATBOT_AI_MEMORY_RETENTION_DAYS=365`（30–3650）：fact/project/relationship 条目 TTL 天数，独立于 7 天会话保留。
-  - `CHATBOT_AI_MEMORY_BATCH_MESSAGES=3`（1–20）：累计多少轮对话触发一次记忆抽取。
-  - `CHATBOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`（0 或 10–3600）：用户空闲多少秒触发记忆抽取；0 关闭空闲触发。
-  - `CHATBOT_MEMORY_MAX_ITEMS=200`（20–1000）：每 Bot×用户条目容量上限；超限先淘汰低重要度非核心条目（profile/preference 受保护）。
-  - `CHATBOT_MEMORY_PROMPT_MAX_CHARS=3000`（500–8000）：召回注入字符预算。
-  - `CHATBOT_MEMORY_PROMPT_MAX_ITEMS=12`（1–50）：召回注入条数预算。
-  - `CHATBOT_MEMORY_TTL_EPISODE_DAYS=90`（1–365）：episode 条目 TTL。
-  - `CHATBOT_MEMORY_TTL_TASK_DAYS=30`（1–180）：task 条目 TTL。
-  - fact/project/relationship 的 TTL 沿用 `CHATBOT_AI_MEMORY_RETENTION_DAYS=365`；legacy fallback 上限沿用 `CHATBOT_AI_MEMORY_MAX_CHARS`。.TrimEnd
-  - `CHATBOT_AI_TASK_PROMPT`：原 `/ask` 任务提示覆盖；生产 env 需删除该行。
-  - `CHATBOT_AI_CHAT_PROMPT`：原 Chat 提示覆盖；生产 env 需删除该行。
-  - `CHATBOT_AI_MAX_REPLY_CHARS=4000`（1000–12000）：AI 单次回答字符上限；QQ 适配器再按 2000 字符分段发送。
-  - `CHATBOT_AI_VISION_ENABLED=true`：QQ 入站图片理解总开关。开启需 OpenCode 支持 prompt files 与模型支持 image 输入（生产已完成只读验证：data URL + `opencode-go/deepseek-v4.1-flash`）；
-    关闭后图片降级为纯文字回答。当前不纳管：`CHATBOT_DISCORD_GATEWAY_ENABLED`、`CHATBOT_PUBLISH_MAX_MEDIA_BYTES`、`CHATBOT_PUBLISH_MAX_MEDIA_FILES`、`CHATBOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES`（`bootstrap-env.sh` 不再纳管）。
-  - `CHATBOT_AI_IMAGE_MAX_BYTES=10485760`（1–20 MiB）：单张入站图片上限；图片只放行 image mime、QQ CDN 固定域名后缀、不落盘，失败降级为纯文字。
   - `MCBOT_ENABLED=false`：mcbot Minecraft Bot 对接总开关（v0.8.0 引入，v0.8.1 加固，**默认关闭**）；启用时必须配置 `MCBOT_READ_TOKEN`，且 `MCBOT_URL` 为 loopback + http(s) 根地址（拒绝 userinfo/路径/查询/片段），否则拒绝启动。
   - `MCBOT_URL=http://127.0.0.1:3010`：上游仅 loopback（去尾斜杠）；mcbot 是独立服务，不对外、不进入 Cloudflare/nftables。
   - `MCBOT_READ_TOKEN=`、`MCBOT_CONTROL_TOKEN=`：由 root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN` 同步（64 位 hex）；**不要手工复制 mcbot 的 RCON/OpenCode 密码**。控制 Token 为空 = 只读（控制接口与 `/say` 均 503 `mcbot_control_disabled`）。
@@ -216,11 +182,11 @@ npm run check
 
 ### 3.0 当前部署步骤
 
-1. 在 PC 上跑 `npm run check`、`npm run build`、`node scripts/check-version.mjs` 和 `node scripts/check-prod-deps.mjs`。期望应用与 mcbot 为 1.2.3，schema 为 21，契约为 2，DSH 为 0.2.2-rc.3，QQ 插件为 0.5.5。
-2. 确认没有未确认的归档。开启加密后按两倍明文预算留磁盘。核对 schema 21 的一致性快照。
-3. 部署 Workbench：`.\scripts\deploy.ps1 -PiHost <直连 IP>`。脚本校验 tar、安装生产依赖、做迁移前快照并切换 current。同 schema 失败时恢复上一 release 与配置，保留现行数据库及 WAL。
+1. 在 PC 上跑 `npm run check`、`npm run build`、`node scripts/check-version.mjs` 和 `node scripts/check-prod-deps.mjs`。期望应用与 mcbot 为 1.2.4，schema 为 22，契约为 2，DSH 为 0.2.2-rc.3，QQ 插件为 0.5.5。本版尚未部署。
+2. 确认没有未确认的归档。开启加密后按两倍明文预算留磁盘。部署前核对并保留 schema 21 的一致性快照。迁移执行后，恢复 v1.2.3 必须使用这份快照。
+3. 部署 Workbench：`.\scripts\deploy.ps1 -PiHost <直连 IP>`。脚本校验 tar、安装生产依赖、做迁移前快照并切换 current。这次迁移跨 schema，失败时进入人工维护，先保全现行库。
 4. Bot 空闲后再部署 mcbot。Minecraft 保持运行。核对 `/healthz` 与契约 v2。
-5. 冒烟使用 `smoke.ps1 -ExpectedVersion 1.2.3 -ExpectedSchemaVersion 21 -ExpectedMcbotVersion 1.2.3 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.3 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`。配置 Access 后追加客户端标识。未启用 mcbot 时用 `-SkipMcbot`。
+5. 冒烟使用 `smoke.ps1 -ExpectedVersion 1.2.4 -ExpectedSchemaVersion 22 -ExpectedMcbotVersion 1.2.4 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.3 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`。配置 Access 后追加客户端标识。未启用 mcbot 时用 `-SkipMcbot`。
 6. 整包加密与 Google Drive 异地副本保持开启。回滚指针见文首。跨 schema 退回 v1.1.1 必须同时恢复 schema 20 快照、当时的 release、Access 策略和公网界面。
 ## 3.2 OpenCode v2.2.5 升级与兼容性复核（本机执行，发布门禁）
 
@@ -338,9 +304,9 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 - cloudflared 以 root 运行；当前已通过 `20-hardening.conf` drop-in 加固（见 §9.6），定期用
   `cloudflared tunnel info` 的版本提示升级（`--no-autoupdate` 不会自动升级）。
 
-### 5.1 Rocket Loader / 自动注入（OpenCode 无垫片前置）
+### 5.1 Rocket Loader / 自动注入
 
-目标：只为 `ai` 主机关闭 Cloudflare 对模块脚本的改写/自动注入，不影响 `app`。
+目标：只为 `ai` 主机关闭 Cloudflare 对模块脚本的改写和自动注入，不影响 `app`。Workbench 把 HTML 原样转发，不再注入垫片。
 
 1. Cloudflare Dashboard → Rules → **Configuration Rules** → Create rule：
    - 表达式：`http.host eq "ai.example.com"`；
@@ -350,23 +316,20 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 3. Web Analytics → Manage Site：自动注入设为 **Disable**（严格 CSP 下 beacon 被拦截）。
 4. 如启用 Bot Fight Mode，其 JavaScript Detections 不能单独关闭；可整体关闭或接受控制台 CSP 报错。
 5. 验收：
-   - `curl -fsS https://ai.example.com/` 的 HTML 中 `type="module"` 未被改写；无 `data-cfasync` 依赖；
-   - 认证浏览器桌面/Android/390/915 宽屏测试原生“新建会话”、模型/智能体选择器、SSE/WS；
-   - 代理设置 `OPENCODE_HTML_MODE=passthrough`（或 `attributes` 过渡）后再观察 24h；失败切回 `shim`。
-6. 回滚：删除该 Configuration Rule → 恢复 `OPENCODE_HTML_MODE=shim` → 重启应用。
-
-注意：opencode 上游原生新建按钮在部分版本/空项目状态有缺陷；若关闭注入后仍无响应，按验收记录保留最小隐藏 click/pointerup 接管（无可见按钮），不重新引入浮动按钮。
+   - `curl -fsS https://ai.example.com/` 的 HTML 中 `type="module"` 未被改写；
+   - 认证浏览器确认 DSH Web 的会话、模型选择和 SSE/WS 可用。
+6. 回滚：删除该 Configuration Rule。应用侧没有 HTML 模式可切回。
 
 ### 5.2 Cloudflare Access 策略与 bypass
 
-目标：在 Cloudflare 边缘给 `app.<domain>` 增加第二层身份校验（应用 TOTP 仍是最终认证），同时保证 Bot 回调、健康检查与公开分享不被 Access 拦截。
-**Access 配置不在仓库内；未配置/漏配时表现为 Webhook 404/302、`/healthz` 302、公开分享被重定向。**
+目标：在 Cloudflare 边缘给 `app.<domain>` 增加第二层身份校验（应用 TOTP 仍是最终认证），同时保证健康检查与公开分享不被 Access 拦截。
+**Access 配置不在仓库内。漏配时 `/healthz` 与公开分享会被重定向到登录页。**
 
 生产当前配置（API 创建；含 AI 主机）：
 - 主应用 `AntifieldComplexx`：`app.<domain>`，One-time PIN IdP，策略 `Owner allow`（指定邮箱）+ `Smoke service token`（`non_identity`，指定 service token）。
-- 4 个独立 **Bypass** 应用（各自 `Bypass Everyone`）：`/healthz`、`/api/chatbot/webhook`、`/s`、`/api/public/shares`。
+- 生产 v1.2.3 仍有 4 个独立 **Bypass** 应用（各自 `Bypass Everyone`）：`/healthz`、`/api/chatbot/webhook`、`/s`、`/api/public/shares`。本版部署后 Workbench 不再提供 QQ Webhook，该 bypass 可以保留。
 - service token 名称 `smoke-readonly`，有效期 1 年；Client ID/Secret 只保存在 PC `.local/cf-access.env`（gitignored），不写仓库；`CF_ACCESS_APP_AI_ID` 也已写入该文件。
-- 已实测：未登录 `/` 302 到 `*.cloudflareaccess.com`；4 个 bypass 路径返回应用状态码而非 302；带 token 访问 `/api/chatbots/status` 为 401；`ai` 未认证 302、service token 401；smoke 33/33（含任务标记）。
+- 2026-11-14 之前已实测：未登录 `/` 302 到 `*.cloudflareaccess.com`；上述 bypass 路径返回应用状态码而非 302；`ai` 未认证 302、service token 401。
 - 2026-11-11 客户端验收：用户在控制台放行应用 `/api`。未登录 `/api/version` 与 `/api/metrics` 返回应用 401 JSON。`POST /api/auth/password` 对 Tauri Origin 的预检为 204，错误口令为 400 JSON 并回显该 Origin。未登录 `/` 与 `/files` 仍 302 到 Access。Windows 与 Android 客户端登录验收通过。service token 不进入安装包。退回 v1.1.1 时连同当时的 Access 策略一起恢复。
 
 手工重建/迁移时按以下步骤：
@@ -377,15 +340,12 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
    - Policy：`Allow`，Include 选择本人邮箱（One-time PIN）或已配置的身份提供商；不要添加 `Everyone`/`Bypass` 到整站。
 2. **先创建 4 个独立的 path 应用**（路径应用的优先级高于整站主应用）：
    - 每个应用 Domain 填 `app.<domain>/healthz`（或对应路径），Policy 选 **Bypass + Everyone**；
-   - 路径分别为：`/healthz`、`/api/chatbot/webhook`、`/s`、`/api/public/shares`。
-   - `/api/chatbot/webhook` 覆盖 QQ 官方 Bot 回调；`/s` 与 `/api/public/shares` 覆盖公开分享；`/healthz` 供 smoke/健康检查。
-   - 如 PWA 冷启动/离线壳在 Access 登录前就需要加载，可再按需 bypass `/assets`、`/manifest.webmanifest`、`/sw.js`、`/offline.html`、`/icons`。
+   - 路径分别为：`/healthz`、`/s`、`/api/public/shares`。生产上仍在的 `/api/chatbot/webhook` bypass 可以保留。
+   - `/s` 与 `/api/public/shares` 覆盖公开分享；`/healthz` 供 smoke 与健康检查。
    - 原生客户端不能完成 Access 浏览器登录。`/api` 必须到达应用；认证仍是密码、TOTP 与设备签名，浏览器写请求另要 CSRF。页面与 `ai` 主机保持 Access。不要把 service token 放进安装包。
 3. 验证（未登录浏览器/命令行）：
    ```bash
-   # Webhook：应为应用的 404（CHATBOT_ENABLED=false）或 401（验签失败），不能是 Cloudflare Access 302
-   curl -s -o /dev/null -w '%{http_code}\n' -X POST https://app.<domain>/api/chatbot/webhook/x
-   # 健康检查：200 JSON
+   # 健康检查：200 JSON，不能是 Cloudflare Access 302
    curl -sS https://app.<domain>/healthz
    # 公开分享：未知 token 应为应用 404，而不是 Access 登录页
    curl -s -o /dev/null -w '%{http_code}\n' https://app.<domain>/s/not-a-token
@@ -515,7 +475,7 @@ ss -tlnp | grep -E ':25565|:25575'
 ### 9.2 systemd 加固
 
 `deploy/antifieldcloud.service` 已启用：`CapabilityBoundingSet=`（空）、`AmbientCapabilities=`、`RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`、
-`PrivateDevices`、`PrivateTmp`、`ProtectSystem=strict`、`ProtectHome=true`、`ReadWritePaths=/var/lib/antifieldcloud /var/lib/antifieldcloud-context`、
+`PrivateDevices`、`PrivateTmp`、`ProtectSystem=strict`、`ProtectHome=true`、`ReadWritePaths=/var/lib/antifieldcloud`、
 `ProtectKernelTunables/Logs`、`ProtectControlGroups`、`ProtectClock/Hostname`、`RestrictNamespaces/SUIDSGID/Realtime`、
 `LockPersonality`、`SystemCallArchitectures=native`、`StartLimitIntervalSec=60/StartLimitBurst=5`、`MemoryMax=512M`。
 
@@ -529,8 +489,7 @@ journalctl -u antifieldcloud -n 50 --no-pager
 ```
 
 - 回滚：恢复备份的 unit → `daemon-reload` → `restart`。若出现 `status=226/NAMESPACE` 或权限错误，先确认
-  `ReadWritePaths` 覆盖所有实际写入目录（`/var/lib/antifieldcloud` 与 v0.7.3 的 `/var/lib/antifieldcloud-context`），再检查 `/run` 目录归属；
-  v0.7.3 若上下文目录不存在，systemd 会因 `ReadWritePaths` 挂载失败，先按 §1 创建目录。
+  `ReadWritePaths` 覆盖 `/var/lib/antifieldcloud`，再检查 `/run` 目录归属。
 - 健康探针 `deploy/antifieldcloud-health.service/.timer` 与 `PI_HEALTH_FILE` 不变（§7）。
 - 世界备份 unit `antifieldcloud-world.service` 也使用同类加固（整机只读、仅数据目录可写、Minecraft 目录只读、空 cap 之外仅保留必要 chown/chmod）。
 
@@ -681,68 +640,11 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
     不影响 nftables 规则与 fail2ban 现有封禁。生产已安装并实测 nftables restart 后封禁恢复；Cloudflare Access 也已配置并通过带 token 的 smoke。
 - 回滚窗口结束后的验收：`sshd -T` 仍为仅公钥、`smoke.ps1`/备份/部署均通过、旧密码登录失败（可用被测主机/临时用户验证，不要锁死主账号）。
 
-### 9.8 QQ 官方 Bot 平台接入（用户后台 + 应用配置）
+### 9.8 QQ
 
-1. **QQ 开放平台**：q.qq.com 创建机器人 → 取得 **AppID** 与 **AppSecret**；`/chatbots` 新建 QQ 官方 Bot，AppID 填公开配置（`config.appId`），
-   AppSecret 只提交保存为密文（不回显）。**仅支持 QQ 官方 Bot**，不再提供 Telegram/Discord/Slack 入口或 Gateway 配置。
-2. **回调地址**：QQ 开放平台“开发设置 → 回调地址”填 `https://app.example.com/api/chatbot/webhook/<botId>`；平台发送 `op=13` 校验，
-   服务端用 AppSecret 派生 Ed25519 私钥返回 `{plain_token, signature}`；随后校验 `op=0` 事件签名（`X-Signature-Ed25519` + 时间戳 ±300 秒）。
-3. **事件订阅**：至少订阅 `C2C_MESSAGE_CREATE`（私聊）、`GROUP_AT_MESSAGE_CREATE`（群@）、`AT_MESSAGE_CREATE`（频道）；如需全量群消息，在 QQ 后台开启“接收所有消息”并订阅 `GROUP_MESSAGE_CREATE`，目标设 `groupReplyMode=all`（实验性）；群主还需在 QQ 群设置 → 机器人 → 可获取的群聊消息范围选择“获取群内全部消息”，否则平台不会推送非 @ 消息。
-4. **应用侧**：`/chatbots` 中 Bot 默认 `enabled=false`；先保存 AppID/AppSecret 与目标（可设静默时段），再开启 `CHATBOT_ENABLED=true` 并重启，最后逐个 `PATCH enabled=true`。
-   目标填写：C2C 用 `user_openid`、群聊用 `group_openid`、频道用 `channel_id`；C2C 命令用户另建 `kind=user` 且允许命令的目标（群聊/频道自 不执行斜杠命令）；Chat 目标勾选 `allow_chat`；群目标可选群消息模式。
-   用“测试连接”发一条测试消息（20 次/小时）；配置页“检查连接”确认 QQ `access_token` 自检通过。
-5. **Chat/触发**：C2C 私聊普通文本直接进入 Chat；QQ 群/频道先 @Bot，再从“最近入站目标”登记并勾选 `allow_chat`。非管理员只能 Chat，不能执行斜杠命令。
-6. **图片（默认开启）**：`CHATBOT_AI_VISION_ENABLED=true`（默认）、`CHATBOT_AI_ENABLED=true` 且模型支持 image 输入时，QQ `d.attachments` 中 image/* 附件经
-   `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀白名单、image mime 白名单、≤`CHATBOT_AI_IMAGE_MAX_BYTES` 下载后交给 OpenCode；不落盘、失败降级。
-   如需关闭设 `CHATBOT_AI_VISION_ENABLED=false` 并重启；图片会经 OpenCode 发给模型 provider（见 `docs/SECURITY.md`）。
-7. **AI（可选）**：Bot 稳定后设 `CHATBOT_AI_ENABLED=true`（可同时设 `CHATBOT_AI_PROVIDER`/`CHATBOT_AI_MODEL`）并重启；无 `/ask`，由用户在私聊/群 @Bot 发普通消息 Chat，
-   确认有文本回复且审计 `chatbot.ai.chat`（不含 `mode`）；再验证结构化记忆（多轮后 `chatbot_memory_items` 条目、`chatbot.memory.extract` 计数、`/memory` 展示与 off/on、`/forget confirm` 清空 items/state/legacy/会话）、角色卡与 `/reset`；真实模型/工具行为按 `docs/SECURITY.md` §4 记录。
-8. **发布**：`/chatbots` → 投递与发布 → 填纯文本（≤2000，超长服务端分段）+ TOTP 验证码 + `PUBLISH` 二次确认；QQ 无媒体/附件。
-9. **验收证据**：QQ 至少一条 C2C/群@/频道文本命令、一条 Chat、一条测试通知、一条文本发布（含长文本分段）+ 一次定时/取消 + 一次失败重试；
-   一次图片识别成功与一次降级；Chat 至少一条真实模型回复；`/help` 非管理员/管理员差异与 `/ask` 被拒/管理员回帮助不调用 AI；`/reset`、`/forget confirm` 实际发送；诊断分区有事件/中文错误提示；角色与记忆分区启停/删除（仅元数据）。
-   记录 `chatbot_deliveries` 状态与平台消息 id（不记录 AppSecret/记忆正文）。未完成联调前保持 `CHATBOT_ENABLED=false`/`CHATBOT_AI_ENABLED=false`；
-   未配置 AI/图片时在 `docs/ACCEPTANCE.md` 标“待配置/待验证”。
-   **真实 QQ 正向验收（v0.7.2 已通过）**：C2C 文本命令/自助命令/权限拒绝/文本 Chat/真实图片端到端均有生产证据；诊断/角色记忆面板与文本发布按用户确认整体通过。历次生产证据见 `docs/ACCEPTANCE.md`，文档模式验收记录见 §3.7。
-生产 env 迁移已完成（命令 120/AI 120/Chat 30、删除 `CHATBOT_AI_TASK_PROMPT`/`CHATBOT_AI_CHAT_PROMPT`、权限 640、APP_VERSION=0.5.9，原 env 备份 `/var/lib/antifieldcloud/env-backup-v058-20261022223449.bak`）；回滚切回 `20261022T134852Z` + 还原 env 备份（20/10/6）。用户已实发验收通过（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户确认；22:41 原话“验收通过”）。
+生产 QQ 由 DSH 管理。Workbench 不再提供 Webhook、发布、OpenCode Chat 或机器人管理页。这些路径不存在。凭据、白名单和会话记忆由 DSH 自己保管。告警只走 webhook。
 
-### 9.9 Bot 队列/发布故障排查
-
-| 现象 | 处理 |
-|---|---|
-| Webhook 302 到 cloudflareaccess.com | Access 未对 `/api/chatbot/webhook/*` bypass（§5.2） |
-| Webhook 404 | `CHATBOT_ENABLED=false`/无 `CHATBOT_SECRET_KEY`/Bot `enabled=false`/botId 错；看 `/api/chatbots/status` 与审计 `chatbot.webhook.rejected` |
-| Webhook 401 | QQ Ed25519 签名/时间戳（±300s）或 AppSecret 不匹配；核对 QQ 开放平台回调与 Secret；`op=13` 校验需返回签名体 |
-| 命令无回复 | 群聊/频道命令一律忽略（`chatbot.command.disabled`）；C2C 需目标勾选 `allow_commands`、用户登记为 `kind=user` 且允许命令、命令未限流、平台 API 正常；看 `chatbot.command.denied`、`chatbot_deliveries.last_error` |
-| `/ask` 无效 | `/ask` 不是有效命令：非管理员按未知命令被拒（`chatbot.command.denied`、无回复），管理员回全量帮助且不调用 AI；AI 请用普通消息 Chat |
-| Chat AI 超时/502/504 | OpenCode 不可达、Basic 密码不一致、模型未配置或超时；`curl -u` 探测 4096，检查 `OPENCODE_PASSWORD` 与 `CHATBOT_AI_TIMEOUT_SECONDS`；不要打印密码 |
-| 发布 400/401 | 缺 `totpCode` 或 `confirmText:'PUBLISH'`、TOTP 过期/重放、目标是 user、文本超 2000 字符、定时超 30 天；无媒体字段 |
-| 发布 `partial_text_sent` | 长文本部分段落已外发后失败；任务标记 `failed` 且不自动重试，避免重复外发。核对平台消息后人工重建任务 |
-| Chat 无回复 | 目标未勾选 `allow_chat`、`CHATBOT_AI_ENABLED=false`、QQ 群/频道未 @Bot、全量模式下仅@/名字未命中或模型输出 `NO_REPLY`、限流（30/min 或 120/h）；看 `chatbot.chat.denied`/`chatbot.chat`/`chatbot.ai.chat` 审计与 `mention_filtered`/`no_reply` 事件 |
-| 群/频道不消费未 @ 的消息 | 属 QQ 平台限制：群/频道只有 @Bot 事件进入 Bot，不支持“全部消息”；C2C 私聊直接进入 |
-| 图片提示暂不支持/未处理 | `CHATBOT_AI_VISION_ENABLED=false`、附件 mime/大小/域名不合规或下载失败；看审计 `chatbot.ai.image`（只含 mime/大小/跳过原因）与日志（不含图片内容） |
-| 检查连接失败 | 按 QQ AppID/AppSecret、Pi 直连出站网络核对；`chatbot_health_unsupported` 表示适配器未实现自检；结果只含脱敏项 |
-| 诊断无事件/筛选报错 | `CHATBOT_ENABLED=false`、Bot 未启用、时间窗口内无入站；`outcome` 只接受 received/ok/denied/rate_limited/ignored/error，非法值 400；事件不含正文 |
-| `/reset` 或 `/forget` 无效果 | `/reset` 只清当前目标 Chat/任务会话（保留记忆）；`/forget` 必须带完整参数 `confirm`，清除该 Bot×用户长期记忆与全部会话（不删角色卡） |
-| 记忆未生成/未召回 | 看 `chatbot.memory.extract` 审计计数与 `chatbot_memory_items`/`chatbot_memory_state` 行数；确认用户未 `/memory off`、OpenCode 可达、批处理阈值 `CHATBOT_AI_MEMORY_BATCH_MESSAGES`/`CHATBOT_AI_MEMORY_IDLE_FLUSH_SECONDS`、召回预算 `CHATBOT_MEMORY_PROMPT_MAX_CHARS`/`CHATBOT_MEMORY_PROMPT_MAX_ITEMS`；不要打印 key/value 正文 |
-| legacy 清理未执行/残留 | 验收后需执行 `node scripts/cleanup-legacy-memory.mjs`（dry-run 核对）再 `--confirm`；只清理 `legacy_migrated_at` 已置位用户的 `chatbot_ai_memories`+镜像；看审计 `chatbot.memory.legacy_cleanup` |
-| 回滚后启动报 schema 过高 | 必须先用迁移前快照 `db-predeploy-*.sqlite` 恢复 DB，再切回旧 release；不要只切 release |
-| 树莓派重启后 Cloudflare 1033 / 公网 530 | 先 `curl -k -sS https://api.cloudflare.com/client/v4/` 看是否返回校园网认证页；若是 Portal 认证失效，在 Pi 出口完成认证（可临时 `ssh -D` 让 PC 浏览器经 Pi 出口登录），确认 TCP/UDP 7844 可达后 `systemctl reset-failed cloudflared && systemctl restart cloudflared`；本环境 2026-10-24 即此原因 |
-| Cloudflare 边缘/tunnel 中断 | 查看 Cloudflare 状态与 cloudflared 日志；本例 2026-10-23 01:08–01:13 CST 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复（环境事件，非应用问题） |
-| 连通性快照仍含设备/代理 | 快照仅 `checkedAt/checking/internet/platforms`；若仍有 `deviceOnline/proxy` 说明运行的是旧 bundle，检查 release/bundle 版本并重启 |
-
-| 通知被延后 | 目标配置了静默时段且在窗口内；属预期，`next_attempt_at` 为窗口结束；如非预期检查 `quietStartMinute/quietEndMinute` |
-| 指标卡为空/0 | 窗口内无投递或 Bot 关闭；直接查 `GET /api/chatbots/:id/metrics?hours=24`、`chatbot_deliveries`/`chatbot_publish_jobs`；成功率只统计已尝试投递 |
-| 投递 `dead` | 平台 AppSecret 失效/权限不足/被限流或出站网络失败；修复后 `POST /deliveries/:id/retry`；必要时重录 AppSecret |
-| 队列不跑 | `CHATBOT_ENABLED`/密钥、`CHATBOT_DELIVERY_INTERVAL_SECONDS`、Bot 未启用；重启后看 `startBots` 日志 |
-| `CHATBOT_SECRET_KEY` 无效 | 必须是 base64 32 字节；`bootstrap-env.sh` 会拒绝写入并退出，恢复旧 key 或接受 QQ AppSecret 重录 |
-| smoke 公网 302 到 Access | 未配置 bypass 时属预期；配置后仍 302 检查 service token 是否同时传 `-AccessClientId/-AccessClientSecret` 且未过期 |
-| 迁移后非 QQ Bot 消失 | 13 删除 `platform <> 'qq'` 的 Bot 及级联数据，属预期；只能从迁移前 DB 快照恢复，不能通过应用恢复 |
-| nftables restart 后封禁未恢复 | 确认 `/etc/systemd/system/nftables.service.d/10-fail2ban-restore.conf` 已安装、`daemon-reload`、dbfile 存在；`journalctl -u nftables` 看 `systemd-run` 是否执行；手工 reload 不触发，需 `systemctl restart fail2ban` |
-| 加密 prepare 失败（`age 不可用`/`公钥`） | `BACKUP_ARCHIVE_ENCRYPTION=true` 时失败关闭属预期：检查 `age --version`、`BACKUP_AGE_RECIPIENT_FILE` 存在/root 属主/0644/组其他不可写/单行 `age1…`；修好前不要改回明文绕过 |
-| Web 对归档返回 `409 archive_encrypted` | 加密归档在 Web 不可校验/恢复：到 PC 用离线 age 私钥解密/校验（`docs/BACKUP.md` §5.1/§8.1）；不要尝试在 Pi 解密 |
-| 加密归档缺 `.meta.json` | PC 拉取会跳过且不 ack：检查 Pi `backups/` 下 `<name>.meta.json` 是否存在/可读；补齐前不要 ack/删除密文 |
-| 异地副本状态缺失/超期 | 默认关闭；未配置时 `offsite` 为 null 且不告警。配置后检查 PC `AntifieldCloud-Backup-Offsite` 任务 `LastTaskResult`、`backup-offsite.log`、rclone remote/凭据、`ALERT_OFFSITE_MAX_AGE_HOURS` 与 `backup-offsite-status.json` 的 `lastRunAt/error/plaintextSkipped` |
-| 加密/异地状态卡显示未启用 | 正常：`BACKUP_ARCHIVE_ENCRYPTION=false`/状态文件缺失即未启用；启用步骤见 §9.10/§9.11 |
+历史接入记录见 [CHANGELOG](../CHANGELOG.md) 与 [ACCEPTANCE](ACCEPTANCE.md)。
 
 ### 9.10 备份整包加密启用/回滚（默认关闭）
 
@@ -835,11 +737,7 @@ sudo systemctl daemon-reload && sudo systemctl restart cloudflared
 
 跨 schema 由管理员在维护窗口完成。优先前向修复以保留新写入。必须回退时先停止 Workbench，并把当前数据库和同名 WAL/SHM 保存到权限为 0700 的独立目录。用 `node scripts/deploy-state.mjs snapshot <迁移前快照> <部署记录中的 SHA-256>` 验证哈希、SQLite 完整性和旧 schema 后，才恢复已验证的快照。旧 WAL/SHM 需与原库一起保全，恢复的快照以独立文件启动。最后恢复配置和指针并复检。
 - 每次部署在切换前生成 `/var/lib/antifieldcloud/backups/db-predeploy-*.sqlite`（0600，**保留最新 2 个**：`MAX_PREDEPLOY_SNAPSHOTS=2`，供自动回滚；明文快照属威胁模型明确豁免项，见 `docs/SECURITY.md` §4）。
-- schema 只向上，当前是 v21。v21 增加设备登记、nonce 与会话 `device_id`。迁移单向，没有 down。旧代码遇到更高 schema 会拒绝启动。同 schema 回滚保留现行数据库及 WAL。跨 schema 回退必须先恢复对应迁移前快照，步骤见文首。
-- Bot 数据回滚：`chatbots`/`chatbot_targets`/`chatbot_deliveries`/`chatbot_publish_jobs`/`chatbot_events`/`chatbot_ai_sessions`/`chatbot_ai_memories`/`chatbot_inbound_targets`/`chatbot_chat_roles` 随 DB 快照恢复；
-  `CHATBOT_SECRET_KEY` 不在 DB 中，必须保持与快照生成时一致的 env（否则 QQ AppSecret 不可解密）。`DATA_DIR/bot-memory` 镜像文件不由快照恢复，
-  如需与 DB 摘要一致，可保留现有镜像或按保留期/人工清理；不通过 API 暴露。
-  回滚窗口内保持 `CHATBOT_ENABLED=false`/`CHATBOT_AI_ENABLED=false`，确认稳定后再重新启用（`CHATBOT_AI_VISION_ENABLED` 可保持默认 true）。
+- schema 只向上，仓库当前是 v22。v22 删除旧 QQ 表，外部告警通道只保留 webhook。v21 增加设备登记、nonce 与会话 `device_id`。迁移单向，没有 down。旧代码遇到更高 schema 会拒绝启动。现行库仍是 schema 21 时，同 schema 回滚保留现行数据库及 WAL。schema 22 迁移之后，恢复 v1.2.3 必须先换回迁移前的 schema 21 快照。
 - 关闭 mcbot 对接：设 `MCBOT_ENABLED=false` 并重启应用。只读模式清空控制 Token 后重启，游戏发言返回 503。更早的 release 指针见 CHANGELOG。
 - fail2ban drop-in 回滚：删除 `/etc/systemd/system/nftables.service.d/10-fail2ban-restore.conf` → `sudo systemctl daemon-reload`；
   不影响应用数据；回滚后 nftables restart 需手工 `systemctl restart fail2ban`。
@@ -881,7 +779,7 @@ OpenCode 当前事实（已接入 CI check job）。发布前必须通过；过�
 | 备份面板红色 | 计划任务失败/超过 48h：查任务 LastTaskResult、`%LOCALAPPDATA%\AntifieldCloud\backup.log` |
 | 密钥包未生成 | 按 `docs/BACKUP.md` §5 安装 age 并写入公钥；不影响普通归档 |
 | 磁盘占用 | `df -h /`、`du -sh /var/lib/antifieldcloud/*`；配额 10 GiB；release/备份保留策略见文档 |
-| 公网页面空白 / 入口脚本未执行 | app 入口脚本已加 `data-cfasync="false"`；ai 代理按 `OPENCODE_HTML_MODE` 处理；若仍异常，在 Cloudflare Speed → Optimization/Configuration Rules 关闭 `ai` 的 Rocket Loader |
+| 公网页面空白 / 入口脚本未执行 | app 入口脚本已加 `data-cfasync="false"`；ai 主机的 HTML 原样转发。若仍异常，在 Cloudflare Speed → Optimization/Configuration Rules 关闭 `ai` 的 Rocket Loader |
 | 备份密钥包状态红/unknown | 看 `backup-pull.json` 的 `secretsOk/secretsLastError`；检查 age 公钥权限与 `backup-secrets.sh`；文件归档成功不等于密钥包成功 |
 | 备份恢复 403 restore_disabled | env 未设 `BACKUP_RESTORE_ENABLED=true` 或未重启应用 |
 | 大文件上传 413 | 普通单请求上限 100 MiB；>100 MiB 应自动走分片（`CHUNKED_UPLOAD_ENABLED=true`、5 GiB 上限）。检查 `/api/version` 的 `chunkedUploadEnabled/chunkSizeBytes/chunkMaxFileBytes`，以及块请求是否被 Cloudflare 单请求限制拦截 |
@@ -898,28 +796,9 @@ OpenCode 当前事实（已接入 CI check job）。发布前必须通过；过�
 | 部署脚本报“工作树不干净” | 先提交；确需脏发布用 `-AllowDirty` 并在验收记录标注 commit/改动 |
 | 部署后 smoke 失败但服务正常 | 默认门禁失败；看 FAIL 项修复后重跑 `smoke.ps1`；临时放行用 `-AllowSmokeFailure` 并记录未通过项 |
 | `/healthz` 版本仍是旧版 | 检查 `/etc/antifieldcloud/env` 的 `APP_VERSION` 与 `package.json`；回滚后尤其要确认已还原上一 release 版本 |
-| Bot Webhook 404 | `CHATBOT_ENABLED=false`、缺 `CHATBOT_SECRET_KEY`、Bot `enabled=false` 或 botId 错；先看 `/api/chatbots/status` 与 §9.9 |
-| Bot Webhook 302 | Cloudflare Access 未 bypass `/api/chatbot/webhook/*`（§5.2） |
-| Bot Webhook 401 | 平台签名/时间戳/Public Key/Signing Secret 不匹配；QQ 检查 AppSecret、Ed25519 头与时间戳是否在 ±300 秒 |
-| QQ 回调地址校验失败 | AppSecret 错、AppID 与 Secret 不配对、请求未带 `op=13` 的 `plain_token/event_ts`；看 `chatbot.webhook.rejected` 与 journald（不打印 AppSecret） |
-| QQ 发布会话 | QQ 仅文本、单条 ≤2000 字符（超长服务端分段）；无媒体/附件字段 |
-| `/ask` 无效 | `/ask` 为未知命令：非管理员被拒（无回复），管理员回全量帮助、不调用 AI；Chat 问题看 `chatbot.chat.denied`、`CHATBOT_AI_RATE_PER_HOUR` 与 `journalctl -u opencode` |
-| 通知被静默延后 | 目标设置了 `quietStartMinute/quietEndMinute` 且当前在窗口内；通知的 `next_attempt_at` 为窗口结束，属预期 |
-| 发布提示 publish_confirm_required | 请求体缺少 `confirmText:'PUBLISH'`；TOTP 不能替代该二次确认 |
+| Workbench QQ 路径 | Workbench 不再提供 QQ Webhook、机器人页或 OpenCode Chat。这些路径不存在。生产 QQ 由 DSH 管理 |
 | smoke Access token 无效 | 同时提供 `-AccessClientId/-AccessClientSecret`、确认 token 未过期且策略绑定 `app`；不要使用全局/宽范围 token |
 | nftables restart 后封禁丢失 | drop-in 未安装/未 `daemon-reload`/dbfile 不可写；手工 reload 不触发，需 `systemctl restart fail2ban`（§9.7） |
-| Bot 管理页提示缺少密钥 | `CHATBOT_SECRET_KEY` 未写入或不是 base64 32 字节；用 `bootstrap-env.sh --force` 生成/复用后重启（不要手工替换旧 key） |
-| Bot 发布 400/401 | 缺 `totpCode`、TOTP 过期/重放、目标是 user、文本超 2000 字符、定时超 30 天；见 API §14 |
-| Bot Chat 无回复 | `CHATBOT_AI_ENABLED=false`、目标未 `allow_chat`、群/频道未 @Bot、30/min 或 120/h 限流；看 `chatbot.chat.denied` 与审计 |
-| Bot 长回复截断/重复 | QQ 单条上限 2000，最多 4 段并带续段前缀；partial 失败不自动重试，需核对平台消息后人工处理，避免重复外发 |
-| Bot 图片不生效 | `CHATBOT_AI_VISION_ENABLED=true` 默认开启；需 `CHATBOT_AI_ENABLED=true` 且模型支持 image、附件域名/mime/大小合规；看 `chatbot.ai.image` 审计（不含内容） |
-| Bot Chat 全部 503 `chatbot_ai_tool_isolation_unavailable` | OpenCode 拒绝 `permissions`（看 journald “AI 工具隔离不可用”/`chatbot.ai.permissions_fallback`）；检查 OpenCode 版本/字段兼容，不要改用默认权限；10 分钟窗口后自动重试 |
-| Bot 文档模式读不到角色/记忆 | 确认 `CHATBOT_AI_CONTEXT_READ_ENABLED=true`、`CHATBOT_CONTEXT_DIR` 存在且 `opencode` 组可读（目录 2750、文件 0640）、unit 含 `ReadWritePaths`；看 `chatbot.ai.context_failed` 审计与 journald，不输出文档路径/正文 |
-| Bot 文档模式 Chat 返回 `chatbot_ai_context_unavailable` | 上下文文档写入失败（权限/磁盘/符号链接/目录不在 DATA_DIR 外）；按 §3.7 检查目录属主/权限与 `CHATBOT_CONTEXT_DIR` 配置 |
-| Bot 文档目录残留/隐私清理 | `/forget confirm`、Bot/目标删除会自动清理；维护任务回收无活动会话且超 24h 的目录；目录为派生数据、不进入备份，可手工确认后删除 |
-| Bot `/forget` 提示用法 | 必须发送 `/forget confirm`（完整参数）；只清长期记忆与该 Bot×用户全部会话，不删除角色卡 |
-| 平台连接自检失败 | 检查 QQ AppID/AppSecret、Pi 直连出站网络；`/chatbots`“检查连接”只显示脱敏原因 |
-| Bot 投递 dead/不重试 | 平台 Token 失效/权限不足/被限流；修 Token 后 `POST /api/chatbots/:id/deliveries/:id/retry`；`chatbot_deliveries.last_error` 有短错误码 |
 | SSH 仅公钥后无法登录 | 24h 回滚窗口内删除 `/etc/ssh/sshd_config.d/00-antifield-hardening.conf` → `sshd -t` → `systemctl reload ssh`；用已建立会话/物理键鼠操作（§9.7） |
 | fail2ban 未封禁/启动失败 | `fail2ban-client -t` 校验配置；`journalctl -u fail2ban -n 50`；确认 nftables 后端与 `sshd` jail 已启用、`bantime=86400`；日志后端（log2ram/journald）可读 |
 | nftables 重载后封禁列表清空 | fail2ban 的封禁 set 随 nftables 重建丢失：`systemctl restart fail2ban` 后 `fail2ban-client status sshd` 复核；把该步骤写进 nftables 变更清单 |

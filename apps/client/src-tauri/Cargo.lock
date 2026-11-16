@@ -57,7 +57,7 @@ dependencies = [
 
 [[package]]
 name = "antifieldcomplexx-client"
-version = "1.2.3"
+version = "1.2.4"
 dependencies = [
  "android-keyring",
  "axum",

@@ -65,7 +65,7 @@ export function McbotEventsCard({ snapshot }: McbotEventsCardProps) {
 
   return (
     <Card
-      title="事件流"
+      title="事件记录"
       description="mcbot 内存事件环的最近事件（按时间倒序，最多显示 100 条）。"
       actions={<Badge tone="muted">{events.length} 条</Badge>}
       loading={!snapshot}
@@ -73,7 +73,7 @@ export function McbotEventsCard({ snapshot }: McbotEventsCardProps) {
     >
       {!supported ? (
         <div className="notice notice-warning">
-          mcbot 需升级到 v0.6.0 才能显示事件流（当前 mcbot 未提供 /events/recent 或事件契约）。
+          mcbot 需升级到 v0.6.0 才能显示事件记录（当前 mcbot 未提供 /events/recent 或事件契约）。
         </div>
       ) : (
         <>

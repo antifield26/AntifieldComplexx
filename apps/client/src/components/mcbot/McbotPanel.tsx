@@ -1,43 +1,39 @@
-// Minecraft Bot 面板：只读状态、在线模式、管理员对话、事件与历史。
-// 世界动作只经对话发起。急停在对话卡内二次确认，不经过模型。
+// Minecraft Bot 面板只保留三块：状态、会话、事件记录。
+// 在线模式与急停在状态卡内；急停需要确认，成功后会话按后续 chat 响应刷新。
 // 不展示 Token、地址或内部路径。聊天与事件一律纯文本。
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Clock, RefreshCw } from 'lucide-react'
+import { Clock, RefreshCw, Square } from 'lucide-react'
 import { api, isAbortError, isApiError, toErrorMessage } from '../../api/client'
-import type { McbotSnapshot } from '../../api/types'
+import type { McbotPresenceMode, McbotSnapshot } from '../../api/types'
 import { usePolling } from '../../hooks/usePolling'
 import { Badge } from '../Badge'
 import { Button } from '../Button'
 import { Card } from '../Card'
+import { ConfirmDialog } from '../ConfirmDialog'
 import { EmptyState } from '../EmptyState'
 import { InlineError } from '../InlineError'
 import { RelativeTime } from '../RelativeTime'
 import { SkeletonText } from '../Skeleton'
+import { useToast } from '../Toast'
 import { McbotChatCard } from './McbotChatCard'
 import { McbotEventsCard } from './McbotEventsCard'
-import { McbotHistoryCard } from './McbotHistoryCard'
-import { McbotPresenceGoalsCard } from './McbotPresenceGoalsCard'
-import { formatDuration } from '../../lib/format'
-import { mcbotBotStateLabel, mcbotErrorLabel, safeLofiiStatus, safeMcbotAutonomy, mcbotAutonomyStateLabel } from '../../lib/mcbot'
+import { mcbotBotStateLabel, mcbotErrorLabel, mcbotTaskNameLabel, mcbotTaskStateLabel, safeLofiiStatus } from '../../lib/mcbot'
 
 /** /api/mcbot/status 轮询间隔。 */
 const STATUS_POLL_MS = 5000
 
-const NAVIGATION_STATE_LABELS: Record<string, string> = {
-  idle: '待机',
-  planning: '规划中',
-  executing: '移动中',
-  fallback: '兜底',
+const PRESENCE_LABELS: Record<McbotPresenceMode, string> = {
+  auto: '自动在线',
+  always: '常驻在线',
+  off: '不主动上线',
 }
 
-const NAVIGATION_SOURCE_LABELS: Record<string, string> = {
-  pathfinder: 'pathfinder',
-  planner: '确定性规划',
-  ai: 'AI 路点',
-  teleport: '安全传送',
-  stopped: '已停止',
+const PRESENCE_HINTS: Record<McbotPresenceMode, string> = {
+  auto: '有玩家或任务时在线，空服自动离开。',
+  always: '空服也保持在线，占用服务器资源；仅在你确认时使用。',
+  off: '不主动上线；不会打断正在运行的任务或自主会话。',
 }
 
 function dashNumber(value: number | null | undefined, digits = 0): string {
@@ -54,19 +50,22 @@ function Fact({ label, hint, children }: { label: string; hint?: ReactNode; chil
   )
 }
 
-/* ---------- 状态卡 ---------- */
-
 function McbotStatusCard({
   snapshot,
   error,
   refreshing,
+  controlReady,
   onRefresh,
+  onStopped,
 }: {
   snapshot: McbotSnapshot
   error: string | null
   refreshing: boolean
+  controlReady: boolean
   onRefresh: () => void
+  onStopped: () => void
 }) {
+  const toast = useToast()
   const status = safeLofiiStatus(snapshot.status)
   const connected = status?.minecraft.connected === true
   const tps = status?.admin.tps
@@ -78,150 +77,186 @@ function McbotStatusCard({
   const tpsText = tpsReady
     ? `${tpsOne.toFixed(1)} / ${tpsFive.toFixed(1)} / ${tpsFifteen.toFixed(1)}`
     : '—'
+  const task = status?.task
+  const taskText = !task
+    ? '—'
+    : task.name
+      ? `${mcbotTaskNameLabel(task.name)} · ${mcbotTaskStateLabel(task.state)}`
+      : mcbotTaskStateLabel(task.state)
+  const mode = status?.presence.mode ?? 'auto'
+  const [pendingMode, setPendingMode] = useState<McbotPresenceMode | null>(null)
+  const [switching, setSwitching] = useState(false)
+  const [confirmStop, setConfirmStop] = useState(false)
+  const [stopping, setStopping] = useState(false)
+
+  async function applyMode(): Promise<void> {
+    const next = pendingMode
+    if (!next || !controlReady || switching) {
+      setPendingMode(null)
+      return
+    }
+    setSwitching(true)
+    try {
+      await api.mcbot.setPresence(next)
+      toast.success(`在线模式已切换为「${PRESENCE_LABELS[next]}」`)
+      onRefresh()
+    } catch (failure) {
+      if (!isAbortError(failure)) toast.error(isApiError(failure) ? toErrorMessage(failure) : '操作失败')
+    } finally {
+      setSwitching(false)
+      setPendingMode(null)
+    }
+  }
+
+  async function stop(): Promise<void> {
+    if (!controlReady || stopping) return
+    setStopping(true)
+    try {
+      const result = await api.mcbot.emergencyStop()
+      if (result.ok) toast.success('已急停')
+      else toast.error(`急停未全部完成：${result.failures.join('、') || '未知'}`)
+      setConfirmStop(false)
+      onStopped()
+    } catch (failure) {
+      toast.error(toErrorMessage(failure, '急停失败'))
+    } finally {
+      setStopping(false)
+    }
+  }
 
   return (
-    <Card
-      title="mcbot 状态"
-      description="mcbot 每 5 秒被轮询一次；页面隐藏时暂停请求，刷新失败时保留上次成功的数据。"
-      actions={
-        <div className="card-actions-inline">
-          <Badge tone={snapshot.reachable ? 'success' : 'danger'} dot>
-            {snapshot.reachable ? '可达' : '不可达'}
-          </Badge>
-          <Badge tone={snapshot.controlEnabled ? 'accent' : 'muted'}>
-            {snapshot.controlEnabled ? '控制可用' : '控制未启用'}
-          </Badge>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="刷新 mcbot 状态"
-            title="刷新"
-            loading={refreshing}
-            onClick={onRefresh}
-            icon={<RefreshCw size={16} aria-hidden="true" />}
+    <>
+      <Card
+        title="Bot 状态"
+        description="连接、血量、饥饿、任务、TPS 与版本。在线模式和急停也在这里。"
+        actions={
+          <div className="card-actions-inline">
+            <Badge tone={snapshot.reachable ? 'success' : 'danger'} dot>
+              {snapshot.reachable ? '可达' : '不可达'}
+            </Badge>
+            <Badge tone={snapshot.controlEnabled ? 'accent' : 'muted'}>
+              {snapshot.controlEnabled ? '控制可用' : '控制未启用'}
+            </Badge>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="刷新 mcbot 状态"
+              title="刷新"
+              loading={refreshing}
+              onClick={onRefresh}
+              icon={<RefreshCw size={16} aria-hidden="true" />}
+            />
+          </div>
+        }
+      >
+        {error ? <InlineError message={`${error}（显示上次成功获取的数据）`} onRetry={onRefresh} /> : null}
+
+        {status ? (
+          <div className="mcbot-status-grid">
+            <Fact label="连接">
+              <Badge tone={connected ? 'success' : 'danger'} dot>
+                {connected ? `已连接（${status.minecraft.username}）` : '未连接'}
+              </Badge>
+              <span className="mcbot-fact-sub"> · {mcbotBotStateLabel(status.state)}</span>
+            </Fact>
+            <Fact label="血量">{dashNumber(status.player.health)}</Fact>
+            <Fact label="饥饿">{dashNumber(status.player.food)}</Fact>
+            <Fact label="任务">{taskText}</Fact>
+            <Fact label="TPS（1m / 5m / 15m）" hint={status.admin.rcon ? undefined : 'RCON 不可用'}>
+              {tpsText}
+            </Fact>
+            <Fact label="版本">
+              {snapshot.version ?? status.version ?? '未知'}
+              <span className="mcbot-fact-sub">
+                {' '}
+                · 契约 {typeof snapshot.contractVersion === 'number' ? `v${snapshot.contractVersion}` : '—'}
+              </span>
+            </Fact>
+          </div>
+        ) : (
+          <EmptyState
+            compact
+            icon={<Clock size={22} />}
+            title="暂无 mcbot 状态快照"
+            description="mcbot 不可达或尚未完成首次轮询；可稍后重试。"
           />
-        </div>
-      }
-    >
-      {error ? <InlineError message={`${error}（显示上次成功获取的数据）`} onRetry={onRefresh} /> : null}
+        )}
 
-      {status ? (
-        <div className="mcbot-status-grid">
-          <Fact label="运行状态">
-            <Badge tone={status.state === 'connected' ? 'success' : status.state === 'idle' ? 'muted' : 'warning'}>
-              {mcbotBotStateLabel(status.state)}
-            </Badge>
-          </Fact>
-          <Fact label="Minecraft 连接">
-            <Badge tone={connected ? 'success' : 'danger'} dot>
-              {connected ? `已连接（${status.minecraft.username}）` : '未连接'}
-            </Badge>
-          </Fact>
-          <Fact label="服务器在线 / 上限" hint={status.server.reachable ? status.server.versionName ?? undefined : '服务器状态不可达'}>
-            {status.server.reachable ? `${status.server.online} / ${status.server.max}` : '—'}
-          </Fact>
-          <Fact
-            label="TPS（1m / 5m / 15m）"
-            hint={status.admin.rcon ? undefined : 'RCON 不可用'}
-          >
-            {tpsText}
-          </Fact>
-          <Fact label="mcbot 血量 / 饥饿" hint={status.player.dimension ?? undefined}>
-            {dashNumber(status.player.health)} / {dashNumber(status.player.food)}
-          </Fact>
-          <Fact
-            label="AI 队列"
-            hint={
-              status.ai.enabled
-                ? `失败 ${status.ai.failures} 次 · 最近延迟 ${dashNumber(status.ai.lastLatencyMs)} ms`
-                : 'AI 已关闭'
-            }
-          >
-            {status.ai.enabled ? `${status.ai.queued} 排队 / ${status.ai.inFlight} 处理中` : '—'}
-          </Fact>
-          <Fact label="记忆">
-            {status.memory.players} 位玩家 / {status.memory.turns} 轮
-          </Fact>
-          {status.navigation ? (
-            <Fact
-              label="寻路"
-              hint={
-                status.navigation.lastFallback
-                  ? `最近兜底：${status.navigation.lastFallback === 'teleport' ? '安全传送' : '停止'}`
-                  : status.navigation.aiUsed
-                    ? 'AI 已参与本次路线'
-                    : undefined
-              }
-            >
-              {NAVIGATION_STATE_LABELS[status.navigation.state] ?? status.navigation.state}
-              {status.navigation.source
-                ? ` · ${NAVIGATION_SOURCE_LABELS[status.navigation.source] ?? status.navigation.source}`
-                : ''}
-              {status.navigation.lastFallbackReason ? (
-                <span className="mcbot-fact-sub">兜底原因：{status.navigation.lastFallbackReason}</span>
-              ) : null}
-            </Fact>
-          ) : null}
-          {safeMcbotAutonomy(snapshot.autonomy) ? (
-            <Fact label="自主会话">
-              {mcbotAutonomyStateLabel(safeMcbotAutonomy(snapshot.autonomy)?.state ?? 'idle')}
-            </Fact>
-          ) : null}
-          <Fact label="mcbot 版本">
-            {snapshot.version ?? status.version ?? '未知'}
-            <span className="mcbot-fact-sub">
-              {' '}
-              · 契约 {typeof snapshot.contractVersion === 'number' ? `v${snapshot.contractVersion}` : '—'}
+        {status?.minecraft.lastDisconnect ? (
+          <div className="notice notice-warning">
+            <span>
+              上次 Minecraft 断线：<RelativeTime ts={status.minecraft.lastDisconnect.at} />
+              {status.minecraft.lastDisconnect.reason ? `（${status.minecraft.lastDisconnect.reason}）` : ''}；累计重连{' '}
+              {status.minecraft.reconnects} 次。
             </span>
-          </Fact>
-          <Fact label="mcbot 运行时长">{formatDuration(status.uptimeSec)}</Fact>
-          <Fact label="白名单数量" hint={status.admin.lastError ?? undefined}>
-            {status.admin.whitelist.count ?? '—'}
-          </Fact>
-          <Fact label="告警联动">
-            <Badge tone={snapshot.alertsEnabled ? 'success' : 'muted'}>
-              {snapshot.alertsEnabled ? '已启用' : '未启用'}
-            </Badge>
-          </Fact>
-          <Fact label="事件流">
-            {Array.isArray(snapshot.events) ? snapshot.events.length : 0} 条
-            <span className="mcbot-fact-sub"> · 内存环</span>
-          </Fact>
+          </div>
+        ) : null}
+
+        <div className="mcbot-presence-controls">
+          <span className="mcbot-fact-label">在线模式</span>
+          <div className="mcbot-task-controls" role="group" aria-label="在线模式">
+            {(Object.keys(PRESENCE_LABELS) as McbotPresenceMode[]).map((item) => (
+              <Button
+                key={item}
+                variant={mode === item ? 'primary' : 'secondary'}
+                size="sm"
+                disabled={!controlReady || switching || stopping}
+                onClick={() => setPendingMode(item)}
+              >
+                {PRESENCE_LABELS[item]}
+              </Button>
+            ))}
+          </div>
+          {status ? <span className="mcbot-fact-hint">{PRESENCE_HINTS[mode]}</span> : null}
         </div>
-      ) : (
-        <EmptyState
-          compact
-          icon={<Clock size={22} />}
-          title="暂无 mcbot 状态快照"
-          description="mcbot 不可达或尚未完成首次轮询；可稍后重试或查看下方缓存的事件与历史。"
-        />
-      )}
 
-      {status?.minecraft.lastDisconnect ? (
-        <div className="notice notice-warning">
-          <span>
-            上次 Minecraft 断线：<RelativeTime ts={status.minecraft.lastDisconnect.at} />
-            {status.minecraft.lastDisconnect.reason ? `（${status.minecraft.lastDisconnect.reason}）` : ''}；累计重连{' '}
-            {status.minecraft.reconnects} 次。
-          </span>
+        <div className="mcbot-chat-stop">
+          <Button
+            variant="danger"
+            icon={<Square size={16} aria-hidden="true" />}
+            disabled={!controlReady || stopping}
+            onClick={() => setConfirmStop(true)}
+          >
+            急停
+          </Button>
+          <span className="field-hint">立即停止任务、自主会话和这次对话，不经过模型。</span>
         </div>
-      ) : null}
 
-      {status?.ai.lastError ? (
-        <div className="notice notice-warning">AI 最近错误：{status.ai.lastError}</div>
-      ) : null}
-
-      <p className="card-footnote">
-        上次轮询 <RelativeTime ts={snapshot.lastPollAt} fallback="—" />
-        {typeof snapshot.contractVersion === 'number' && snapshot.contractVersion < 1
-          ? ' · mcbot 契约版本过低'
-          : ''}
-      </p>
-    </Card>
+        <p className="card-footnote">
+          上次轮询 <RelativeTime ts={snapshot.lastPollAt} fallback="—" />
+          {typeof snapshot.contractVersion === 'number' && snapshot.contractVersion !== 2
+            ? ' · mcbot 契约不是 v2'
+            : ''}
+        </p>
+      </Card>
+      <ConfirmDialog
+        open={pendingMode !== null}
+        title="切换在线模式"
+        message={pendingMode ? `确定切换到「${PRESENCE_LABELS[pendingMode]}」？` : ''}
+        confirmText="确认"
+        tone="primary"
+        loading={switching}
+        onConfirm={() => { void applyMode() }}
+        onClose={() => {
+          if (!switching) setPendingMode(null)
+        }}
+      />
+      <ConfirmDialog
+        open={confirmStop}
+        title="急停"
+        message="确定停止当前任务、自主会话和管理员对话？"
+        details="空闲时也算成功。已经发生的世界动作不会回滚。"
+        confirmText="急停"
+        tone="danger"
+        loading={stopping}
+        onConfirm={() => { void stop() }}
+        onClose={() => {
+          if (!stopping) setConfirmStop(false)
+        }}
+      />
+    </>
   )
 }
-
-/* ---------- 面板 ---------- */
 
 export function McbotPanel() {
   const [snapshot, setSnapshot] = useState<McbotSnapshot | null>(null)
@@ -229,6 +264,7 @@ export function McbotPanel() {
   const [error, setError] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [chatReloadToken, setChatReloadToken] = useState(0)
   const requestIdRef = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -292,7 +328,7 @@ export function McbotPanel() {
     return (
       <div className="mcbot-panel">
         <Card
-          title="mcbot 状态"
+          title="Bot 状态"
           loading={loading}
           skeleton={<SkeletonText lines={5} />}
           error={loading ? null : error ?? '无法获取 mcbot 状态'}
@@ -346,15 +382,16 @@ export function McbotPanel() {
         </div>
       ) : null}
 
-      <McbotPresenceGoalsCard controlReady={controlReady} onChanged={() => { void load() }} />
-      <McbotStatusCard snapshot={snapshot} error={error} refreshing={refreshing} onRefresh={() => void refresh()} />
-      <McbotChatCard controlReady={controlReady} />
-
-      <section className="mcbot-section" aria-label="事件与历史区">
-        <div className="mcbot-section-label"><span>事件与历史</span><span>查看动作结果与状态记录</span></div>
-        <McbotEventsCard snapshot={snapshot} />
-        <McbotHistoryCard />
-      </section>
+      <McbotStatusCard
+        snapshot={snapshot}
+        error={error}
+        refreshing={refreshing}
+        controlReady={controlReady}
+        onRefresh={() => { void refresh() }}
+        onStopped={() => setChatReloadToken((value) => value + 1)}
+      />
+      <McbotChatCard controlReady={controlReady} reloadToken={chatReloadToken} />
+      <McbotEventsCard snapshot={snapshot} />
     </div>
   )
 }

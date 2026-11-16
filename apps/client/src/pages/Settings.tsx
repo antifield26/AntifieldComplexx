@@ -6,13 +6,6 @@ import { api, toErrorMessage } from '../api/client'
 import type { AlertsConfig, BackupStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { useAppMeta } from '../meta/MetaContext'
-import {
-  ensurePwaInstallListener,
-  getInstallPromptEvent,
-  isPwaInstalled,
-  promptPwaInstall,
-  subscribePwaInstall,
-} from '../lib/pwa-install'
 import { PageHeader } from '../components/PageHeader'
 import { Card } from '../components/Card'
 import { Button } from '../components/Button'
@@ -62,30 +55,6 @@ export function Settings() {
   const [alertsError, setAlertsError] = useState<string | null>(null)
   const [alertTesting, setAlertTesting] = useState(false)
   const [alertsReloadKey, setAlertsReloadKey] = useState(0)
-  const [installAvailable, setInstallAvailable] = useState(false)
-  const [installingApp, setInstallingApp] = useState(false)
-  // PWA 安装入口（UI-SPEC §10：Settings/关于 与底部提示并存）
-  useEffect(() => {
-    ensurePwaInstallListener()
-    const sync = (): void => setInstallAvailable(Boolean(getInstallPromptEvent()) && !isPwaInstalled())
-    sync()
-    return subscribePwaInstall(sync)
-  }, [])
-
-  const handleInstallApp = async (): Promise<void> => {
-    if (installingApp) return
-    setInstallingApp(true)
-    try {
-      const outcome = await promptPwaInstall()
-      if (outcome === 'accepted') {
-        toast.success('已开始安装到桌面')
-      } else if (outcome === 'unavailable') {
-        toast.info('浏览器未提供安装入口，请使用浏览器菜单中的“安装应用/添加到主屏幕”')
-      }
-    } finally {
-      setInstallingApp(false)
-    }
-  }
 
   // 备份健康卡需要 dashboard.backup 的密钥包/世界备份/演练字段；dashboard 聚合较重，
   // 延后到首屏渲染后再取一次（不轮询；/api/backups 的轻量状态由 BackupManager 自行加载）。
@@ -554,23 +523,6 @@ export function Settings() {
               <dd>
                 <Badge tone={meta.sharesEnabled ? 'success' : 'muted'}>文件分享</Badge>{' '}
                 <Badge tone={meta.alertsEnabled ? 'success' : 'muted'}>告警</Badge>
-              </dd>
-            </div>
-            <div className="settings-list-row">
-              <dt>安装应用</dt>
-              <dd>
-                {installAvailable ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    loading={installingApp}
-                    onClick={() => void handleInstallApp()}
-                  >
-                    安装到桌面
-                  </Button>
-                ) : (
-                  <span className="muted">使用浏览器菜单“安装应用/添加到主屏幕”</span>
-                )}
               </dd>
             </div>
             <div className="settings-list-row">

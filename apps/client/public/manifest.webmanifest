@@ -1,13 +1,12 @@
 {
   "name": "AntifieldComplexx · 个人综合交互平台",
   "short_name": "AntifieldComplexx",
-  "description": "个人综合交互平台：云盘、知识库、文件分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI 与主机监控。",
+  "description": "个人综合交互平台：云盘、知识库、文件分享、Minecraft 与 mcbot、DeepSeek Harness 与主机监控。",
   "lang": "zh-CN",
   "dir": "ltr",
   "start_url": "/",
   "scope": "/",
-  "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
+  "display": "browser",
   "orientation": "any",
   "background_color": "#0a0e14",
   "theme_color": "#0a0e14",
@@ -30,26 +29,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "文件",
-      "short_name": "文件",
-      "url": "/files",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
-    },
-    {
-      "name": "知识库",
-      "short_name": "知识库",
-      "url": "/knowledge",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
-    },
-    {
-      "name": "首页",
-      "short_name": "首页",
-      "url": "/",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }

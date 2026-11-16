@@ -22,7 +22,7 @@
 
 在 PC 私有临时目录解密密钥包后，仅解出 `mcbot-state/`。先执行 `node scripts/backup-mcbot-state.mjs verify <隔离目录>/mcbot-state` 核对清单与内容，再在该副本上执行 `restore`。恢复检查只输出计数与是否有待恢复任务。启动时在途目标转入暂停，已完成步骤保留。核对目标、任务和记忆后清理临时明文。
 
-> **DSH 密钥包与冷备**。Workbench 配置 `DSH_QQ_MANAGED=true` 后，密钥包必须包含 DSH 配置、凭据、Web Cookie 签名凭据和 QQ 结构化记忆一致性快照。PC 校验 `agentRuntime=dsh` 和 `includesDsh=true`。旧格式仍要求 `includesOpencode=true`。部署和退役窗口用 `scripts/dsh-cold-backup.sh` 保存包括会话历史的独立加密归档，转移到 PC 并做隔离解密与恢复。密钥包和冷备保持 age 加密。
+> **DSH 密钥包与冷备**。`DSH_WEB_URL` 与 `DSH_WEB_SSO_SOCKET` 同时配置时，密钥包必须包含 DSH 配置、凭据、Web Cookie 签名凭据和 QQ 结构化记忆一致性快照。PC 校验 `agentRuntime=dsh` 和 `includesDsh=true`。只配置其中一项时密钥包失败。两项都空时仍保存 OpenCode 回滚档，并要求 `includesOpencode=true`。部署和退役窗口用 `scripts/dsh-cold-backup.sh` 保存包括会话历史的独立加密归档，转移到 PC 并做隔离解密与恢复。密钥包和冷备保持 age 加密。
 
 > 目标：SD 卡损坏、误删、升级失败或世界存档损坏时，能恢复 `/var/lib/antifieldcloud` 与 Minecraft 世界。
 > 备份分四条链路：**应用数据归档**（DB 快照 + 文件内容；可选整包 age 加密，默认关闭）、**密钥包**（age 加密的
@@ -56,11 +56,8 @@
 - **异地副本（默认关闭）**：PC 端 `backup-offsite.mjs/.ps1` 只上传 `.age`，链感知保留并写状态回 Pi；应用只读展示与告警（详见 §5.2）。
 - **孤儿/legacy**：备份目录中无 DB 记录的归档只报告、不自动删除；无参数 legacy 入口必须显式 `--legacy`，不再隐式 ack。
   旧世界归档命名 `world-<YYYYMMDD>.tar.gz` 不匹配新的 `world-<YYYYMMDDTHHMMSSZ>.tar.gz` 规则，永远不会被自动清理。
-- **Bot 密钥**：`/etc/antifieldcloud/env` 含 `CHATBOT_SECRET_KEY`，已随密钥包加密备份；该 key 与 DB 中的 `chatbots` 密文必须成对恢复，
-  否则 Bot Token 不可解密（只能重新录入）。`CHATBOT_SECRET_KEY` 不在普通应用归档内，必须用密钥包（或离线副本）恢复。
-  普通归档含 TOTP/会话与 Bot 密文，仍按敏感数据处理；发布媒体不会进入备份之外的新位置。
-- **Bot 长期记忆/私聊角色卡**：DB `chatbot_ai_memories` 摘要与 `chatbot_chat_roles` 角色卡随数据库快照备份；`DATA_DIR/bot-memory/memory-<uuid>.md` 镜像不在应用归档内，
-  但可由 DB 摘要重建，不作为恢复必需项；镜像目录不对外暴露，按保留期/人工清理。
+- **QQ 凭据**：schema 22 起 Workbench 不再保存 QQ 凭据或 chatbot 表。生产 QQ 凭据在 DSH 密钥包与冷备里。env 里残留的 `CHATBOT_SECRET_KEY` 不参与 Workbench 恢复；清理用 `bootstrap-env.sh --force --prune-unknown`，先备份 env。
+  普通归档仍含 TOTP 与会话，按敏感数据处理。
 
 ## 2. 应用归档结构与协议
 
@@ -453,8 +450,7 @@ tar -xzf secrets.tar -C "$env:TEMP\antifieldcloud-secrets"
 4. 图片/文本/PDF/预览正常，回收站内容与备份时一致；多文件分享/笔记版本可打开。
 5. 白名单列表与备份时一致（RCON 可用时）；世界恢复后玩家可进入。
 6. 备份 pending/状态正常（`backup.mjs --pending`、`backup-pull.json`、世界/拉取/演练状态文件）。
-7. Bot：`/api/chatbots/status` 可读；若恢复了 Bot，确认 `CHATBOT_SECRET_KEY` 与 DB 快照成对、`/api/chatbots` 能解密显示 Bot（不显示 Token）；
-   `CHATBOT_ENABLED=false` 时 Webhook 仍 404。
+7. QQ 由 DSH 管理。确认 DSH 密钥包与冷备可解密，Workbench 不再提供 `/api/chatbots`。
 8. 确认无误后再删除 `/var/lib/antifieldcloud.before-restore` 与 `world.before-restore`。
 
 > 数据库迁移只向上、无 down 迁移：若回滚到旧 release，务必同时恢复升级前的 `--snapshot-db` 快照
@@ -496,18 +492,14 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 | 演练状态 unknown | 从未运行或未指定 `-PiHost` 回写；运行 `drill.ps1 -PiHost ...` 或接受 unknown（不误报通过） |
 | PC 有旧世界归档占空间 | 旧 cron 已停用；按 §6.4 手动清理，保留至少一份可解包副本 |
 | 恢复后登录异常 | 确认恢复的是最新 DB、`/etc/antifieldcloud/env` 的域名与 APP_ORIGIN 一致；COOKIE_DOMAIN 自 仅用于清理旧父域 Cookie，必要时 `bootstrap-env.sh --force`（会沿用现有非敏感值） |
-| 恢复后 Bot 显示 `chatbot_key_missing`/密文不可解密 | `CHATBOT_SECRET_KEY` 与 DB 快照不匹配：从同批密钥包恢复 env，或接受重新录入 Bot Token；不要重置 key 后保留旧 `chatbots` 行 |
-| 密钥包过大/失败但文件归档成功 | 看 `secretsLastError`；`CHATBOT_SECRET_KEY` 在 env 内，env 不可读会导致密钥包失败；修复 `/etc/antifieldcloud/env` 权限 0640 root:antifieldcloud |
+| 密钥包过大/失败但文件归档成功 | 看 `secretsLastError`；env 不可读会导致密钥包失败；修复 `/etc/antifieldcloud/env` 权限 0640 root:antifieldcloud |
 
 ## 11. 覆盖、残余风险与限制
 
-- **已覆盖**：应用数据归档（DB + 普通文件）、密钥包（env/cloudflared/Minecraft 配置/opencode env + opencode DB/config 一致性快照，
-  env 含 `CHATBOT_SECRET_KEY`）、Minecraft 世界一致性归档（Pi 拉取前暂存最多 4 份、PC ack 删除远端；PC `world\` 长期保留 4 份）、自动化恢复演练；
+- **已覆盖**：应用数据归档（DB + 普通文件）、密钥包（env/cloudflared/Minecraft 配置；DSH 两项都配置时含 DSH 配置与 QQ 记忆，否则含 OpenCode 回滚档）、Minecraft 世界一致性归档（Pi 拉取前暂存最多 4 份、PC ack 删除远端；PC `world\` 长期保留 4 份）、自动化恢复演练；
   可选整包 age 加密与 PC 端异地副本（模板默认关闭；生产 v1.2.2 已开启整包加密与 Google Drive 异地副本）。
-- **未覆盖**：Minecraft 插件/Paper 配置（由密钥包/应用归档部分覆盖）、对象存储；普通归档仍含 TOTP/会话明文与 Bot 凭据密文，
-  PC ACL/离线介质是最后防线；age 私钥或 `CHATBOT_SECRET_KEY` 丢失分别导致密钥包/Bot Token 不可恢复。
-- **v0.7.3 Bot 上下文文档不进入备份**：`/var/lib/antifieldcloud-context` 为派生数据（角色卡/记忆权威在 DB 与角色卡表），
-  不在 `DATA_DIR` 下、不被应用归档 tar 包含；恢复后首轮 Chat 自动重建。该目录含个人记忆文本，权限 0640/0750，不随备份扩散。
+- **未覆盖**：Minecraft 插件/Paper 配置（由密钥包/应用归档部分覆盖）、对象存储；普通归档仍含 TOTP 与会话，
+  PC ACL/离线介质是最后防线。age 私钥丢失导致加密归档不可恢复。DSH 冷备丢失导致 QQ 会话与凭据不可从 Workbench 恢复。
 - **导入归档保留**：`BACKUP_IMPORT_RETENTION_DAYS`（默认 90，0=永久）控制 Web 导入归档保留；维护任务清理超期
   `origin='import'` 归档（跳过活动恢复计划引用），并清理无 DB 记录的超期导入文件。
 - 浏览器导入上限 100 MiB；更大归档用 scp 到 inbox，备份归档导入独立于文件分片上传。

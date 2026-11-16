@@ -76,4 +76,4 @@ if systemctl list-unit-files opencode.service >/dev/null 2>&1; then
   systemctl is-active opencode
 fi
 echo "SearXNG MCP 已安装：$DEST；OpenCode 配置已更新：$CONFIG"
-echo "应用侧仍需 CHATBOT_SEARCH_ENABLED=true/CHATBOT_SEARCH_MODE=mcp 并重启 antifieldcloud。"
+echo "Workbench 不再读取搜索开关。该安装只留给仍使用的 OpenCode 回滚运行时。"

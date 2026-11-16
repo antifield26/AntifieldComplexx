@@ -28,7 +28,6 @@ const Trash = lazy(() => import('./pages/Trash').then(({ Trash }) => ({ default:
 const Minecraft = lazy(() => import('./pages/Minecraft').then(({ Minecraft }) => ({ default: Minecraft })))
 const Activity = lazy(() => import('./pages/Activity').then(({ Activity }) => ({ default: Activity })))
 const Settings = lazy(() => import('./pages/Settings').then(({ Settings }) => ({ default: Settings })))
-const Chatbots = lazy(() => import('./pages/Chatbots').then(({ Chatbots }) => ({ default: Chatbots })))
 const More = lazy(() => import('./pages/More').then(({ More }) => ({ default: More })))
 
 /** 受保护路由：会话恢复中显示占位；未登录跳转登录页并带上返回地址。 */
@@ -118,8 +117,6 @@ export function App() {
                   <Route path="/shares" element={<Shares />} />
                   <Route path="/trash" element={<Trash />} />
                   <Route path="/minecraft" element={<Minecraft />} />
-                  <Route path="/chatbots" element={<Chatbots />} />
-                  <Route path="/bots" element={<Navigate to="/chatbots" replace />} />
                   <Route path="/activity" element={<Activity />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/more" element={<More />} />

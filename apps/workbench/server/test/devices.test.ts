@@ -78,7 +78,7 @@ test('浏览器登录不返回会话原文，设备签名覆盖读写与失败�
   let password = seeded.password
   try {
     const health = await app.inject({ method: 'GET', url: '/healthz' })
-    assert.equal(health.json().schemaVersion, 21)
+    assert.equal(health.json().schemaVersion, 22)
 
     const challenge = await passwordChallenge(app, seeded.username, password)
     const invalidDevice = await app.inject({

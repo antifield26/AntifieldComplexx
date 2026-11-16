@@ -468,9 +468,6 @@ export interface VersionResult {
   /** 归档导入单请求上限与恢复文件数上限（v0.3 已下发，前端用于预检提示） */
   backupImportMaxBytes?: number
   backupRestoreMaxEntries?: number
-  /** v0.5.0：Chatbot 功能是否可用与支持的平台（旧服务端不下发） */
-  chatbotsEnabled?: boolean
-  chatbotPlatforms?: string[]
   /** v0.8.0：mcbot 集成是否启用、mcbot 控制接口是否可用（旧服务端不下发时按关闭处理）。 */
   mcbotEnabled?: boolean
   mcbotControlEnabled?: boolean
@@ -1020,304 +1017,6 @@ export interface MetricsResult {
   series: MetricsPoint[]
 }
 
-/* ---------- 机器人管理（v0.5.0，GET/POST /api/chatbots*） ---------- */
-
-/** 当前仅支持 QQ 官方 Chatbot。 */
-export type ChatbotPlatform = 'qq'
-export type ChatbotTargetKind = 'channel' | 'user' | 'group'
-export interface ChatbotConnectivityProbe {
-  reachable: boolean
-  latencyMs: number | null
-  status: number | null
-  error: string | null
-}
-/** 出站连通性快照：外网 -> QQ 平台 API（Pi 直连，不依赖代理隧道）；不含凭据。 */
-export interface ChatbotConnectivitySnapshot {
-  checkedAt: string | null
-  checking: boolean
-  internet: ChatbotConnectivityProbe
-  platforms: Partial<Record<ChatbotPlatform, ChatbotConnectivityProbe>>
-}
-export type ChatbotDeliveryKind = 'notification' | 'command_reply' | 'publish' | 'test'
-export type ChatbotDeliveryStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'dead'
-export type ChatbotPublishStatus = 'draft' | 'queued' | 'sending' | 'sent' | 'failed' | 'canceled'
-
-/** AI 工具隔离状态；supported=false 表示 OpenCode 拒绝 deny-all permissions 后降级（未隔离）。 */
-export interface ChatbotToolIsolationStatus {
-  supported: boolean
-  fallbackCount: number
-  fallbackAt: string | null
-}
-
-/** 出站可用性快照：只含计数/时间/脱敏提示，不含消息正文或凭据。 */
-export interface ChatbotOutboundHealth {
-  active: boolean
-  degraded: boolean | null
-  lastSuccessAt: string | null
-  lastFailureAt: string | null
-  lastError: string | null
-  lastErrorHint: string | null
-  queuedDeliveries: number
-  failedDeliveries: number
-  deadDeliveries: number
-  queuedPublishes: number
-  failedPublishes: number
-  recentFailures: number
-  windowMinutes: number
-}
-
-/** 运行状态：即使 Chatbot 功能未启用，status 接口仍可用于判断具体原因。 */
-export interface ChatbotStatus {
-  enabled: boolean
-  keyConfigured: boolean
-  chatbots: number
-  enabledBots: number
-  targets: number
-  queuedDeliveries: number
-  queuedPublishes: number
-  lastError: string | null
-  /** 出站可用性快照；旧服务端可能不返回。 */
-  outbound?: ChatbotOutboundHealth
-  /** AI 工具隔离状态；未配置 AI 时为 null。 */
-  aiToolIsolation?: ChatbotToolIsolationStatus | null
-}
-
-/** Chatbot 摘要：不包含 AppSecret 等密钥字段。 */
-export interface ChatbotSummary {
-  id: string
-  platform: ChatbotPlatform
-  name: string
-  enabled: boolean
-  /** 平台公开配置（QQ 为 appId），绝不包含密钥。 */
-  config: Record<string, unknown>
-  webhookUrl: string
-  setupSteps: string[]
-  targetsCount: number
-  lastError: string | null
-  lastCheckedAt: string | null
-  createdAt: string
-  updatedAt: string
-  keyVersion: number
-}
-
-export interface ChatbotInboundTarget {
-  chatbotId: string
-  targetExternalId: string
-  targetKind: ChatbotTargetKind
-  userId: string
-  userName: string | null
-  isDirect: boolean
-  lastSeenAt: string
-}
-
-export type GroupReplyMode = 'mention' | 'all'
-
-export interface ChatbotTarget {
-  id: string
-  chatbotId: string
-  externalId: string
-  label: string
-  kind: ChatbotTargetKind
-  allowCommands: boolean
-  allowNotifications: boolean
-  /** 是否允许该目标内成员普通消息 Chat；不授予斜杠命令权限。 */
-  allowChat: boolean
-  groupReplyMode: GroupReplyMode
-  /** 静默时段（本地分钟 0-1439，Asia/Shanghai）；两者同时为空表示不静默。 */
-  quietStartMinute: number | null
-  quietEndMinute: number | null
-  createdAt: string
-}
-
-export interface ChatbotDelivery {
-  id: string
-  chatbotId: string
-  targetId: string | null
-  kind: ChatbotDeliveryKind
-  status: ChatbotDeliveryStatus
-  attempts: number
-  nextAttemptAt: string | null
-  lastError: string | null
-  /** 服务端根据 lastError 映射的中文提示（可能为空）。 */
-  lastErrorHint?: string | null
-  externalId: string | null
-  createdAt: string
-  sentAt: string | null
-}
-
-export interface ChatbotPublishJob {
-  id: string
-  chatbotId: string
-  targetId: string
-  text: string
-  scheduledAt: string | null
-  status: ChatbotPublishStatus
-  attempts: number
-  lastError: string | null
-  /** 服务端根据 lastError 映射的中文提示（可能为空）。 */
-  lastErrorHint?: string | null
-  createdAt: string
-  sentAt: string | null
-}
-
-/** 创建 Chatbot：密钥字段只提交、不回显。QQ 的 AppID 放 config.appId。 */
-export interface ChatbotCreateInput {
-  platform: ChatbotPlatform
-  name: string
-  /** QQ 官方 Chatbot AppSecret。 */
-  token: string
-  config?: Record<string, unknown>
-}
-
-/** 更新 Chatbot：省略/留空密钥表示保持原值；platform 不可修改。 */
-export interface ChatbotUpdateInput {
-  name?: string
-  enabled?: boolean
-  config?: Record<string, unknown>
-  token?: string
-}
-
-export interface ChatbotTargetInput {
-  externalId: string
-  label: string
-  kind: ChatbotTargetKind
-  allowCommands: boolean
-  allowNotifications: boolean
-  allowChat?: boolean
-  groupReplyMode?: GroupReplyMode
-  quietStartMinute?: number | null
-  quietEndMinute?: number | null
-}
-
-export type ChatbotTargetPatch = Partial<Omit<ChatbotTargetInput, 'externalId'>>
-
-/** 发布任务：QQ 仅支持纯文本；发布属数据外发，必须 TOTP 再认证。 */
-export interface ChatbotPublishInput {
-  targetId: string
-  text: string
-  /** 6 位 TOTP 验证码，服务端校验后立即丢弃，不写入队列。 */
-  totpCode: string
-  scheduledAt?: string | null
-  /** 二次确认文本，必须为 PUBLISH。 */
-  confirmText: 'PUBLISH'
-}
-
-/** Chatbot 运维指标（v0.5.1）。 */
-export interface ChatbotMetrics {
-  hours: number
-  deliveries: { total: number; sent: number; failed: number; dead: number; successRate: number }
-  publishes: { total: number; sent: number; failed: number }
-  events: number
-  lastError: string | null
-  /** 服务端根据 lastError 映射的中文提示（可能为空）。 */
-  lastErrorHint?: string | null
-  lastSentAt: string | null
-}
-
-/* ---------- 机器人诊断与用户数据（v0.5.7） ---------- */
-
-/** 单项连接检查结果：只描述凭据/Webhook/配置是否可用，不含任何密钥。 */
-export interface ChatbotHealthItem {
-  name: string
-  ok: boolean
-  detail: string
-}
-
-/** POST /api/chatbots/:id/check 的脱敏结果。 */
-export interface ChatbotHealthCheck {
-  ok: boolean
-  items: ChatbotHealthItem[]
-  checkedAt: string
-}
-
-/** 入站事件元数据：不含消息正文、用户名等个人数据。 */
-export interface ChatbotEventItem {
-  eventId: string
-  kind: string | null
-  outcome: string | null
-  detail: string | null
-  targetExternalId: string | null
-  userId: string | null
-  receivedAt: string
-  updatedAt: string | null
-}
-
-/** 私聊角色卡摘要：服务端只返回元数据，正文不通过 Web 暴露。 */
-export interface ChatbotRoleSummary {
-  userId: string
-  userName: string | null
-  name: string
-  enabled: boolean
-  /** 角色设定字符数，仅用于展示规模，不返回正文。 */
-  promptLength: number
-  createdAt: string
-  updatedAt: string
-}
-
-/** 群聊角色卡列表项：未配置时 name/enabled/updatedAt 为空。 */
-export interface ChatbotGroupRoleSummary {
-  targetId: string
-  targetLabel: string
-  targetExternalId: string
-  name: string | null
-  enabled: boolean
-  promptLength: number
-  updatedAt: string | null
-}
-
-/** 群聊角色卡编辑详情（管理员可编辑正文）。 */
-export interface ChatbotGroupRoleDetail {
-  targetId: string
-  targetLabel: string
-  targetExternalId: string
-  name: string
-  prompt: string
-  enabled: boolean
-  createdAt: string
-  updatedAt: string
-}
-
-/** 结构化长期记忆类型（v0.5.11）。 */
-export type ChatbotMemoryKind =
-  | 'profile'
-  | 'preference'
-  | 'fact'
-  | 'project'
-  | 'task'
-  | 'relationship'
-  | 'episode'
-
-/** 管理端用户级记忆元数据：只含条目数/类型分布，不含任何 key/value 正文。 */
-export interface ChatbotMemoryUserSummary {
-  userId: string
-  userName: string | null
-  itemCount: number
-  kinds: Partial<Record<ChatbotMemoryKind, number>>
-  memoryEnabled: boolean
-  /** 最近一条记忆更新时间；无条目时为 null。 */
-  updatedAt: string | null
-}
-
-/** 管理端群聊共享记忆元数据：按群目标聚合，不含 key/value。 */
-export interface ChatbotMemoryGroupSummary {
-  scope: string
-  targetExternalId: string
-  targetName: string
-  itemCount: number
-  kinds: Partial<Record<ChatbotMemoryKind, number>>
-  updatedAt: string | null
-}
-
-/** 管理端单条记忆元数据：绝不包含 key/value 正文。 */
-export interface ChatbotMemoryItemSummary {  id: string
-  kind: ChatbotMemoryKind
-  importance: number
-  confidence: number
-  updatedAt: string
-  /** null 表示永不过期。 */
-  expiresAt: string | null
-}
-
 /* ---------- mcbot 集成（v0.8.0，GET /api/mcbot/status 等；v1.0.2 自主模式） ---------- */
 
 /** mcbot 支持的 11 种任务（与 mcbot Bot 的 TaskName 一致，含 clearing）。 */
@@ -1424,7 +1123,7 @@ export interface McbotAdmin {
   backup: { status: string }
 }
 
-/** Chatbot 自身在 Minecraft 的连接信息；host/port 属于本机回环配置，不展示到 UI。 */
+/** mcbot 在 Minecraft 的连接信息；host/port 属于本机回环配置，不展示到 UI。 */
 export interface McbotMinecraft {
   connected: boolean
   username: string
@@ -1489,37 +1188,6 @@ export interface McbotNavigation {
   updatedAt: string | null
 }
 
-export type McbotGoalKind = 'task' | 'deposit' | 'home'
-export type McbotGoalStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'canceled'
-export type McbotGoalStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
-
-export interface McbotGoalStep {
-  index: number
-  kind: McbotGoalKind
-  taskName: McbotTaskName | null
-  status: McbotGoalStepStatus
-  attempts: number
-  lastError: string | null
-  startedAt: string | null
-  finishedAt: string | null
-}
-
-export interface McbotGoal {
-  id: string
-  owner: string
-  objective: string
-  status: McbotGoalStatus
-  currentStep: number
-  attempts: number
-  lastFailureKind: string | null
-  lastError: string | null
-  createdAt: string
-  updatedAt: string
-  startedAt: string | null
-  finishedAt: string | null
-  steps: McbotGoalStep[]
-}
-
 export interface McbotPresenceInfo {
   mode: McbotPresenceMode
   source: 'default' | 'env' | 'persisted'
@@ -1530,14 +1198,6 @@ export interface McbotPresenceInfo {
 
 export interface McbotPresenceResult {
   presence?: McbotPresenceInfo
-}
-
-export interface McbotGoalsResult {
-  goals: McbotGoal[]
-}
-
-export interface McbotGoalResult {
-  goal: McbotGoal
 }
 
 export interface McbotAi {
@@ -1616,8 +1276,17 @@ export interface McbotChatTurn {
   error: string | null
 }
 
+export type McbotChatStep =
+  | { kind: 'user'; text: string }
+  | { kind: 'assistant'; text: string }
+  | { kind: 'tool'; name: string; status: 'ok' | 'error' }
+  | { kind: 'goal'; action: string; title: string }
+  | { kind: 'todo'; action: string; title: string }
+
 export interface McbotChatState {
   messages: McbotChatMessage[]
+  /** 与 messages 并存。界面只按这些步骤画时间线。 */
+  steps: McbotChatStep[]
   turn: McbotChatTurn | null
 }
 
@@ -1667,52 +1336,6 @@ export interface McbotSnapshot {
     toSeq: number
     discoveredAt: string
   } | null
-}
-
-export type McbotHistoryKind = 'samples' | 'alerts'
-
-/** 历史查询：服务端透传 mcbot 的 /history，from/to 为 ISO 时间。 */
-export interface McbotHistoryQuery {
-  kind: McbotHistoryKind
-  from?: string
-  to?: string
-  /** 1–200（AntifieldComplexx 侧上限）。 */
-  limit?: number
-}
-
-/** 60 秒一条的历史采样（不含聊天正文/Token）。 */
-export interface McbotHistorySample {
-  ts: string
-  connected: boolean
-  state: string
-  taskName: string | null
-  taskState: string | null
-  health: number | null
-  food: number | null
-  memoryMb: number | null
-  tps: number | null
-  queueLen: number
-  rssMb: number | null
-}
-
-/** mcbot 历史告警（type 为 low_health/task_failed/disconnected/chest_full/defense_retreat）。 */
-export interface McbotHistoryAlert {
-  id: number | string
-  ts: string
-  type: string
-  severity: string
-  message: string
-  details?: Record<string, unknown> | null
-}
-
-/** GET /api/mcbot/history 的响应：按 kind 动态携带 samples 或 alerts。 */
-export interface McbotHistory {
-  kind: McbotHistoryKind
-  from: string | null
-  to: string | null
-  count: number
-  samples?: McbotHistorySample[]
-  alerts?: McbotHistoryAlert[]
 }
 
 /** 控制接口成功响应的可选字段；UI 不依赖具体形状，操作后重新拉取 status。 */

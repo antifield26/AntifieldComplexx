@@ -8,14 +8,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { parseEnv } from 'node:util'
 
 export function detectRuntime(env) {
-  const raw = (env.DSH_QQ_MANAGED ?? '').trim().toLowerCase()
-  if (!['', 'true', '1', 'yes', 'on', 'false', '0', 'no', 'off'].includes(raw)) throw new Error('invalid_dsh_flag')
-  const qq = ['true', '1', 'yes', 'on'].includes(raw)
   const url = Boolean(env.DSH_WEB_URL?.trim())
   const socket = Boolean(env.DSH_WEB_SSO_SOCKET?.trim())
-  if (url !== socket || url !== qq) throw new Error('conflicting_agent_config')
-  // DSH 接管时旧 QQ 开关只用于回滚，Workbench 会强制停用旧链路。
-  return qq ? 'dsh' : 'opencode'
+  if (url !== socket) throw new Error('conflicting_agent_config')
+  return url ? 'dsh' : 'opencode'
 }
 
 function databaseSchema(db) {

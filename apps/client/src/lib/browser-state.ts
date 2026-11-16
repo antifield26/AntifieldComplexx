@@ -1,7 +1,7 @@
 /** 浏览偏好按服务来源和账号隔离。持久化内容限于普通路由、视图与排序，搜索及滚动只存内存。 */
 import { readApiOrigin } from './api-origin'
 
-const ROUTES = new Set(['/', '/files', '/knowledge', '/shares', '/trash', '/minecraft', '/chatbots', '/activity', '/settings', '/more'])
+const ROUTES = new Set(['/', '/files', '/knowledge', '/shares', '/trash', '/minecraft', '/activity', '/settings', '/more'])
 interface Preferences { route: string; view: 'list' | 'grid'; sort: 'name' | 'size' | 'updated'; dir: 'asc' | 'desc' }
 export interface FileSession { search: string; page: number }
 let ownerKey: string | null = null

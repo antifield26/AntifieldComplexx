@@ -2,6 +2,7 @@
 import { request } from 'node:http'
 import { AiError, type GenerateOptions, type GenerateResult } from './opencode.ts'
 import { OpenCodeSessionError, type DshAutonomySession } from './session.ts'
+import { acceptSteps, type SessionStep } from './steps.ts'
 import type { McpToolDefinition } from '../autonomy/tools.ts'
 
 const MAX_BYTES = 64 * 1024
@@ -105,9 +106,10 @@ export class DshAgentClient implements DshAutonomySession {
     await this.invoke('/admin/prompt', { id, text }, this.timeoutMs, signal)
   }
 
-  async waitAdmin (id: string, signal?: AbortSignal): Promise<string> {
+  async waitAdmin (id: string, signal?: AbortSignal): Promise<{ text: string, steps: SessionStep[] }> {
     const result = await this.invoke('/admin/wait', { id }, 900_000, signal)
-    return typeof result.text === 'string' ? result.text : ''
+    const text = typeof result.text === 'string' ? result.text : ''
+    return { text, steps: acceptSteps(result.steps, text) }
   }
 
   async stopAdmin (id: string): Promise<void> {

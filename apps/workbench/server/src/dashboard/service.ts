@@ -293,7 +293,7 @@ export class DashboardService {
       storage: this.storage(),
       minecraft,
       opencode,
-      ...(this.config.dshWebUrl || this.config.dshQqManaged ? { dsh: { webUrl: this.config.aiOrigin, readiness } } : {}),
+      ...(this.config.dshWebUrl ? { dsh: { webUrl: this.config.aiOrigin, readiness } } : {}),
       services: withDshReadiness(services, readiness),
       backup: this.backupStatus(),
       activity,

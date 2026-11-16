@@ -6,7 +6,9 @@
  * 安全与行为约束：
  * - 轮询单飞（single-flight）：上一轮未结束时复用同一 Promise，绝不并发/堆积请求。
  * - 轮询失败只更新 reachable/stale/error，保留上一次成功的状态快照与事件缓存。
- * - /events/recent 返回 404（旧版 mcbot 无事件流）只把 eventsSupported 置 false，/status 仍可用。
+ * - 读取只接受契约 v2。health 必须是 v2；已返回的 /status 版本须与 health 相同且 contractVersion 为 2；
+ *   已返回的 /events/recent 也必须是 v2。任一不满足则本轮不可用。
+ * - /events/recent 返回 404（上游无事件流）只把 eventsSupported 置 false，/status 仍可用。
  * - /status 可选 autonomy 段：旧版缺失时快照 autonomy=null，前端隐藏自主控制；不伪造状态。
  * - 告警游标持久化在 meta `mcbot.event_cursor`（{bootId,lastEventId,lastTs}）：
  *   首次/无游标/bootId 变化只建立基线，不重放 ring 内旧告警；之后只处理游标之后的 alert，
@@ -30,8 +32,6 @@ import {
   normalizeAutonomy,
   type McbotAutonomySnapshot,
   type McbotEvent,
-  type McbotHistoryKind,
-  type McbotHistoryQuery,
   type McbotRecentResult,
 } from './client.ts'
 
@@ -401,12 +401,12 @@ export class McbotService {
       let alertCount = 0
 
       const health = healthResult.status === 'fulfilled' ? healthResult.value : null
-      const compatible = health !== null &&
-        (statusResult.status !== 'fulfilled' ||
-          (statusResult.value.version === health.version &&
-            (health.contractVersion === 1 && statusResult.value.contractVersion === undefined ||
-              statusResult.value.contractVersion === health.contractVersion))) &&
-        (recentResult.status !== 'fulfilled' || recentResult.value.contractVersion === health.contractVersion)
+      const statusOk = statusResult.status !== 'fulfilled' || (
+        statusResult.value.version === health?.version &&
+        statusResult.value.contractVersion === 2
+      )
+      const recentOk = recentResult.status !== 'fulfilled' || recentResult.value.contractVersion === 2
+      const compatible = health !== null && health.contractVersion === 2 && statusOk && recentOk
       this.contractVersion = compatible ? health.contractVersion : null
       if (!compatible) {
         error = healthResult.status === 'rejected' ? errorCodeOf(healthResult.reason) : 'mcbot_contract_unsupported'
@@ -731,22 +731,11 @@ export class McbotService {
     return this.control(() => this.client.move(action, target))
   }
 
-  /** v1 发言使用读 Token，Workbench 仅转发 v2 发言。 */
   async say(message: string): Promise<Record<string, unknown>> {
-    return this.control(() => {
-      if (this.contractVersion !== 2) {
-        throw new McbotError('mcbot_say_unavailable', 'mcbot 发言需要契约 v2', 503)
-      }
-      return this.client.say(message)
-    })
+    return this.control(() => this.client.say(message))
   }
 
-  async history(kind: McbotHistoryKind, query: McbotHistoryQuery = {}): Promise<Record<string, unknown>> {
-    if (!this.config.mcbotEnabled) throw new McbotError('mcbot_disabled', 'mcbot 对接未启用')
-    return this.client.history(kind, query)
-  }
-
-  /** 读取 /autonomy 实时快照；成功即更新缓存（旧版 mcbot 无该接口时由路由映射错误）。 */
+  /** 读取 /autonomy 实时快照；成功即更新缓存（上游无该接口时由路由映射错误）。 */
   async autonomy(): Promise<McbotAutonomySnapshot> {
     if (!this.config.mcbotEnabled) throw new McbotError('mcbot_disabled', 'mcbot 对接未启用')
     if (this.stopped) throw new McbotError('mcbot_unavailable', 'mcbot 服务不可用')
@@ -772,19 +761,6 @@ export class McbotService {
 
   async setPresence(mode: string): Promise<Record<string, unknown>> {
     return this.control(() => this.client.setPresence(mode))
-  }
-
-  async goals(limit = 20): Promise<Record<string, unknown>> {
-    if (!this.config.mcbotEnabled) throw new McbotError('mcbot_disabled', 'mcbot 对接未启用')
-    return this.client.goals(limit)
-  }
-
-  async createGoal(objective: string, steps: Array<Record<string, unknown>>): Promise<Record<string, unknown>> {
-    return this.control(() => this.client.createGoal(objective, steps))
-  }
-
-  async goalAction(goalId: string, action: 'start' | 'pause' | 'resume' | 'cancel'): Promise<Record<string, unknown>> {
-    return this.control(() => this.client.goalAction(goalId, action))
   }
 
   async adminChat(message: string): Promise<Record<string, unknown>> {

@@ -3,8 +3,9 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
-import { openDatabase } from '../../apps/workbench/server/src/db.ts'
+import { MIGRATIONS } from '../../apps/workbench/server/src/db.ts'
 import { buildToolDefinitions } from '../../apps/mcbot/src/autonomy/tools.ts'
 import { registerMcbotTools, validateBinding } from '../../deploy/dsh/dsh-mcbot.mjs'
 import { QqMemory, qqScope } from '../../deploy/dsh/qq-memory.mjs'
@@ -28,9 +29,13 @@ test('QQ 群拒绝斜杠命令并隔离会话和图片作用域', async () => {
 test('QQ 只导入可验证归属的角色和记忆，清除使当前候选失效', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-qq-test-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const sourcePath = join(dir, 'schema20.sqlite')
-  const source = openDatabase({ path: sourcePath })
+  // 现行库已是 schema 22，不再保留 chatbot 表。导入夹具停在 schema 21。
+  const sourcePath = join(dir, 'schema21.sqlite')
+  const source = new DatabaseSync(sourcePath)
   try {
+    source.exec('PRAGMA foreign_keys = ON')
+    source.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+    for (const sql of MIGRATIONS.slice(0, 21)) source.exec(sql)
     source.exec(`
       INSERT INTO chatbots (id, platform, name, config_json, secret_ciphertext, secret_iv, secret_tag, created_at, updated_at)
       VALUES ('bot', 'qq', 'fixture', '{"appId":"appid"}', '', '', '', 'now', 'now');

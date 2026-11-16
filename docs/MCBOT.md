@@ -2,13 +2,13 @@
 
 游戏内人格名是 Lofii。服务只监听 `127.0.0.1:3010`，跑在 Paper 旁边，用 mineflayer 以离线账号登录。
 
-当前版本：**v1.2.3**。本机契约 v2。发言使用控制 Token。生产自主工具由 DSH 插件经私有 Unix socket 调用，mcbot 自己校验并执行。配置该 socket 后 `/autonomy/mcp` 返回 404。OpenCode 原生 MCP 只属于离线回滚路径。
+当前版本：**v1.2.4**。本机契约 v2。发言使用控制 Token。生产自主工具由 DSH 插件经私有 Unix socket 调用，mcbot 自己校验并执行。配置该 socket 后 `/autonomy/mcp` 返回 404。自主会话与管理员对话不再回退到 OpenCode。
 
 管理员对话决定是否行动。主人没有要求行动时只回答。世界动作只用下面 13 个工具，任务名只能来自白名单。急停不经过模型。应用面板不再直接开始任务、写目标、开始自主会话、移动或向游戏发言。
 
 ## 工具与任务
 
-权限前缀是 `mcbot_autonomy_*`。OpenCode 回滚路径的会话使用 deny-all，再允许这一前缀。
+权限前缀是 `mcbot_autonomy_*`。生产由 DSH 插件经私有 Unix socket 调用这些工具。没有该 socket 时，自主会话和管理员对话不可用。
 
 工具：`start_task`、`stop_task`、`go_home`、`deposit`、`task_status`、`observe`、`inspect_chest`、`eat`、`equip`、`finish`、`memory_read`、`memory_write`、`memory_forget`。
 
@@ -28,7 +28,7 @@
 
 - 只有被 Lofii 点名时才聊天。固定短语优先。模糊的任务语句先做意图分类，不能直接执行任意动作。
 - 在线模式是 `auto`、`always` 或 `off`，写在 `/var/lib/mcbot/presence.json`。任务、队列、待恢复或自主会话运行中切到 `off` 会返回 409。
-- 任务队列是一个活动任务加最多 3 个排队，单项上限 60 分钟。状态写盘。服务重启后变成 `pending_resume`，10 分钟内由面板确认才继续。
+- 任务队列是一个活动任务加最多 3 个排队，单项上限 60 分钟。状态写盘。服务重启后变成 `pending_resume`。Workbench 面板不再提供恢复按钮。恢复走 mcbot 本机控制入口或游戏内口令。
 - 任务中的被动防御只处理白名单敌对生物。有剑或斧就用最好的一把，没有就用拳头。不近战苦力怕、末影人和玩家。低血、低饥饿或敌人过多时撤退。
 - 饥饿时先吃背包，再捡近处掉落，然后去食物箱。仍然挨饿且空闲时排队种田，下一轮改排队钓鱼。
 - `clearing` 只在安全区内按既有敌对生物白名单清怪，不追出安全区。
@@ -39,6 +39,7 @@
 - 管理接口只用读 Token，RCON 只允许 `tps`、`list`、`whitelist list`、`time`。
 - 读 Token 与控制 Token 分离。游戏发言 `/say` 拒绝 ASCII `/` 与 C0。管理员对话允许 `/`，因为它不进入游戏聊天。
 - 事件在内存 ring 中。同一启动周期的序号空洞由 Workbench 记入 `eventGap`。聊天正文不进应用数据库。
+- 管理员对话在内存里保留最多 80 步：用户文本、助手文本、工具名与成败、目标或待办的动作和不超过 120 字的标题。不记录工具参数、令牌、提示词或世界记忆正文。急停清空这些步骤。`GET /admin/chat` 与 Workbench `GET /api/mcbot/chat` 一并返回。
 
 ## 约束
 

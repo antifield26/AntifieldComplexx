@@ -2,6 +2,10 @@
 
 版本边界按日期从新到旧排列。每条注明模块。现行行为见同目录操作文档，交付细节见仓库根 CHANGELOG。
 
+## 2026-11-16
+
+- **v1.2.4** · workbench、mcbot、client、ops：删除 Workbench 旧 QQ 管线与表（schema 22）、OpenCode HTML 兼容层、契约 v1、固定 409 写入口、目标草案和 PWA。Minecraft Bot 页收成状态、会话、事件记录，会话展示内存中的 DSH 步骤。尚未部署。恢复 v1.2.3 必须使用 schema 21 快照。
+
 ## 2026-11-14
 
 - **v1.2.3** · workbench、mcbot、client、dsh：管理员对话成为面板上的行动入口。模型可调用现有 13 个工具和 DSH 的 goal、todo。应用写入口改为 409。DSH Web 重新开放插件页。运行时升到 0.2.2-rc.3。同日随后的 Workbench 包放行插件管理前缀。

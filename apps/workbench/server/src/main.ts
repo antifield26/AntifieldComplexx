@@ -57,7 +57,6 @@ async function main(): Promise<void> {
   await context.app.listen({ host: config.host, port: config.port })
   context.alerts.start()
   context.startMetrics()
-  context.startBots()
   context.startLofii()
   context.app.log.info(
     {

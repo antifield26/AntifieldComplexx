@@ -5,9 +5,8 @@
  * - 上游地址由 config 校验为 loopback + http(s)；客户端始终 `redirect: 'error'`，
  *   避免被 302 引到外部主机后把 Token 发出去；每次请求带超时 AbortSignal，
  *   可由调用方传入额外 AbortSignal（进程关闭时中断在途请求）。
- * - 读 Token 只用于读接口；控制 Token
- *   只用于 /task/*、/move 与 /autonomy/start|stop；控制 Token 为空时控制方法直接返回
- *   mcbot_control_disabled。
+ * - 读 Token 只用于读接口。控制 Token 用于任务、移动、发言、管理员对话、急停、在线模式与自主启停。
+ *   控制 Token 为空时控制方法直接返回 mcbot_control_disabled。应用不代理 /history 与 /goals。
  * - 错误统一为稳定 `McbotError`（code/statusCode/upstreamCode），message 会移除上游
  *   地址与两个 Token，绝不把 URL/Token 写进错误文本或日志。
  * - 响应体上限 2 MiB；非 JSON、5xx 统一映射为 mcbot_upstream_error。
@@ -17,8 +16,6 @@
 
 /** 单次响应体上限：mcbot 是本地进程，正常响应远小于该值。 */
 export const MCBOT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
-
-export type McbotHistoryKind = 'samples' | 'alerts'
 
 /** mcbot 事件 envelope（/events/recent 与 SSE 相同）。 */
 export interface McbotEvent {
@@ -34,12 +31,6 @@ export interface McbotRecentResult {
   lastEventId: string | null
   /** 与上游一致：旧 → 新排序。 */
   events: McbotEvent[]
-}
-
-export interface McbotHistoryQuery {
-  from?: string
-  to?: string
-  limit?: number
 }
 
 /** 自主模式状态（与上游 mcbot 当前实现一致）；未知值原样保留，前端按字符串兜底展示。 */
@@ -201,15 +192,15 @@ export class McbotClient {
     this.fetchImpl = options.fetch ?? ((input, init) => fetch(input, init))
   }
 
-  async health(signal?: AbortSignal): Promise<{ version: string; contractVersion: 1 | 2 }> {
+  async health(signal?: AbortSignal): Promise<{ version: string; contractVersion: 2 }> {
     const body = await this.request('/healthz', { method: 'GET', signal })
     if (!isRecord(body) || body.status !== 'ok' || typeof body.version !== 'string' || !body.version.trim()) {
       throw new McbotError('mcbot_upstream_error', 'mcbot 健康响应格式不合法')
     }
-    if (body.contractVersion !== 1 && body.contractVersion !== 2) {
+    if (body.contractVersion !== 2) {
       throw new McbotError('mcbot_contract_unsupported', 'mcbot 契约版本不受支持')
     }
-    return { version: body.version, contractVersion: body.contractVersion }
+    return { version: body.version, contractVersion: 2 }
   }
 
   /** 校验轮询使用的状态核心字段；可选面板段由各自的视图归一化。 */
@@ -254,28 +245,6 @@ export class McbotClient {
       bootId,
       lastEventId: typeof body.lastEventId === 'string' && body.lastEventId ? body.lastEventId : null,
       events,
-    }
-  }
-
-  /** /history?kind=samples|alerts：原样返回上游响应体（kind/from/to/count/samples|alerts）。 */
-  async history(
-    kind: McbotHistoryKind,
-    query: McbotHistoryQuery = {},
-    signal?: AbortSignal,
-  ): Promise<Record<string, unknown>> {
-    const params = new URLSearchParams({ kind })
-    if (query.from) params.set('from', query.from)
-    if (query.to) params.set('to', query.to)
-    if (query.limit !== undefined) params.set('limit', String(query.limit))
-    const body = await this.request(`/history?${params.toString()}`, { method: 'GET', token: this.readToken, signal })
-    if (!isRecord(body)) throw new McbotError('mcbot_upstream_error', 'mcbot 历史响应格式不合法')
-    if (body.kind !== kind) throw new McbotError('mcbot_upstream_error', 'mcbot 历史响应类型不匹配')
-    const rows = body[kind]
-    if (!Array.isArray(rows)) throw new McbotError('mcbot_upstream_error', 'mcbot 历史响应缺少数组')
-    // 只透传对象行，避免畸形数组让前端 Table 渲染时解引用 null/原始值崩溃。
-    return {
-      ...body,
-      [kind]: rows.filter((row): row is Record<string, unknown> => isRecord(row)),
     }
   }
 
@@ -336,30 +305,6 @@ export class McbotClient {
   /** 切换在线模式（控制 Token）。 */
   async setPresence(mode: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
     return this.control('/presence', { mode }, signal)
-  }
-
-  /** 长期目标列表（读 Token）。 */
-  async goals(limit = 20, signal?: AbortSignal): Promise<Record<string, unknown>> {
-    const body = await this.request(`/goals?limit=${encodeURIComponent(String(limit))}`, {
-      method: 'GET',
-      token: this.readToken,
-      signal,
-    })
-    if (!isRecord(body)) throw new McbotError('mcbot_upstream_error', 'mcbot 目标响应格式不合法')
-    if (body.goals !== undefined && !Array.isArray(body.goals)) {
-      throw new McbotError('mcbot_upstream_error', 'mcbot 目标响应格式不合法')
-    }
-    return body
-  }
-
-  /** 创建长期目标（控制 Token，默认 paused）。 */
-  async createGoal(objective: string, steps: Array<Record<string, unknown>>, signal?: AbortSignal): Promise<Record<string, unknown>> {
-    return this.control('/goals', { objective, steps }, signal)
-  }
-
-  /** 目标动作：start/pause/resume/cancel（控制 Token）。 */
-  async goalAction(goalId: string, action: 'start' | 'pause' | 'resume' | 'cancel', signal?: AbortSignal): Promise<Record<string, unknown>> {
-    return this.control(`/goals/${encodeURIComponent(goalId)}/${action}`, {}, signal)
   }
 
   private async control(

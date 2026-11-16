@@ -211,7 +211,7 @@ function serviceFixture(options: {
   const impl = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
     calls.push({ url: url.toString(), init: init ?? {} })
-    if (url.pathname === '/healthz') return json({ status: 'ok', version: '1.0.2', contractVersion: 1 })
+    if (url.pathname === '/healthz') return json({ status: 'ok', version: '1.0.2', contractVersion: 2 })
     return (options.handler ?? (() => json({ error: 'not_found' }, 404)))(url, init ?? {})
   }) as typeof fetch
   const service = new McbotService({
@@ -247,13 +247,14 @@ function autonomyStatusHandler(state: { autonomy: Record<string, unknown> }) {
     if (url.pathname === '/status') {
       return json({
         version: '1.0.2',
+        contractVersion: 2,
         state: 'connected',
         minecraft: { connected: true }, task: { active: false, state: 'idle', queue: [] },
         autonomy: state.autonomy,
       })
     }
     if (url.pathname === '/events/recent') {
-      return json({ contractVersion: 1, bootId: 'b1', lastEventId: null, events: [] })
+      return json({ contractVersion: 2, bootId: 'b1', lastEventId: null, events: [] })
     }
     if (url.pathname === '/autonomy') return json({ autonomy: state.autonomy })
     if (url.pathname === '/autonomy/start') {
@@ -290,8 +291,8 @@ test('服务：/status 的 autonomy 段进入快照；旧版缺失降级 null；
   // 旧版 mcbot /status 无 autonomy：快照为 null，不伪造状态、不抛错。
   const legacy = serviceFixture({
     handler: (url) => {
-      if (url.pathname === '/status') return json({ version: '1.0.2', state: 'connected', minecraft: { connected: true }, task: { active: false, state: 'idle', queue: [] } })
-      if (url.pathname === '/events/recent') return json({ contractVersion: 1, bootId: 'b1', lastEventId: null, events: [] })
+      if (url.pathname === '/status') return json({ version: '1.0.2', contractVersion: 2, state: 'connected', minecraft: { connected: true }, task: { active: false, state: 'idle', queue: [] } })
+      if (url.pathname === '/events/recent') return json({ contractVersion: 2, bootId: 'b1', lastEventId: null, events: [] })
       return json({ error: 'not_found', message: 'not found' }, 404)
     },
   })
@@ -419,9 +420,9 @@ interface RouteFixture {
 
 function defaultRouteHandler(url: URL, init: RequestInit): Response | Promise<Response> {
   if (url.pathname === '/status') {
-    return json({ version: '1.0.2', state: 'connected', minecraft: { connected: true }, task: { active: false, state: 'idle', queue: [] }, autonomy: autonomySnapshot() })
+    return json({ version: '1.0.2', contractVersion: 2, state: 'connected', minecraft: { connected: true }, task: { active: false, state: 'idle', queue: [] }, autonomy: autonomySnapshot() })
   }
-  if (url.pathname === '/events/recent') return json({ contractVersion: 1, bootId: 'b1', lastEventId: null, events: [] })
+  if (url.pathname === '/events/recent') return json({ contractVersion: 2, bootId: 'b1', lastEventId: null, events: [] })
   if (url.pathname === '/autonomy') return json({ autonomy: autonomySnapshot() })
   if (url.pathname === '/autonomy/start') {
     let goal: string | null
@@ -436,10 +437,6 @@ function defaultRouteHandler(url: URL, init: RequestInit): Response | Promise<Re
     return json({ ok: true, autonomy: autonomySnapshot({ state: 'finished', active: false }) }, 202)
   }
   if (url.pathname === '/task/start') return json({ ok: true, queued: false }, 202)
-  if (url.pathname === '/history') {
-    const kind = url.searchParams.get('kind') ?? 'samples'
-    return json({ kind, from: null, to: null, count: 0, [kind]: [] })
-  }
   return json({ error: 'not_found', message: 'not found' }, 404)
 }
 
@@ -457,7 +454,7 @@ async function makeRouteApp(options: { config?: Partial<Config>; handler?: Handl
   const impl = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
     calls.push({ url: url.toString(), init: init ?? {} })
-    if (url.pathname === '/healthz') return json({ status: 'ok', version: '1.0.2', contractVersion: 1 })
+    if (url.pathname === '/healthz') return json({ status: 'ok', version: '1.0.2', contractVersion: 2 })
     return handler(url, init ?? {})
   }) as typeof fetch
   const service = new McbotService({
@@ -512,8 +509,7 @@ test('MCBOT_TASK_NAMES：11 种任务名仍是白名单，面板启动入口改�
         headers: authHeaders(),
         payload: { name },
       })
-      assert.equal(response.statusCode, 409, `任务 ${name} 应改走对话`)
-      assert.equal(response.json().error.code, 'mcbot_control_via_chat')
+      assert.equal(response.statusCode, 404, `任务 ${name} 没有应用路由`)
     }
     assert.equal(lastUpstreamCall(fx.calls, '/task/start'), undefined)
   } finally {
@@ -554,15 +550,14 @@ test('GET /api/mcbot/autonomy：登录、包装 {autonomy}、禁用降级', asyn
       url: '/api/mcbot/autonomy/start',
       headers: authHeaders(),
     })
-    assert.equal(retiredStart.statusCode, 409)
-    assert.equal(retiredStart.json().error.code, 'mcbot_control_via_chat')
+    assert.equal(retiredStart.statusCode, 404)
     assert.equal(disabled.calls.length, 0, '禁用时不得访问上游')
   } finally {
     await disabled.close()
   }
 })
 
-test('POST /api/mcbot/autonomy/start：改为对话入口，不转发上游', async () => {
+test('POST /api/mcbot/autonomy/start：应用路由不存在，不转发上游', async () => {
   const fx = await makeRouteApp()
   try {
     const noCsrf = await fx.app.inject({
@@ -571,8 +566,7 @@ test('POST /api/mcbot/autonomy/start：改为对话入口，不转发上游', as
       headers: csrfHeadersOnly(),
       payload: { goal: 'ok' },
     })
-    assert.equal(noCsrf.statusCode, 403)
-    assert.equal(noCsrf.json().error.code, 'csrf_failed')
+    assert.equal(noCsrf.statusCode, 404)
 
     const retired = await fx.app.inject({
       method: 'POST',
@@ -580,9 +574,7 @@ test('POST /api/mcbot/autonomy/start：改为对话入口，不转发上游', as
       headers: authHeaders(),
       payload: { goal: '收集木材' },
     })
-    assert.equal(retired.statusCode, 409)
-    assert.equal(retired.json().error.code, 'mcbot_control_via_chat')
-    assert.equal(retired.json().error.message, '请通过 Minecraft Bot 对话控制')
+    assert.equal(retired.statusCode, 404)
     assert.equal(lastUpstreamCall(fx.calls, '/autonomy/start'), undefined)
     assert.ok(!JSON.stringify(auditRows(fx.fixture.db)).includes('收集木材'))
   } finally {
@@ -687,7 +679,7 @@ test('自主控制错误映射：409 busy / 503 disabled / 503 unavailable / 502
   }
 })
 
-test('GET 限流：/status 与 /history 各 60/min/IP，超限 429；12 次/分 UI 轮询不受影响', async () => {
+test('GET 限流：/status 与 /autonomy 各 60/min/IP，超限 429；12 次/分 UI 轮询不受影响', async () => {
   const statusFx = await makeRouteApp()
   try {
     for (let index = 0; index < 12; index += 1) {
@@ -706,25 +698,25 @@ test('GET 限流：/status 与 /history 各 60/min/IP，超限 429；12 次/分 
     await statusFx.close()
   }
 
-  const historyFx = await makeRouteApp()
+  const autonomyFx = await makeRouteApp()
   try {
     for (let index = 0; index < 60; index += 1) {
-      const response = await historyFx.app.inject({
+      const response = await autonomyFx.app.inject({
         method: 'GET',
-        url: '/api/mcbot/history?kind=samples',
+        url: '/api/mcbot/autonomy',
         headers: authHeaders(),
       })
-      assert.equal(response.statusCode, 200, `第 ${index + 1} 次 history 应放行`)
+      assert.equal(response.statusCode, 200, `第 ${index + 1} 次 autonomy 应放行`)
     }
-    const limited = await historyFx.app.inject({
+    const limited = await autonomyFx.app.inject({
       method: 'GET',
-      url: '/api/mcbot/history?kind=samples',
+      url: '/api/mcbot/autonomy',
       headers: authHeaders(),
     })
     assert.equal(limited.statusCode, 429)
     assert.equal(limited.json().error.code, 'rate_limited')
   } finally {
-    await historyFx.close()
+    await autonomyFx.close()
   }
 })
 

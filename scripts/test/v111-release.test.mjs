@@ -41,12 +41,12 @@ test('校验快照拒绝坏源，同 schema 检查保留 WAL 中的部署后写�
 })
 
 test('生产配置决定运行时，拒绝不一致的 DSH 配置', () => {
-  const dsh = { DSH_WEB_URL: 'http://127.0.0.1:4700', DSH_WEB_SSO_SOCKET: '/run/dsh/broker.sock', DSH_QQ_MANAGED: 'true' }
+  const dsh = { DSH_WEB_URL: 'http://127.0.0.1:4700', DSH_WEB_SSO_SOCKET: '/run/dsh/broker.sock' }
   assert.equal(detectRuntime({}), 'opencode')
   assert.equal(detectRuntime(dsh), 'dsh')
   assert.throws(() => detectRuntime({ ...dsh, DSH_WEB_SSO_SOCKET: '' }), /conflicting_agent_config/)
-  assert.throws(() => detectRuntime({ ...dsh, DSH_QQ_MANAGED: 'false' }), /conflicting_agent_config/)
-  assert.equal(detectRuntime({ ...dsh, CHATBOT_ENABLED: 'true' }), 'dsh')
+  assert.throws(() => detectRuntime({ DSH_WEB_URL: 'http://127.0.0.1:4700' }), /conflicting_agent_config/)
+  assert.equal(detectRuntime({ ...dsh, CHATBOT_ENABLED: 'true', DSH_QQ_MANAGED: 'false' }), 'dsh')
 })
 
 test('密钥包快照含 WAL 目标，隔离恢复暂停运行中目标并验证 JSON 副本', async (t) => {

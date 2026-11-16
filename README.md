@@ -2,8 +2,8 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台：统一登录与单一入口，整合云盘、知识库、多文件分享、Minecraft 状态与白名单、mcbot（只读状态、在线模式、急停、管理员对话、事件流与告警）、DeepSeek Harness AI 工作区、QQ 官方机器人、主机指标与告警，以及应用归档、世界备份和恢复演练。生产已开启整包加密和 Google Drive 异地副本；模板默认关闭。
 
-> 状态：v1.2.3 已于 2026-11-14 部署。schema **v21**，mcbot 契约 v2。Minecraft Bot 面板以管理员对话决定行动，并保留在线模式与急停。远程 DSH 插件页可查看、安装和卸载。Web、QQ 与 mcbot Agent 使用 DeepSeek Harness。OpenCode **v2.2.5** 已从 Pi 退役，离线档供回滚。当前状态见 [ACCEPTANCE](docs/ACCEPTANCE.md)。
-> 客户端与 schema 21 绑定。退回 v1.1.1 的迁移前快照和现行回滚指针见 [DEPLOY](docs/DEPLOY.md)。
+> 状态：v1.2.4。schema **v22**，mcbot 契约 v2。生产仍是 2026-11-14 部署的 v1.2.3（schema 21）。本版尚未部署；迁移后再退回 v1.2.3 必须使用 schema 21 快照。Web、QQ 与 mcbot Agent 使用 DeepSeek Harness。OpenCode **v2.2.5** 已从 Pi 退役，离线档供回滚。当前状态见 [ACCEPTANCE](docs/ACCEPTANCE.md)。
+> 退回 v1.1.1 的迁移前快照和现行回滚指针见 [DEPLOY](docs/DEPLOY.md)。
 > 部署与运维见 [DEPLOY](docs/DEPLOY.md)，备份与恢复见 [BACKUP](docs/BACKUP.md)，契约见 [API](docs/API.md)，版本边界见 [ROADMAP](docs/ROADMAP.md)。
 > 未完成事项见 [BACKLOG](docs/BACKLOG.md)。整包 age 与 Google Drive 异地副本已开启。世界归档和密钥包仍由 PC 拉取。
 
@@ -14,10 +14,10 @@
 ## 技术栈
 
 - 服务端：Node.js >= 26（生产 v26.13.0；原生 TypeScript，无编译步骤）+ Fastify + `node:sqlite`（WAL）
-- 前端：React 19 + TypeScript + Vite，中文暗色界面，PWA（离线壳，不缓存 API）
+- 前端：React 19 + TypeScript + Vite，中文暗色界面。不提供 PWA 安装或离线壳。
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用；当前结论为**暂不升级、保留双 alias**
-- Bot：仅 QQ 官方 Bot。生产 QQ 由 DeepSeek Harness QQ Agent 处理白名单私聊、群 @ 与图片；私聊 `/forget confirm` 清除同一 AppID 下可确认归属的私聊和群记忆并轮换会话。Workbench 旧回调在生产返回 404。回复按 QQ 2000 字符分段、纯文本格式化。OpenCode 文档模式与 prompt files 只属于已退役的回滚路径
-- mcbot：Minecraft 附属 Bot（独立服务，仅 loopback `127.0.0.1:3010`）的只读/控制对接：读 Token（`/status`/`/events/recent`/`/history`）与控制 Token（`/task/*`/`/move`/`/say`）分离，控制 Token 为空即只读（`/say` 也 503）；服务端每 5s 轮询 `/healthz`、`/status` 与 `/events/recent?limit=200`；Workbench 接受契约 v1/v2，发言仅 v2，事件环最多缓存 100 条且 ≤512 KiB；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符；上游 `alert` 映射为本应用告警事件 `status='event'`；浏览器不直连 mcbot、不经手 Token
+- Bot：生产 QQ 由 DeepSeek Harness QQ Agent 处理。Workbench 不再提供收发、发布或机器人管理页。
+- mcbot：Minecraft 附属 Bot（独立服务，仅 loopback `127.0.0.1:3010`）。读 Token 与控制 Token 分离。Workbench 只接受契约 v2。事件环最多缓存 100 条且 ≤512 KiB。管理员对话展示内存中的 DSH 步骤。浏览器不直连 mcbot、不经手 Token
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
 - 测试：`node --test`（服务端 + 运维脚本 **640**，639 pass / 1 skip）+ Vitest/jsdom（**283**），ESLint，`tsc --noEmit`，覆盖率门禁；mcbot 独立 **181** 项
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新

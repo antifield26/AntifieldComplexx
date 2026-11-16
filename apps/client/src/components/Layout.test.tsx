@@ -12,8 +12,6 @@ import { handleOverlayBack } from '../lib/navigation-guard'
 const meta = vi.hoisted(() => ({ sharesEnabled: true }))
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ user: { username: '测试用户' }, logout: vi.fn() }) }))
 vi.mock('../meta/MetaContext', () => ({ useAppMeta: () => ({ meta }) }))
-vi.mock('./PwaInstallPrompt', () => ({ PwaInstallPrompt: () => null }))
-vi.mock('./PwaUpdatePrompt', () => ({ PwaUpdatePrompt: () => null }))
 
 function renderLayout(entry = '/knowledge') {
   return render(<ToastProvider><MemoryRouter initialEntries={[entry]}><Routes><Route element={<Layout />}><Route path="/more" element={<More />} /><Route path="*" element={<p>页面内容</p>} /></Route></Routes></MemoryRouter></ToastProvider>)
@@ -42,12 +40,13 @@ describe('客户端导航', () => {
     expect(within(screen.getByRole('navigation', { name: '主导航' })).getByRole('link', { name: '知识库' })).toBeInTheDocument()
   })
 
-  it('更多页列出六项功能并遵守分享开关', () => {
+  it('更多页列出五项功能并遵守分享开关', () => {
     meta.sharesEnabled = false
     renderLayout('/more')
     const more = within(screen.getByRole('navigation', { name: '更多功能' }))
-    expect(more.getAllByRole('link')).toHaveLength(5)
+    expect(more.getAllByRole('link')).toHaveLength(4)
     expect(more.queryByRole('link', { name: /分享/ })).not.toBeInTheDocument()
+    expect(more.queryByRole('link', { name: /机器人/ })).not.toBeInTheDocument()
     expect(more.getByRole('link', { name: /设置/ })).toHaveAttribute('href', '/settings')
   })
 

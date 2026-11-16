@@ -99,24 +99,6 @@ test('recentEvents：旧版无 /events/recent（404）暴露 statusCode=404 供�
   assert.equal(error.statusCode, 404)
 })
 
-test('history：把 kind/from/to/limit 透传为查询串，使用读 Token', async () => {
-  const { impl, calls } = makeFetch(() => json({ kind: 'samples', from: null, to: null, count: 0, samples: [] }))
-  const client = makeClient(impl)
-  const body = await client.history('samples', {
-    from: '2026-10-01T00:00:00.000Z',
-    to: '2026-10-02T00:00:00.000Z',
-    limit: 100,
-  })
-  assert.deepEqual(body, { kind: 'samples', from: null, to: null, count: 0, samples: [] })
-  const url = new URL(calls[0]!.url)
-  assert.equal(url.pathname, '/history')
-  assert.equal(url.searchParams.get('kind'), 'samples')
-  assert.equal(url.searchParams.get('from'), '2026-10-01T00:00:00.000Z')
-  assert.equal(url.searchParams.get('to'), '2026-10-02T00:00:00.000Z')
-  assert.equal(url.searchParams.get('limit'), '100')
-  assert.equal(authHeader(calls[0]!.init), `Bearer ${READ}`)
-})
-
 test('控制方法：使用控制 Token，/say 使用控制 Token', async () => {
   const { impl, calls } = makeFetch(() => json({ ok: true, queued: false, position: null, requestId: 'r1' }))
   const client = makeClient(impl)
@@ -281,18 +263,6 @@ test('上游 5xx 明确业务码 task_disabled 保留为 mcbot_task_disabled', a
   const error = await expectLofiiError(makeClient(impl).startTask('fishing'), 'mcbot_task_disabled')
   assert.equal(error.statusCode, 503)
   assert.equal(error.upstreamCode, 'task_disabled')
-})
-
-test('history 形状不合法（kind 不匹配/数组缺失/行非对象）时报上游格式错误', async () => {
-  const wrongKind = makeFetch(() => json({ kind: 'alerts', count: 0, alerts: [] }))
-  await expectLofiiError(makeClient(wrongKind.impl).history('samples'), 'mcbot_upstream_error')
-
-  const missingArray = makeFetch(() => json({ kind: 'samples', count: 0 }))
-  await expectLofiiError(makeClient(missingArray.impl).history('samples'), 'mcbot_upstream_error')
-
-  const mixedRows = makeFetch(() => json({ kind: 'samples', count: 3, samples: [{ ts: 'x' }, null, 'bad', 3] }))
-  const body = await makeClient(mixedRows.impl).history('samples')
-  assert.deepEqual(body.samples, [{ ts: 'x' }])
 })
 
 test('响应读取失败映射 mcbot_unavailable', async () => {

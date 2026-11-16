@@ -66,30 +66,26 @@ describe('v0.8.0 mcbot API 客户端', () => {
     expect(snapshot.events).toHaveLength(1)
   })
 
-  it('history 编码 kind/from/to/limit 并解析 samples/alerts 动态键', async () => {
+  it('chatState 保留 messages 与 steps', async () => {
     fetchMock.mockResolvedValue(
       mockResponse({
         body: {
-          kind: 'samples',
-          from: '2026-10-26T08:00:00.000Z',
-          to: '2026-10-27T08:00:00.000Z',
-          count: 1,
-          samples: [{ ts: '2026-10-27T07:59:00.000Z', connected: true, state: 'connected', queueLen: 0 }],
+          messages: [],
+          steps: [
+            { kind: 'user', text: '去砍树' },
+            { kind: 'tool', name: 'start_task', status: 'ok' },
+            { kind: 'goal', action: 'start', title: '砍木头' },
+            { kind: 'todo', action: 'add', title: '存箱' },
+            { kind: 'assistant', text: '开始了。' },
+          ],
+          turn: null,
         },
       }),
     )
-    const history = await api.mcbot.history({
-      kind: 'samples',
-      from: '2026-10-26T08:00:00.000Z',
-      to: '2026-10-27T08:00:00.000Z',
-      limit: 100,
-    })
-    const url = new URL(lastCall().url, 'http://localhost')
-    expect(url.pathname).toBe('/api/mcbot/history')
-    expect(url.searchParams.get('kind')).toBe('samples')
-    expect(url.searchParams.get('limit')).toBe('100')
-    expect(url.searchParams.get('from')).toBe('2026-10-26T08:00:00.000Z')
-    expect(history.samples?.[0]?.connected).toBe(true)
+    const state = await api.mcbot.chatState()
+    expect(lastCall().url).toBe('/api/mcbot/chat')
+    expect(lastCall().init.method).toBe('GET')
+    expect(state.steps.map((step) => step.kind)).toEqual(['user', 'tool', 'goal', 'todo', 'assistant'])
   })
 
   it('管理员对话与急停使用 POST，正文不进入错误对象', async () => {

@@ -19,27 +19,6 @@ import type {
   BookmarkInput,
   BookmarkListResult,
   BookmarkPatch,
-  ChatbotCreateInput,
-  ChatbotDelivery,
-  ChatbotEventItem,
-  ChatbotHealthCheck,
-  ChatbotInboundTarget,
-  ChatbotMemoryItemSummary,
-  ChatbotMemoryGroupSummary,
-  ChatbotMemoryUserSummary,
-  ChatbotMetrics,
-  ChatbotConnectivitySnapshot,
-  ChatbotGroupRoleDetail,
-  ChatbotGroupRoleSummary,
-  ChatbotPublishInput,
-  ChatbotPublishJob,
-  ChatbotRoleSummary,
-  ChatbotStatus,
-  ChatbotSummary,
-  ChatbotTarget,
-  ChatbotTargetInput,
-  ChatbotTargetPatch,
-  ChatbotUpdateInput,
   ClearTrashResult,
   ChunkUploadInit,
   ChunkUploadStatus,
@@ -58,9 +37,6 @@ import type {
   McbotChatAccepted,
   McbotChatState,
   McbotEmergencyStopResult,
-  McbotGoalsResult,
-  McbotHistory,
-  McbotHistoryQuery,
   McbotPresenceMode,
   McbotPresenceResult,
   McbotSnapshot,
@@ -181,15 +157,6 @@ const ERROR_MESSAGES: Record<string, string> = {
   upload_completed: '上传会话已完成，无法取消',
   invalid_chunk_index: '分片序号不合法',
   invalid_chunk_size: '分片大小不合法',
-  // v0.5.0：Chatbot 配置与队列
-  chatbot_disabled: 'Chatbot 功能未启用',
-  chatbot_key_missing: '未配置 CHATBOT_SECRET_KEY，Chatbot 功能暂不可用',
-  chatbot_key_invalid: 'CHATBOT_SECRET_KEY 配置无效',
-  totp_required: '发布需要 TOTP 验证码',
-  invalid_chatbot_config: 'Chatbot 配置不合法，请检查 Token 与密钥',
-  target_missing: '投递目标不存在或已被删除',
-  media_missing: '媒体文件不存在或不可发布',
-  empty_payload: '投递内容为空',
   // v0.7.0：备份整包加密 + 异地副本（加密归档只能在 PC/离线私钥侧校验/恢复）
   archive_encrypted: '该归档已加密，Web 无法校验或恢复，请在 PC 上用 age 私钥处理',
   verify_requires_decryption: '该归档已加密，需要离线私钥解密后才能校验',
@@ -205,8 +172,6 @@ const ERROR_MESSAGES: Record<string, string> = {
   upload_assembling: '服务端正在拼接文件，请稍后重试（断点已保留）',
   upload_expired: '上传会话已过期，请重新上传',
   too_many_attachments: '附件数量超过限制',
-  // v0.7.0：Chatbot AI 工具隔离 fail-closed（不降级为无工具模式）
-  chatbot_ai_tool_isolation_unavailable: 'Chatbot AI 工具安全隔离不可用，已拒绝本轮 AI 请求（请检查 botmsg MCP 与隔离配置）',
   // v0.8.0：mcbot 集成（服务端把 mcbot 上游错误映射为 mcbot_* 前缀）
   mcbot_disabled: 'mcbot 集成未启用（MCBOT_ENABLED=false）',
   mcbot_unavailable: 'mcbot 服务不可达，请检查 mcbot 进程与 Token 配置',
@@ -513,10 +478,6 @@ function post<T>(path: string, body?: unknown, options: Omit<RequestOptions, 'me
 
 function patch<T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<T> {
   return request<T>(path, { ...options, method: 'PATCH', body })
-}
-
-function put<T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<T> {
-  return request<T>(path, { ...options, method: 'PUT', body })
 }
 
 function del<T>(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<T> {
@@ -1421,25 +1382,13 @@ export const api = {
     },
   },
   /**
-   * mcbot 集成：状态、历史、在线模式与自主快照可读。
-   * 世界动作只经管理员对话；急停不经过模型。
-   * 本客户端不接触 mcbot Token/URL。
+   * mcbot 集成：状态、在线模式、会话与自主快照可读。
+   * 世界动作只经会话；急停不经过模型。
+   * 本客户端不接触 mcbot Token/URL，也不调用已删除的目标、任务、移动和发言接口。
    */
   mcbot: {
     status(signal?: AbortSignal): Promise<McbotSnapshot> {
       return get<McbotSnapshot>('/api/mcbot/status', { signal })
-    },
-    /** mcbot 历史：kind=samples|alerts；服务端透传 mcbot 形状（samples/alerts 动态键）。 */
-    history(query: McbotHistoryQuery, signal?: AbortSignal): Promise<McbotHistory> {
-      return get<McbotHistory>(
-        `/api/mcbot/history${buildQuery({
-          kind: query.kind,
-          from: query.from,
-          to: query.to,
-          limit: query.limit,
-        })}`,
-        { signal },
-      )
     },
     /** AI 自主模式实时快照；服务端包装为 {autonomy}，缺失时返回 null。 */
     autonomy(signal?: AbortSignal): Promise<McbotAutonomySnapshot | null> {
@@ -1453,10 +1402,6 @@ export const api = {
     setPresence(mode: McbotPresenceMode): Promise<McbotPresenceResult> {
       return post<McbotPresenceResult>('/api/mcbot/presence', { mode })
     },
-    /** 长期目标列表（只读）。 */
-    goals(limit = 20, signal?: AbortSignal): Promise<McbotGoalsResult> {
-      return get<McbotGoalsResult>(`/api/mcbot/goals?limit=${encodeURIComponent(String(limit))}`, { signal })
-    },
     /** 管理员对话：服务端立即接受，正文由 chatState 轮询。 */
     chat(message: string): Promise<McbotChatAccepted> {
       return post<McbotChatAccepted>('/api/mcbot/chat', { message })
@@ -1467,228 +1412,6 @@ export const api = {
     /** 急停任务、自主会话和管理员对话，不经过模型。 */
     emergencyStop(): Promise<McbotEmergencyStopResult> {
       return post<McbotEmergencyStopResult>('/api/mcbot/emergency-stop', {})
-    },
-  },
-  /**
-   * 机器人管理（v0.5.0）：所有接口要求登录；配置接口在功能未启用时返回
-   * 503 chatbot_disabled / chatbot_key_missing。密钥只写不读，响应中不含密钥。
-   */
-  chatbots: {
-    status(signal?: AbortSignal): Promise<ChatbotStatus> {
-      return get<ChatbotStatus>('/api/chatbots/status', { signal })
-    },
-    connectivity(signal?: AbortSignal): Promise<ChatbotConnectivitySnapshot> {
-      return get<ChatbotConnectivitySnapshot>('/api/chatbots/connectivity', { signal })
-    },
-    checkConnectivity(): Promise<ChatbotConnectivitySnapshot> {
-      return post<ChatbotConnectivitySnapshot>('/api/chatbots/connectivity/check')
-    },
-    async list(signal?: AbortSignal): Promise<ChatbotSummary[]> {
-      const result = await get<{ items: ChatbotSummary[] }>('/api/chatbots', { signal })
-      return result.items
-    },
-    async get(id: string, signal?: AbortSignal): Promise<ChatbotSummary> {
-      const result = await get<{ chatbot: ChatbotSummary }>(`/api/chatbots/${encodeId(id)}`, { signal })
-      return result.chatbot
-    },
-    async metrics(id: string, hours = 24, signal?: AbortSignal): Promise<ChatbotMetrics> {
-      const result = await get<{ metrics: ChatbotMetrics }>(
-        `/api/chatbots/${encodeId(id)}/metrics${buildQuery({ hours })}`,
-        { signal },
-      )
-      return result.metrics
-    },
-    async create(input: ChatbotCreateInput): Promise<ChatbotSummary> {
-      const result = await post<{ chatbot: ChatbotSummary }>('/api/chatbots', input)
-      return result.chatbot
-    },
-    async update(id: string, input: ChatbotUpdateInput): Promise<ChatbotSummary> {
-      const result = await patch<{ chatbot: ChatbotSummary }>(`/api/chatbots/${encodeId(id)}`, input)
-      return result.chatbot
-    },
-    remove(id: string): Promise<OkResult> {
-      return del<OkResult>(`/api/chatbots/${encodeId(id)}`)
-    },
-    /** 发送测试消息；省略 targetId 时服务端使用该 Chatbot 的第一个目标。 */
-    test(id: string, targetId?: string): Promise<OkResult> {
-      return post<OkResult>(
-        `/api/chatbots/${encodeId(id)}/test`,
-        targetId ? { targetId } : {},
-      )
-    },
-    /**
-     * 连接自检（v0.5.7）：服务端校验 Token/Webhook/公开配置并更新 last_checked_at。
-     * 返回项只描述可用性与脱敏原因，不含任何密钥。
-     */
-    async check(id: string): Promise<ChatbotHealthCheck> {
-      const result = await post<{ health: ChatbotHealthCheck }>(`/api/chatbots/${encodeId(id)}/check`)
-      return result.health
-    },
-    /** 入站事件元数据（v0.5.7）：支持时间范围/结果筛选与分页，不返回消息正文。 */
-    events(
-      id: string,
-      options: { hours?: number; outcome?: string; limit?: number; offset?: number } = {},
-    ): Promise<{ items: ChatbotEventItem[]; total: number }> {
-      return get<{ items: ChatbotEventItem[]; total: number }>(
-        `/api/chatbots/${encodeId(id)}/events${buildQuery({
-          hours: options.hours,
-          outcome: options.outcome,
-          limit: options.limit,
-          offset: options.offset,
-        })}`,
-      )
-    },
-    /** 私聊角色卡与长期记忆管理（v0.5.7）：只操作元数据，正文不通过 Web 读写。 */
-    roles: {
-      list(
-        id: string,
-        options: { limit?: number; offset?: number } = {},
-      ): Promise<{ items: ChatbotRoleSummary[]; total: number }> {
-        return get<{ items: ChatbotRoleSummary[]; total: number }>(
-          `/api/chatbots/${encodeId(id)}/roles${buildQuery({ limit: options.limit, offset: options.offset })}`,
-        )
-      },
-      /** 启用/停用某个用户的角色卡，不修改角色正文。 */
-      async setEnabled(id: string, userId: string, enabled: boolean): Promise<void> {
-        await patch<OkResult>(`/api/chatbots/${encodeId(id)}/roles/${encodeId(userId)}`, { enabled })
-      },
-      async remove(id: string, userId: string): Promise<void> {
-        await del<OkResult>(`/api/chatbots/${encodeId(id)}/roles/${encodeId(userId)}`)
-      },
-    },
-    /** 群聊角色卡：管理员可读写名字与正文；普通用户不可见。 */
-    groupRoles: {
-      list(id: string): Promise<{ items: ChatbotGroupRoleSummary[] }> {
-        return get<{ items: ChatbotGroupRoleSummary[] }>(`/api/chatbots/${encodeId(id)}/group-roles`)
-      },
-      get(id: string, targetId: string): Promise<{ groupRole: ChatbotGroupRoleDetail | null }> {
-        return get<{ groupRole: ChatbotGroupRoleDetail | null }>(
-          `/api/chatbots/${encodeId(id)}/group-roles/${encodeId(targetId)}`,
-        )
-      },
-      async save(id: string, targetId: string, input: { name: string; prompt: string }): Promise<ChatbotGroupRoleDetail> {
-        const result = await put<{ groupRole: ChatbotGroupRoleDetail }>(
-          `/api/chatbots/${encodeId(id)}/group-roles/${encodeId(targetId)}`,
-          input,
-        )
-        return result.groupRole
-      },
-      async setEnabled(id: string, targetId: string, enabled: boolean): Promise<void> {
-        await patch<OkResult>(`/api/chatbots/${encodeId(id)}/group-roles/${encodeId(targetId)}`, { enabled })
-      },
-      async remove(id: string, targetId: string): Promise<void> {
-        await del<OkResult>(`/api/chatbots/${encodeId(id)}/group-roles/${encodeId(targetId)}`)
-      },
-    },
-    memories: {
-      /** 用户级结构化记忆元数据：条目数/类型分布/启用状态，不含正文。 */
-      list(
-        id: string,
-        options: { limit?: number; offset?: number } = {},
-      ): Promise<{ items: ChatbotMemoryUserSummary[]; total: number }> {
-        return get<{ items: ChatbotMemoryUserSummary[]; total: number }>(
-          `/api/chatbots/${encodeId(id)}/memories${buildQuery({ limit: options.limit, offset: options.offset })}`,
-        )
-      },
-      /** 单用户记忆条目元数据：只含类型/权重/时间，不含 key/value。 */
-      items(
-        id: string,
-        userId: string,
-        options: { limit?: number; offset?: number } = {},
-      ): Promise<{ items: ChatbotMemoryItemSummary[]; total: number }> {
-        return get<{ items: ChatbotMemoryItemSummary[]; total: number }>(
-          `/api/chatbots/${encodeId(id)}/memories/${encodeId(userId)}/items${buildQuery({
-            limit: options.limit,
-            offset: options.offset,
-          })}`,
-        )
-      },
-      /** 删除单条记忆；只提交条目 id，服务端不回传正文。 */
-      async removeItem(id: string, userId: string, itemId: string): Promise<void> {
-        await del<OkResult>(
-          `/api/chatbots/${encodeId(id)}/memories/${encodeId(userId)}/items/${encodeId(itemId)}`,
-        )
-      },
-      /** 删除某用户的全部记忆条目。 */
-      async remove(id: string, userId: string): Promise<void> {
-        await del<OkResult>(`/api/chatbots/${encodeId(id)}/memories/${encodeId(userId)}`)
-      },
-    },
-    groupMemories: {
-      /** 群聊共享记忆元数据：按群目标聚合，不含正文。 */
-      list(
-        id: string,
-        options: { limit?: number; offset?: number } = {},
-      ): Promise<{ items: ChatbotMemoryGroupSummary[]; total: number }> {
-        return get<{ items: ChatbotMemoryGroupSummary[]; total: number }>(
-          `/api/chatbots/${encodeId(id)}/group-memories${buildQuery({ limit: options.limit, offset: options.offset })}`,
-        )
-      },
-      /** 清空某个群目标的共享记忆。 */
-      async remove(id: string, scope: string): Promise<void> {
-        await del<OkResult>(`/api/chatbots/${encodeId(id)}/group-memories/${encodeId(scope)}`)
-      },
-    },
-    targets: {
-      async list(chatbotId: string, signal?: AbortSignal): Promise<ChatbotTarget[]> {
-        const result = await get<{ items: ChatbotTarget[] }>(`/api/chatbots/${encodeId(chatbotId)}/targets`, { signal })
-        return result.items
-      },
-      async listInbound(chatbotId: string, limit = 50, signal?: AbortSignal): Promise<ChatbotInboundTarget[]> {
-        const result = await get<{ items: ChatbotInboundTarget[] }>(
-          `/api/chatbots/${encodeId(chatbotId)}/inbound-targets${buildQuery({ limit })}`,
-          { signal },
-        )
-        return result.items
-      },
-      async create(chatbotId: string, input: ChatbotTargetInput): Promise<ChatbotTarget> {
-        const result = await post<{ target: ChatbotTarget }>(`/api/chatbots/${encodeId(chatbotId)}/targets`, input)
-        return result.target
-      },
-      async update(chatbotId: string, targetId: string, patchBody: ChatbotTargetPatch): Promise<ChatbotTarget> {
-        const result = await patch<{ target: ChatbotTarget }>(
-          `/api/chatbots/${encodeId(chatbotId)}/targets/${encodeId(targetId)}`,
-          patchBody,
-        )
-        return result.target
-      },
-      remove(chatbotId: string, targetId: string): Promise<OkResult> {
-        return del<OkResult>(`/api/chatbots/${encodeId(chatbotId)}/targets/${encodeId(targetId)}`)
-      },
-    },
-    deliveries: {
-      async list(chatbotId: string, limit = 50, signal?: AbortSignal): Promise<ChatbotDelivery[]> {
-        const result = await get<{ items: ChatbotDelivery[] }>(
-          `/api/chatbots/${encodeId(chatbotId)}/deliveries${buildQuery({ limit })}`,
-          { signal },
-        )
-        return result.items
-      },
-      /** 仅 failed/dead 可重试；服务端返回 404 表示不可重试。 */
-      retry(chatbotId: string, deliveryId: string): Promise<OkResult> {
-        return post<OkResult>(`/api/chatbots/${encodeId(chatbotId)}/deliveries/${encodeId(deliveryId)}/retry`)
-      },
-      /** 批量重试 failed/dead（最多 20 条，排除部分已发送文本）。 */
-      retryFailed(chatbotId: string): Promise<{ retried: number }> {
-        return post<{ retried: number }>(`/api/chatbots/${encodeId(chatbotId)}/deliveries/retry-failed`)
-      },
-    },
-    publish: {
-      async list(chatbotId: string, limit = 50, signal?: AbortSignal): Promise<ChatbotPublishJob[]> {
-        const result = await get<{ items: ChatbotPublishJob[] }>(
-          `/api/chatbots/${encodeId(chatbotId)}/publish${buildQuery({ limit })}`,
-          { signal },
-        )
-        return result.items
-      },
-      async create(chatbotId: string, input: ChatbotPublishInput): Promise<ChatbotPublishJob> {
-        const result = await post<{ job: ChatbotPublishJob }>(`/api/chatbots/${encodeId(chatbotId)}/publish`, input)
-        return result.job
-      },
-      /** 取消 queued/draft 任务；已进入发送流程的任务返回 404。 */
-      cancel(chatbotId: string, jobId: string): Promise<OkResult> {
-        return del<OkResult>(`/api/chatbots/${encodeId(chatbotId)}/publish/${encodeId(jobId)}`)
-      },
     },
   },
   notes: {

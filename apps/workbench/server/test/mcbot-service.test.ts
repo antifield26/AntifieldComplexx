@@ -35,6 +35,7 @@ function json(body: unknown, status = 200): Response {
 function statusBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     version: '0.6.0',
+    contractVersion: 2,
     uptimeSec: 10,
     state: 'connected',
     minecraft: { connected: true },
@@ -95,7 +96,7 @@ function serviceFixture(options: FixtureOptions = {}): ServiceFixture {
   const impl = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
     calls.push({ url, init: init ?? {} })
-    if (new URL(url).pathname === '/healthz') return json({ status: 'ok', version: '0.6.0', contractVersion: options.contractVersion ?? 1 })
+    if (new URL(url).pathname === '/healthz') return json({ status: 'ok', version: '0.6.0', contractVersion: options.contractVersion ?? 2 })
     return handler(new URL(url), init ?? {})
   }) as typeof fetch
   const logs: { level: string; message: string; detail?: Record<string, unknown> }[] = []
@@ -140,22 +141,12 @@ function cursor(db: ReturnType<typeof testDb>): { bootId: string; lastEventId: s
 function handlerFor(state: {
   status?: () => Response | Promise<Response>
   recent?: () => Response | Promise<Response>
-  history?: () => Response | Promise<Response>
   control?: () => Response | Promise<Response>
 }): (url: URL) => Response | Promise<Response> {
   return (url) => {
     if (url.pathname === '/status') return (state.status ?? (() => json(statusBody())))()
     if (url.pathname === '/events/recent') {
       return (state.recent ?? (() => json({ error: 'not_found' }, 404)))()
-    }
-    if (url.pathname === '/history') {
-      return (
-        state.history ??
-        (() =>
-          url.searchParams.get('kind') === 'alerts'
-            ? json({ kind: 'alerts', count: 0, alerts: [] })
-            : json({ kind: 'samples', count: 0, samples: [] }))
-      )()
     }
     if (url.pathname.startsWith('/task') || url.pathname === '/move' || url.pathname === '/say') {
       return (state.control ?? (() => json({ ok: true, requestId: 'req-1', queued: false, position: null })))()
@@ -179,7 +170,7 @@ test('轮询：status+recent 并行、缓存 newest-first、快照/版本/游标
       await gate
       if (url.pathname === '/status') return json(statusBody({ task: { active: true, name: 'fishing', state: 'running', queue: [] } }))
       if (url.pathname === '/events/recent') {
-        return json({ contractVersion: 1, bootId: 'b1', lastEventId: 'b1-3', events })
+        return json({ contractVersion: 2, bootId: 'b1', lastEventId: 'b1-3', events })
       }
       return json({ error: 'not_found' }, 404)
     },
@@ -205,7 +196,7 @@ test('轮询：status+recent 并行、缓存 newest-first、快照/版本/游标
     assert.equal(snapshot.alertsEnabled, true)
     assert.equal(snapshot.eventsSupported, true)
     assert.equal(snapshot.version, '0.6.0')
-    assert.equal(snapshot.contractVersion, 1)
+    assert.equal(snapshot.contractVersion, 2)
     assert.equal(snapshot.lastPollAt, T0)
     assert.equal(snapshot.lastSuccessAt, T0)
     assert.equal(snapshot.error, null)
@@ -223,7 +214,7 @@ test('事件缓存最多 100 条且 newest-first', async () => {
   const many = Array.from({ length: 120 }, (_, index) => ev(`b1-${index + 1}`, 'task', index + 1))
   const fx = serviceFixture({
     handler: handlerFor({
-      recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: 'b1-120', events: many.slice(-120) }),
+      recent: () => json({ contractVersion: 2, bootId: 'b1', lastEventId: 'b1-120', events: many.slice(-120) }),
     }),
   })
   try {
@@ -242,7 +233,7 @@ test('轮询失败只降级 reachable/stale/error，保留旧 status/events', as
     handler: (url) => {
       if (!healthy) throw new TypeError('connect ECONNREFUSED')
       if (url.pathname === '/status') return json(statusBody())
-      return json({ contractVersion: 1, bootId: 'b1', lastEventId: 'b1-1', events })
+      return json({ contractVersion: 2, bootId: 'b1', lastEventId: 'b1-1', events })
     },
   })
   try {
@@ -292,7 +283,7 @@ test('/events/recent 404：eventsSupported=false 但 /status 仍可用，契约�
     const snapshot = fx.service.snapshot()
     assert.equal(snapshot.reachable, true)
     assert.equal(snapshot.eventsSupported, false)
-    assert.equal(snapshot.contractVersion, 1)
+    assert.equal(snapshot.contractVersion, 2)
     assert.equal(snapshot.version, '0.6.0')
     assert.deepEqual(snapshot.events, [])
     assert.equal(cursor(fx.db), null, '无事件流时不写游标')
@@ -305,7 +296,7 @@ test('空 ring 基线：首轮无事件写空基线，之后第一条例告警�
   let events: McbotEvent[] = []
   const fx = serviceFixture({
     handler: handlerFor({
-      recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: events.at(-1)?.id ?? null, events }),
+      recent: () => json({ contractVersion: 2, bootId: 'b1', lastEventId: events.at(-1)?.id ?? null, events }),
     }),
   })
   try {
@@ -331,7 +322,7 @@ test('从未成功：连续 3 轮失败才判定 stale，恢复后清除', async
         if (!healthy) throw new TypeError('connect ECONNREFUSED')
         return json(statusBody())
       },
-      recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: null, events: [] }),
+      recent: () => json({ contractVersion: 2, bootId: 'b1', lastEventId: null, events: [] }),
     }),
   })
   try {
@@ -355,7 +346,7 @@ test('游标：bootId 变化只重建基线，不重放旧 ring 告警', async (
   let events = [ev('b1-1', 'alert', 1, { type: 'low_health' }), ev('b1-2', 'task', 2)]
   const fx = serviceFixture({
     handler: handlerFor({
-      recent: () => json({ contractVersion: 1, bootId: boot, lastEventId: events.at(-1)?.id ?? null, events }),
+      recent: () => json({ contractVersion: 2, bootId: boot, lastEventId: events.at(-1)?.id ?? null, events }),
     }),
   })
   try {
@@ -388,7 +379,7 @@ test('游标去重：只处理游标之后的 alert；重复窗口不重复写�
   let events: McbotEvent[] = [ev('b1-1', 'alert', 1, { type: 'low_health' }), ev('b1-2', 'task', 2)]
   const fx = serviceFixture({
     handler: handlerFor({
-      recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: events.at(-1)?.id ?? null, events }),
+      recent: () => json({ contractVersion: 2, bootId: 'b1', lastEventId: events.at(-1)?.id ?? null, events }),
     }),
   })
   try {
@@ -426,7 +417,7 @@ test('告警映射：5 种已知类型 + 未知类型，details 含 source/mcbot
     handler: handlerFor({
       recent: () =>
         json({
-          contractVersion: 1,
+          contractVersion: 2,
           bootId: 'b1',
           lastEventId: 'b1-6',
           events: [
@@ -489,7 +480,7 @@ test('MCBOT_ALERTS_ENABLED=false：推进游标但不写告警；重新启用后
   const fx = serviceFixture({
     config: { mcbotAlertsEnabled: false },
     handler: handlerFor({
-      recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: events.at(-1)?.id ?? null, events }),
+      recent: () => json({ contractVersion: 2, bootId: 'b1', lastEventId: events.at(-1)?.id ?? null, events }),
     }),
   })
   let second: McbotService | null = null
@@ -514,9 +505,9 @@ test('MCBOT_ALERTS_ENABLED=false：推进游标但不写告警；重新启用后
         timeoutMs: fx.config.mcbotTimeoutMs,
         fetch: (async (input: string | URL | Request) => {
           const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
-          if (url.pathname === '/healthz') return json({ status: 'ok', version: '0.6.0', contractVersion: 1 })
+          if (url.pathname === '/healthz') return json({ status: 'ok', version: '0.6.0', contractVersion: 2 })
           if (url.pathname === '/status') return json(statusBody())
-          return json({ contractVersion: 1, bootId: 'b1', lastEventId: events.at(-1)?.id ?? null, events })
+          return json({ contractVersion: 2, bootId: 'b1', lastEventId: events.at(-1)?.id ?? null, events })
         }) as typeof fetch,
       }),
       now: fx.clock.now,
@@ -534,7 +525,7 @@ test('MCBOT_ALERTS_ENABLED=false：推进游标但不写告警；重新启用后
   }
 })
 
-test('控制代理：控制成功后立即刷新；v2 发言使用控制 Token；history 透传读 Token', async () => {
+test('控制代理：控制成功后立即刷新；发言使用控制 Token', async () => {
   const fx = serviceFixture({
     contractVersion: 2,
     handler: handlerFor({
@@ -566,20 +557,36 @@ test('控制代理：控制成功后立即刷新；v2 发言使用控制 Token�
     const sayCall = fx.calls.find((call) => new URL(call.url).pathname === '/say')
     assert.ok(sayCall)
     assert.equal(String((sayCall.init.headers as Record<string, string>).authorization), 'Bearer control-token')
-
-    const history = await fx.service.history('alerts', { limit: 50 })
-    assert.equal(history.kind, 'alerts')
-    const historyCall = fx.calls.find((call) => new URL(call.url).pathname === '/history')
-    assert.equal(new URL(historyCall!.url).searchParams.get('kind'), 'alerts')
-    assert.equal(new URL(historyCall!.url).searchParams.get('limit'), '50')
   } finally {
     fx.close()
   }
 })
 
-test('契约 v1 保留状态和控制，但发言不会转发；未知或错误状态不能刷新健康时间', async () => {
+test('非 v2 契约读取失败，控制不会发往上游', async () => {
+  const fx = serviceFixture({
+    contractVersion: 1,
+    handler: handlerFor({
+      status: () => json(statusBody({ contractVersion: 1 })),
+      recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: null, events: [] }),
+    }),
+  })
+  try {
+    await fx.service.pollOnce()
+    const snapshot = fx.service.snapshot()
+    assert.equal(snapshot.reachable, false)
+    assert.equal(snapshot.contractVersion, null)
+    assert.equal(snapshot.error, 'mcbot_contract_unsupported')
+    assert.equal(snapshot.sayEnabled, false)
+    await assert.rejects(fx.service.startTask('fishing'), { code: 'mcbot_contract_unsupported' })
+    assert.equal(fx.calls.some((call) => new URL(call.url).pathname === '/task/start'), false)
+  } finally {
+    fx.close()
+  }
+})
+
+test('畸形 status 不刷新健康时间；事件契约不匹配时拒绝读取', async () => {
   let malformed = false
-  let eventVersion = 1
+  let eventVersion = 2
   const fx = serviceFixture({ handler: handlerFor({
     status: () => json(malformed ? {} : statusBody()),
     recent: () => json({ contractVersion: eventVersion, bootId: 'b1', lastEventId: null, events: [] }),
@@ -587,10 +594,8 @@ test('契约 v1 保留状态和控制，但发言不会转发；未知或错误�
   try {
     await fx.service.pollOnce()
     assert.equal(fx.service.snapshot().reachable, true)
-    assert.equal(fx.service.snapshot().sayEnabled, false)
-    await fx.service.startTask('fishing')
-    await assert.rejects(fx.service.say('hi'), { code: 'mcbot_say_unavailable' })
-    assert.ok(!fx.calls.some(({ url }) => new URL(url).pathname === '/say'))
+    assert.equal(fx.service.snapshot().contractVersion, 2)
+    assert.equal(fx.service.snapshot().sayEnabled, true)
     fx.clock.advance(5000)
     malformed = true
     await fx.service.pollOnce()
@@ -610,7 +615,7 @@ test('契约 v1 保留状态和控制，但发言不会转发；未知或错误�
 test('只读模式（无控制 Token）：控制方法抛 mcbot_control_disabled，发言也禁用', async () => {
   const fx = serviceFixture({
     config: { mcbotControlToken: '' },
-    handler: handlerFor({ recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: null, events: [] }) }),
+    handler: handlerFor({ recent: () => json({ contractVersion: 2, bootId: 'b1', lastEventId: null, events: [] }) }),
   })
   try {
     await assert.rejects(
@@ -628,7 +633,7 @@ test('只读模式（无控制 Token）：控制方法抛 mcbot_control_disabled
 
 test('start/stop：空操作幂等、启动即轮询、停止后不再定时轮询', async () => {
   const fx = serviceFixture({
-    handler: handlerFor({ recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: null, events: [] }) }),
+    handler: handlerFor({ recent: () => json({ contractVersion: 2, bootId: 'b1', lastEventId: null, events: [] }) }),
   })
   try {
     fx.service.start()
@@ -667,7 +672,7 @@ test('meta 中游标损坏：按无游标处理（基线，不重放旧告警）
     handler: handlerFor({
       recent: () =>
         json({
-          contractVersion: 1,
+          contractVersion: 2,
           bootId: 'b1',
           lastEventId: 'b1-1',
           events: [ev('b1-1', 'alert', 1, { type: 'low_health' })],
@@ -689,7 +694,7 @@ test('日志不包含聊天正文/Token；事件缓存可含聊天但只在内�
     handler: handlerFor({
       recent: () =>
         json({
-          contractVersion: 1,
+          contractVersion: 2,
           bootId: 'b1',
           lastEventId: 'b1-1',
           events: [ev('b1-1', 'chat', 1, { direction: 'in', message: 'secret chat message' })],
@@ -719,7 +724,7 @@ test('告警写入失败：游标停在上一条已处理事件，下一轮重�
       recent: () => {
         round += 1
         return json({
-          contractVersion: 1,
+          contractVersion: 2,
           bootId: 'b1',
           lastEventId: round === 1 ? 'b1-1' : 'b1-2',
           events: round === 1 ? [first] : [first, alert],
@@ -757,7 +762,7 @@ test('事件缓存有总字节上限：超大事件不会无界占用内存', as
     handler: handlerFor({
       recent: () =>
         json({
-          contractVersion: 1,
+          contractVersion: 2,
           bootId: 'b1',
           lastEventId: 'b1-2',
           events: [
@@ -803,7 +808,7 @@ function gapWindow(): McbotEvent[] {
 }
 
 test('事件缺口：窗口空洞记一次并保留，重启、网络失败和游标写入失败不把它清掉', async () => {
-  for (const contractVersion of [1, 2] as const) {
+  for (const contractVersion of [2] as const) {
     let phase: 'baseline' | 'gap' | 'down' | 'reboot' = 'baseline'
     const fx = serviceFixture({
       contractVersion,
@@ -874,7 +879,7 @@ test('事件缺口：窗口空洞记一次并保留，重启、网络失败和�
 
   const fresh = serviceFixture({
     handler: handlerFor({
-      recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: 'b1-50', events: [ev('b1-50', 'task', 50)] }),
+      recent: () => json({ contractVersion: 2, bootId: 'b1', lastEventId: 'b1-50', events: [ev('b1-50', 'task', 50)] }),
     }),
   })
   try {
@@ -893,7 +898,7 @@ test('事件缺口：窗口空洞记一次并保留，重启、网络失败和�
           ? gapWindow()
           : [ev('b1-1', 'task', 1)]
         return json({
-          contractVersion: 1,
+          contractVersion: 2,
           bootId: 'b1',
           lastEventId: events.at(-1)?.id ?? null,
           events,
@@ -922,7 +927,7 @@ test('事件缺口：窗口空洞记一次并保留，重启、网络失败和�
         const established = cursor(gapWrite.db)
         const events = established ? gapWindow() : [ev('b1-1', 'task', 1)]
         return json({
-          contractVersion: 1,
+          contractVersion: 2,
           bootId: 'b1',
           lastEventId: events.at(-1)?.id ?? null,
           events,

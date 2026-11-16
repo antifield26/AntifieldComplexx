@@ -9,7 +9,6 @@ import { SUPPORTED_SCHEMA_VERSION } from '../../db.ts'
 import { badRequest } from '../../util/errors.ts'
 import { asRecord, parsePositiveInt } from '../util.ts'
 import { requireAuth } from '../guards.ts'
-import { CHATBOT_PLATFORMS } from '../../chatbot/types.ts'
 
 /** 时间过滤参数：空值忽略；非法 ISO 时间返回 400，避免静默变全量查询。 */
 function timeParam(value: unknown, field: string): string | null {
@@ -69,9 +68,7 @@ export function registerDashboardRoutes(
     metricsEnabled: config.metricsEnabled,
     metricsSampleSeconds: config.metricsSampleSeconds,
     metricsRetentionDays: config.metricsRetentionDays,
-    chatbotsEnabled: config.chatbotEnabled && config.chatbotSecretKey.length > 0,
-    chatbotPlatforms: [...CHATBOT_PLATFORMS],
-    /** v0.8.0 mcbot 对接开关与控制能力（控制 Token 为空 = 只读）。 */
+    /** mcbot 对接开关与控制能力（控制 Token 为空 = 只读）。 */
     mcbotEnabled: config.mcbotEnabled,
     mcbotControlEnabled: config.mcbotEnabled && config.mcbotControlToken.length > 0,
     /** 审计写入诊断：失败计数/最近错误（不含明细），用于发现 DB 忙/磁盘满导致的审计丢失。 */

@@ -8,7 +8,6 @@ import type {
   McbotBotState,
   McbotEvent,
   McbotEventType,
-  McbotHistoryAlert,
   McbotMoveAction,
   McbotNavigation,
   McbotNavigationSource,
@@ -723,10 +722,4 @@ export function mcbotEventsSupported(snapshot: McbotSnapshot | null | undefined)
   if (typeof snapshot.eventsSupported === 'boolean') return snapshot.eventsSupported
   // 旧服务端可能完全没有这些字段：undefined 不能当作“有契约版本”。
   return typeof snapshot.contractVersion === 'number' || (Array.isArray(snapshot.events) && snapshot.events.length > 0)
-}
-
-/** 历史告警行的展示文案（纯文本，不含 details 任意字段）。 */
-export function mcbotHistoryAlertText(alert: McbotHistoryAlert): string {
-  const head = `${mcbotAlertTypeLabel(alert.type)} · ${mcbotSeverityLabel(alert.severity)}`
-  return alert.message ? `${head}：${alert.message}` : head
 }
