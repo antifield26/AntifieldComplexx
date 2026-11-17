@@ -2,7 +2,7 @@
 
 管理员对话是 Minecraft Bot 面板的行动入口。审计只记字符数。正文、提示词和工具参数不进 SQLite，也不进审计。急停不经过模型。应用上退役的写入口在会话与 CSRF 之后返回 409，不调用上游。mcbot 本机游戏发言仍拒绝 ASCII `/` 与 C0。
 
-DSH Web 插件页对已登录管理员开放。路径是 `/api/pluginManager/` 与 `/api/pluginInventory/`。没有新增 Access bypass。模型侧 `tool-plugin-manager` 保持关闭。会话上传、设置写入和凭据写入仍拒绝。`/autonomy/mcp` 不对外。
+DSH Web 插件页对已登录管理员开放。路径是 `/api/pluginManager/` 与 `/api/pluginInventory/`。没有新增 Access bypass。模型侧 `tool-plugin-manager` 保持关闭。会话上传、设置写入和凭据写入仍拒绝。`/autonomy/mcp` 不对外。插件页列出 QQ 与 Minecraft Bot 的只显示条目。2026-11-17 已完成一次安装和卸载。
 
 整包 age 加密已开启。私钥有两份离线副本。应用和 Pi 不读取私钥。异地只传密文和校验旁文件。
 
@@ -279,7 +279,7 @@ Workbench 不托管 QQ 收发、发布或 OpenCode Chat。schema 22 删除旧 QQ
   封禁 set 与 nftables 规则共存；任何 nftables 变更后执行 `systemctl restart fail2ban` 并复核封禁列表。
 - 每月检查 Cloudflare Access：`app` 页面仍要求登录，`/api` 到达应用（未登录为应用 401，不是 Access 302），bypass 路径（`/api/chatbot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*`）
   是否被后续规则覆盖；service token 是否仍有效且未过期；用未登录浏览器验证公开分享仍可用、平台回调仍 200，并用 Tauri Origin 验证密码接口预检不是 Access 拦截。
-- 每季度检查：恢复演练（`scripts/drill.ps1 -ExpectedSchemaVersion 14` 或按 docs/BACKUP.md §7 手动执行并记录）、
+- 每季度检查：恢复演练（`scripts/drill.ps1`，schema 期望值来自 `deploy/tool-versions.json`，步骤见 `docs/DEPLOY.md` 的「15.7 恢复演练（自动化 + 记录）」）、
   `cloudflared tunnel info` 连接与版本、Windows 备份目录 ACL 是否仍仅白名单主体、age 公钥/私钥保管情况、
   世界备份保留 4 份/PC 保留 4 份是否正常、SSH 仅公钥配置是否仍生效（`sshd -T | grep -E 'passwordauthentication|pubkeyauthentication'`）。
 - 怀疑泄露时：

@@ -10,11 +10,10 @@
 - `docs/PLAN.md`：当前范围与回滚
 - `docs/API.md`：HTTP 契约，含 mcbot 本机契约
 - `docs/UI-SPEC.md`：界面与交互
-- `docs/ARCHITECTURE.md`、`docs/SECURITY.md`、`docs/DEPLOY.md`、`docs/BACKUP.md`、`docs/CHATBOT.md`、`docs/MCBOT.md`
+- `docs/ARCHITECTURE.md`、`docs/SECURITY.md`、`docs/DEPLOY.md`、`docs/CHATBOT.md`、`docs/MCBOT.md`
 - `docs/ROADMAP.md`：按日期排列的版本边界
 - `docs/AUDIT.md`：当前残余与声明矩阵
 - `docs/ACCEPTANCE.md`：当前验收状态
-- `docs/BACKLOG.md`：未完成事项
 - `docs/INDEX.md`：文档索引
 - `deploy/tool-versions.json`：schema、OpenCode、mcbot 与 DSH 的期望版本
 
@@ -148,19 +147,19 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 - CI 的 coverage、audit、secret-scan、依赖边界检查全绿；`npm run build` 通过。
 - API 变更同步更新 `docs/API.md`；界面变更同步 `docs/UI-SPEC.md`。
 - 无密钥/个人数据进入仓库；`.env` 与 `data/` 被忽略；公开文档不得写入真实域名/网段（用 `app.<domain>`/`ai.<domain>`/`mc.<domain>` 与 TEST-NET 占位）。
-- 部署相关改动同步 `docs/DEPLOY.md` 并说明回滚；备份/灾备改动同步 `docs/BACKUP.md`。
+- 部署相关改动同步 `docs/DEPLOY.md` 并说明回滚；备份与灾备改动同步 `docs/DEPLOY.md` 的「15. 备份与恢复」。
 - 提交信息使用 Conventional Commits（`feat:`/`fix:`/`docs:`/`test:`/`chore:`/`deploy:`）。
 - 每个阶段结束给出「产出摘要 + 未决问题 + 验证证据」。
 
 ## 8. 已知环境事实（不要重复踩坑）
 
-- **当前生产**：v1.2.4 / schema 22。Workbench `/opt/antifieldcloud/releases/20261116T135139Z`，mcbot `/opt/mcbot/releases/20261116T135658Z`，DSH `/opt/antifield-dsh/releases/20261114T051442Z`（0.2.2-rc.3，QQ 插件 0.5.5）。插件列表代理放行 `/api/pluginManager/` 与 `/api/pluginInventory/`。插件页列出 QQ 与 Minecraft Bot 的只显示条目。QQ 仍由 `antifield-dsh-qq` 运行，Minecraft Bot 工具仍由 `antifield-dsh-mcbot-agent` 运行。Web 进程不启动第二个 QQ 机器人，也不装入 Minecraft Bot 工具。插件查询使用 `/usr/local/bin/pnpm-dsh`，只在 `view` 去掉 npm 12 不接受的 fetch-retries 参数。npm 指向主目录时，ProtectHome 会拒绝执行。恢复 v1.2.3 必须先换回迁移前快照 `db-predeploy-20261116T135240676Z.sqlite`，再把 Workbench 指回 `20261114T082631Z` 并只重启应用。不能只切换 release。再退与跨 schema 快照见 `docs/DEPLOY.md`。沿革见 CHANGELOG。
+- **当前生产**：v1.2.4 / schema 22。Workbench `/opt/antifieldcloud/releases/20261116T135139Z`，mcbot `/opt/mcbot/releases/20261116T135658Z`，DSH `/opt/antifield-dsh/releases/20261114T051442Z`（0.2.2-rc.3，QQ 插件 0.5.5）。插件列表代理放行 `/api/pluginManager/` 与 `/api/pluginInventory/`。插件页列出 QQ 与 Minecraft Bot 的只显示条目。QQ 仍由 `antifield-dsh-qq` 运行，Minecraft Bot 工具仍由 `antifield-dsh-mcbot-agent` 运行。Web 进程不启动第二个 QQ 机器人，也不装入 Minecraft Bot 工具。插件查询使用 `/usr/local/bin/pnpm-dsh`，只在 `view` 去掉 npm 12 不接受的 fetch-retries 参数。npm 指向主目录时，ProtectHome 会拒绝执行。2026-11-17 用户已验收插件页，并完成一次安装和卸载。恢复 v1.2.3 必须先换回迁移前快照 `db-predeploy-20261116T135240676Z.sqlite`，再把 Workbench 指回 `20261114T082631Z` 并只重启应用。不能只切换 release。再退与跨 schema 快照见 `docs/DEPLOY.md`。沿革见 CHANGELOG。
 - mcbot 部署默认保留最新 3 个 release，并保护 current 与 previous。
 - Pi：`antifield@192.0.2.10` 直连（TEST-NET 占位；实际值见 `.local/DEPLOYMENT.md`）；WiFi 示例 `198.51.100.10` 与 PC 不通（AP 隔离）；直连 SSH 偶发超时，脚本需重试。
 - 校园网有 Portal 认证（占位 `https://portal.<domain>`；实际端点见 `.local`）；树莓派重启后认证可能失效，表现为 Cloudflare 7844 出站阻断、tunnel 1033/公网 530；需从 Pi 出口重新完成认证，再 `systemctl reset-failed cloudflared && systemctl restart cloudflared`。
 - Pi 上 Node 为 `/usr/local/bin/node`（v26.13.0，2026-11-07，世界可执行；旧回滚二进制已删除，保留 `/usr/local/lib/nodejs/node-v26.13.0-linux-arm64`）；npm 12.2.2 与 pnpm 10.34.9 在 `/usr/local/bin`，部署时以 root 使用。cloudflared 为 2026.10.7，旧回滚二进制已删除。
 - OpenCode 2.2.5 已于 2026-11-08 22:40:40（UTC+8）从 Pi 退役，活动单元、二进制与环境配置已移除，4096 不再监听。回滚运行时仍是 2.2.5，使用 PC 上验证过的加密档。更早的 v2.2.0 备份 timestamp `20261104T062115Z` 只作历史回滚点，不是 2026-10-28 的 v2.1.4 备份。升级与回滚见 `docs/DEPLOY.md` §3.2。版本以运行中的 `/api/info` 为准。`opencode upgrade` 只替换磁盘二进制，必须再重启服务。
-- Minecraft：Paper 26.1.2，RCON `127.0.0.1:25575`，密码在 `server.properties`（32 位随机），服务器语言中文，输出含 `§` 颜色码需剥离；RCON 仍监听所有接口，nftables 仅放行 loopback。插件为 Chunky 1.5.66、CoreProtect CE 24.1、EssentialsX 2.22.0、LuckPerms 5.5.91、PlaceholderAPI 2.12.3、VaultUnlocked 2.20.3、ViaVersion 5.12.2、Vote2Sleep 1.3.0。运行中的 Minecraft 单元于 2026-11-15 23:00:04 CST 进入 active。v1.2.4、v1.2.3、v1.2.2、v1.2.1 与 v1.2.0 部署都没有重启 Minecraft。v1.1.1 验收当时记录的插件重启是 2026-11-07 22:14:58 CST。
+- Minecraft：Paper 26.1.2，RCON `127.0.0.1:25575`，密码在 `server.properties`（32 位随机），服务器语言中文，输出含 `§` 颜色码需剥离；RCON 仍监听所有接口，nftables 仅放行 loopback。插件为 Chunky 1.5.66、CoreProtect CE 24.1、EssentialsX 2.22.0、LuckPerms 5.5.91、PlaceholderAPI 2.12.3、VaultUnlocked 2.20.3、ViaVersion 5.12.2、Vote2Sleep 1.3.0。运行中的 Minecraft 单元于 2026-11-16 23:00:06 CST 进入 active。v1.2.4、v1.2.3、v1.2.2、v1.2.1 与 v1.2.0 部署都没有重启 Minecraft。v1.1.1 验收当时记录的插件重启是 2026-11-07 22:14:58 CST。
 - Pi 已启用 memory cgroup；`antifieldcloud-health.timer` 每 60s 写 `/run/antifieldcloud/pi-health.json`；`age` 与（启用异地副本时）`rclone` 已安装；`unattended-upgrades` 已安装。
 - 备份：应用归档为两阶段 pending/ack（未确认不删）；PC 任务参数为实际 `-PiHost/-BackupRoot`，ACL 收紧；密钥包 Pi 端 `KEEP=2` 滚动保留，PC 不再立即删除远端密钥包。
 - 备份整包加密（模板默认关闭；生产 v1.2.2 已开启）：`BACKUP_ARCHIVE_ENCRYPTION=false`、`BACKUP_AGE_RECIPIENT_FILE=/etc/antifieldcloud/backup-age.pub`（root 属主 0644、组/其他不可写、单行 `age1…`）、`BACKUP_OFFSITE_STATUS_FILE=/var/lib/antifieldcloud/backup-offsite-status.json`、`ALERT_OFFSITE_MAX_AGE_HOURS=48`；该密钥对独立于 `secrets-age`，私钥离线 ≥2 份，禁止放 Pi。
@@ -196,7 +195,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 7. 备份整包加密（模板默认关闭；生产 v1.2.2 已开启）：离线生成独立 age 密钥 → Pi 写公钥（root、组/其他不可写）→ 用私钥完成一次 `age -d` 解密与 `drill.ps1 -AgeIdentityPath` 演练 → 设 `BACKUP_ARCHIVE_ENCRYPTION=true` 并重启 → 下一次 prepare 生成 `.age` → PC 拉取/ack → 再演练。回滚：关开关恢复明文，已生成 `.age` 保留（仅 PC 可解密）。
 8. 异地副本（模板默认关闭；生产已启用 Google Drive，每日 13:00）：PC 安装配置 rclone remote/凭据 → `install-backup-task.ps1 -InstallOffsiteTask -OffsiteRemote …` → 手跑一次确认状态 JSON 回写与 `plaintextSkipped=0` → 确认告警阈值 `ALERT_OFFSITE_MAX_AGE_HOURS`。
 9. Cloudflare Access：已通过 API 配置主应用（One-time PIN + Owner allow + Service Auth）与健康检查、分享 bypass；`ai` 主机另有 Access 应用（Owner allow + Smoke service token；Free 无自定义 WAF）。2026-11-11 用户在控制台放行应用 `/api`，页面仍经 Access。service token 存放在 PC `.local/cf-access.env`（gitignored），不进入安装包。轮换 service token 后同步该文件，并用 `smoke.ps1 -AccessClientId/-AccessClientSecret` 重跑；配置用高权限 API Token 完成后应 Revoke。退回 v1.1.1 时恢复当时的 Access 策略。
-10. 公网、手机与恢复演练按 `docs/BACKUP.md` 与 `docs/ACCEPTANCE.md` 核对现行状态。
+10. 公网、手机与恢复演练按 `docs/DEPLOY.md` 的「15. 备份与恢复」与 `docs/ACCEPTANCE.md` 核对现行状态。
 11. SSH 只允许公钥。活动配置保持不变。再次变更时按 `docs/DEPLOY.md` 保留回滚窗口。
 12. 生产 QQ 由 DSH 管理。Agent 不代替用户在 QQ 开放平台登记。
 13. 需要恢复 OpenCode 时，使用 PC 上验证过的 2.2.5 离线档，并按 `docs/DEPLOY.md` §3.2 核对运行中的进程。

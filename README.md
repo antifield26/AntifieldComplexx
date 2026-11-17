@@ -4,8 +4,8 @@
 
 > 状态：v1.2.4。schema **v22**，mcbot 契约 v2。生产 Workbench 是 2026-11-16 部署的 `/opt/antifieldcloud/releases/20261116T135139Z`。恢复 v1.2.3 必须使用 schema 21 快照。Web、QQ 与 mcbot Agent 使用 DeepSeek Harness。OpenCode **v2.2.5** 已从 Pi 退役，离线档供回滚。当前状态见 [ACCEPTANCE](docs/ACCEPTANCE.md)。
 > 退回 v1.1.1 的迁移前快照和现行回滚指针见 [DEPLOY](docs/DEPLOY.md)。
-> 部署与运维见 [DEPLOY](docs/DEPLOY.md)，备份与恢复见 [BACKUP](docs/BACKUP.md)，契约见 [API](docs/API.md)，版本边界见 [ROADMAP](docs/ROADMAP.md)。
-> 未完成事项见 [BACKLOG](docs/BACKLOG.md)。整包 age 与 Google Drive 异地副本已开启。世界归档和密钥包仍由 PC 拉取。
+> 部署、备份与恢复见 [DEPLOY](docs/DEPLOY.md)，契约见 [API](docs/API.md)，版本边界见 [ROADMAP](docs/ROADMAP.md)。
+> 整包 age 与 Google Drive 异地副本已开启。世界归档和密钥包仍由 PC 拉取。
 
 ## 项目定位
 
@@ -124,8 +124,8 @@
 
 - 应用归档两阶段：Pi `--prepare` 生成 pending → PC 拉取并校验 SHA-256 → `--ack` 才推进游标；pending 未确认不删除，已确认在 Pi 保留 2 个、PC 每天/每周保留 30 天/56 天。
 - 备份整包加密（默认关闭）：`BACKUP_ARCHIVE_ENCRYPTION=true` 时用独立备份 age 公钥生成 `*.tar.gz.age`，明文 tar 只在 `*.plain.tmp` 短暂存在；明文 SHA-256/大小写在归档外 `<archive>.meta.json` 与 DB `manifest_json`；失败关闭（age/公钥/加密失败即 prepare 失败，不回退明文），空间按 2× 明文预算。Pi 只存公钥，私钥离线 ≥2 份；启用前必须用私钥完成一次解密演练。
-- 异地副本（默认关闭，PC 端）：`backup-offsite.mjs/.ps1` 只上传 `.age`（拒绝明文），链感知保留（最新 full + 其后全部 inc + 最近 N 天，绝不删最新 full），`rclone copyto --checksum` 上传并校验，状态写 Pi `backup-offsite-status.json`；Dashboard 只读展示，超期触发告警。当前未配置 remote，任务未安装。
-- Web 备份管理：归档列表、手动 prepare（长任务 3300s 超时）、导入/校验、文件级恢复到新目录（TOTP + typed confirmation）；加密归档在 Web 不可校验/恢复（`409 archive_encrypted`），恢复目标自动跳过；整库恢复只走离线 root 手工流程（`docs/BACKUP.md` §8.1）。
+- 异地副本（模板默认关闭；生产已启用 Google Drive，每日 13:00）：`backup-offsite.mjs/.ps1` 只上传 `.age`（拒绝明文），链感知保留（最新 full + 其后全部 inc + 最近 N 天，绝不删最新 full），`rclone copyto --checksum` 上传并校验，状态写 Pi `backup-offsite-status.json`；Dashboard 只读展示，超期触发告警。
+- Web 备份管理：归档列表、手动 prepare（长任务 3300s 超时）、导入/校验、文件级恢复到新目录（TOTP + typed confirmation）；加密归档在 Web 不可校验/恢复（`409 archive_encrypted`），恢复目标自动跳过；整库恢复只走离线 root 手工流程（`docs/DEPLOY.md` 的「15.8.1 应用数据（整库离线恢复）」）。
 - 世界备份：`antifieldcloud-world.timer` 每周日 12:00（Asia/Shanghai，Persistent）以 root 生成 gzip 归档（`/var/lib/antifieldcloud/world-backups`），SHA-256 旁文件，保留 4 份；PC 周度 `world-pull.ps1` 校验后 ack 并保留 4 份。
 - 恢复演练：`drill.ps1` 自动校验 full+inc 链（含 `since` 连续性与 1–9 位小数秒时间戳）、旁文件 SHA、tar 安全、最新 DB integrity/FK/schema、manifest，报告保留 180 天；加密归档需 `-AgeIdentityPath` 先解密再校验；可选 `-IncludeWorld` 解包验证 `level.dat`。
 - 密钥包：age 加密 env/cloudflared/Minecraft/opencode 配置与 opencode DB 快照；明文临时目录优先用 `/run/antifieldcloud/secrets-tmp`（tmpfs），Pi 保留 2 份、PC 90 天；`--include-host-config` 可把 sshd/fail2ban/cloudflared/journald 等主机配置一并打包。
@@ -204,7 +204,7 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - **备份整包加密生产已开启，Web 仍不可恢复**：模板默认 `BACKUP_ARCHIVE_ENCRYPTION=false`。加密归档（`.age`）只能在 PC 用离线私钥解密/校验/恢复；私钥丢失即无法恢复明文，Pi 不持私钥也无法代解密。预部署 DB 快照继续明文（0600、保留 2 份，供自动回滚），属威胁模型明确豁免项。
 - **加密失败关闭的残余窗口**：SIGKILL/断电/ENOSPC 可能残留 `*.plain.tmp`（正常路径立即删除，>24h 由下次 prepare 清理）；崩溃只允许产生可清理临时文件或“有密文无 DB 行”孤儿（只报告、不自动删除），后者需人工核对。
 - **异地副本**：只上传 `.age`；状态由 PC 写回 Pi，缺失视为未配置、不告警；远端保留策略按链感知（最新 full + 其后 inc + 最近 N 天），不做跨远端多副本。生产已配置 Google Drive（drive.file、专用目录），每日 13:00。模板默认关闭，新环境需先配置 rclone remote 与凭据。
-- **明确残余**：服务端单进程/同步维护任务；平台适配与模型路径仍需 mock + 部署后真实验收；物理孤儿文件只回收 id 形状且超期者；`/api/version` 诊断不含历史；预部署快照与旧归档保留策略见 `docs/BACKUP.md` §11。
+- **明确残余**：服务端单进程/同步维护任务；平台适配与模型路径仍需 mock + 部署后真实验收；物理孤儿文件只回收 id 形状且超期者；`/api/version` 诊断不含历史；预部署快照与旧归档保留策略见 `docs/DEPLOY.md` 的「15.11 覆盖、残余风险与限制」。
 - Bot 已知限制：仅 QQ 官方 Bot（单平台）；QQ 仅文本、不支持出站媒体/附件/按钮/引用；群/频道只有 @Bot 事件（或显式开启全量消息后由模型决定是否回复）；C2C 私聊开放 Chat；命令严格只读；企业微信/钉钉/飞书与多管理员审批未支持。
 - **v0.7.3 文档模式属于已退役的 OpenCode 回滚路径**：启用前需完成读范围矩阵；失败即保持关闭；上下文目录为派生数据、不进入备份。
 - 图片理解默认开启：生产由 DSH QQ Agent 处理。QQ `d.attachments` 图片仅从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`）后缀、image mime 白名单、≤`CHATBOT_AI_IMAGE_MAX_BYTES` 下载，不落盘。
@@ -218,7 +218,7 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - **mcbot 依赖独立服务**：需部署 mcbot **v1.2.4**（最低 v0.6.0，仅 loopback、契约 v2）并同步 Token；应用不管理 mcbot 生命周期、不读取其 RCON 或 DSH 凭据；旧版无 `/events/recent` 时事件流显示升级提示。生产进程是 v1.2.4（`/opt/mcbot/releases/20261116T135658Z`）。
 - **mcbot 控制面**：应用上的任务开始、目标写、自主开始、移动和游戏发言返回 409，由管理员对话决定是否调用现有工具。在线模式、只读状态和急停仍走应用。急停不经过模型。控制 Token 仍需按需轮换。
 
-详细设计与验收标准见 `docs/ARCHITECTURE.md`、`docs/SECURITY.md`、`docs/DEPLOY.md`、`docs/BACKUP.md`、`docs/CHATBOT.md`、`docs/API.md`、`docs/UI-SPEC.md`。
+详细设计与验收标准见 `docs/ARCHITECTURE.md`、`docs/SECURITY.md`、`docs/DEPLOY.md`、`docs/CHATBOT.md`、`docs/API.md`、`docs/UI-SPEC.md`。
 
 ## License
 

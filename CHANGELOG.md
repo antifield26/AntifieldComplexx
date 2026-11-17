@@ -15,7 +15,7 @@
 - 删除固定返回 409 的 Bot 写入口、契约 v1 读取、历史卡片代理和自然语言目标草案。在线模式、急停、停任务和只读状态保留。
 - 去掉 PWA 安装与离线壳。站点图标和 Tauri 图标保留。
 - 插件页列出 QQ 与 Minecraft Bot。这两项只负责显示，分别由 `antifield-dsh-qq` 与 `antifield-dsh-mcbot-agent` 运行。Web 进程不启动第二个 QQ 机器人，也不装入 Minecraft Bot 工具。页面不能停用或卸载这两项。
-- 插件安装查询经 `/usr/local/bin/pnpm-dsh`。该包装只在 `view` 去掉 npm 12 不接受的 `fetch-retries` 参数，其它子命令原样交给 `/usr/local/bin/pnpm`。`install-pnpm.sh` 把 npm 12.2.2、pnpm 10.34.9 和这个包装装到 `/usr/local/bin`。npm 或 pnpm 缺失，或 npm 指向主目录时，安装框仍显示「无法获取插件信息」。2026-11-17 生产把包装、两个显示插件和 Web 策略写入正在运行的 DSH release，并只重启了 `antifield-dsh-web`。隔离查询在带上 `fetch-retries` 时返回包名和版本。真实安装与卸载尚未做。公网冒烟的 Access 探测改为 `GET /api/version`，期望 401；`/sw.js` 与 `/offline.html` 期望 404。
+- 插件安装查询经 `/usr/local/bin/pnpm-dsh`。该包装只在 `view` 去掉 npm 12 不接受的 `fetch-retries` 参数，其它子命令原样交给 `/usr/local/bin/pnpm`。`install-pnpm.sh` 把 npm 12.2.2、pnpm 10.34.9 和这个包装装到 `/usr/local/bin`。npm 或 pnpm 缺失，或 npm 指向主目录时，安装框仍显示「无法获取插件信息」。2026-11-17 生产把包装、两个显示插件和 Web 策略写入正在运行的 DSH release，并只重启了 `antifield-dsh-web`。隔离查询在带上 `fetch-retries` 时返回包名和版本。用户已在插件页完成一次安装和卸载。公网冒烟的 Access 探测改为 `GET /api/version`，期望 401；`/sw.js` 与 `/offline.html` 期望 404。
 
 ## [v1.2.3] - 2026-11-14
 
