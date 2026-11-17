@@ -1,0 +1,17 @@
+{
+  "name": "@antifield/dsh-mcbot-plugin",
+  "version": "1.2.4",
+  "private": true,
+  "description": "由 antifield-dsh-mcbot-agent 运行。这里只显示这项，Web 进程不会装入 Minecraft Bot 工具。",
+  "type": "module",
+  "exports": {
+    ".": "./index.mjs",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

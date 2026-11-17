@@ -1,0 +1,4 @@
+# 只把 Minecraft Bot 显示条目装入 Web。不注册游戏工具。
+- insert:
+    - id: antifield-mcbot-plugin
+      name: '@antifield/dsh-mcbot-plugin'

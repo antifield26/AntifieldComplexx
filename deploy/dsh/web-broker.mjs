@@ -6,8 +6,9 @@ import { spawn } from 'node:child_process'
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, request } from 'node:http'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ensureExternalPlugins, linkExternalPlugins } from './external-plugins.mjs'
 import { publishRuntimeStatus } from './runtime-status.mjs'
 
 const COOKIE_PATTERN = /^(dsh-auth-[A-Za-z0-9_-]{1,128})=([A-Za-z0-9_.~-]{1,4096})$/
@@ -64,13 +65,27 @@ function exchangeCookie(port, host, token) {
   })
 }
 
-export function runWebBroker({ binary, origin, port, socketPath, apiKey, authMode = 'api-key', statusPath }) {
+/** DSH 可执行文件位于 node_modules/@deepseek-ai/dsh/lib。 */
+export function installationNodeModules(binary) {
+  return resolve(binary, '..', '..', '..', '..')
+}
+
+export function runWebBroker({ binary, origin, port, socketPath, apiKey, authMode = 'api-key', statusPath, profileDir }) {
   const host = new URL(origin).host
   let token = null
   let announcedToken = null
   let line = ''
   let truncated = false
   publishRuntimeStatus(statusPath, false)
+  if (profileDir) {
+    try {
+      ensureExternalPlugins(profileDir)
+      if (existsSync(join(profileDir, 'package.json'))) linkExternalPlugins(profileDir, installationNodeModules(binary))
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : 'DSH Web 显示插件无法登记')
+      throw error
+    }
+  }
   const { CREDENTIALS_DIRECTORY: _credentials, DEEPSEEK_API_KEY: _apiKey, ...env } = process.env
   const patches = ['--patch', fileURLToPath(new URL('./web-policy.yml', import.meta.url))]
   if (authMode === 'account') patches.push('--patch', fileURLToPath(new URL('./web-account.yml', import.meta.url)))
@@ -81,6 +96,7 @@ export function runWebBroker({ binary, origin, port, socketPath, apiKey, authMod
   writeFileSync(overlay, JSON.stringify([{ insert: [{ id: 'antifield-workspace', name: plugin }] }]), { mode: 0o600, flag: 'wx' })
   patches.push('--patch', fileURLToPath(new URL('./web-scope.yml', import.meta.url)), '--patch', overlay)
   const worker = spawn(process.execPath, [
+    '--import', new URL('./plugin-page-guard.mjs', import.meta.url).href,
     binary, '--profile', 'web', ...patches,
     '--no-open', '--host', '127.0.0.1', '--port', String(port), '--public-url', origin, '--trusted-host', host,
   ], { env: { ...env, ...(apiKey ? { DEEPSEEK_API_KEY: apiKey } : {}), DSH_WEB_POLICY_READY: ready }, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -194,6 +210,7 @@ if (import.meta.main) {
   try {
     const port = Number(DSH_WEB_PORT)
     if (!DSH_BIN || !isAbsolute(DSH_BIN) || !DSH_WEB_SSO_SOCKET || !isAbsolute(DSH_WEB_SSO_SOCKET)
+      || !DSH_HOME || !isAbsolute(DSH_HOME)
       || !Number.isInteger(port) || port < 1024 || port > 65535) {
       throw new Error('DSH Web 换票器配置不完整')
     }
@@ -205,7 +222,7 @@ if (import.meta.main) {
     const apiKey = authMode === 'api-key' ? readFileSync(join(CREDENTIALS_DIRECTORY, 'deepseek-key'), 'utf8').trim() : undefined
     if (authMode === 'api-key' && (!apiKey || /\s/.test(apiKey))) throw new Error('模型凭据未配置')
     runWebBroker({ binary: DSH_BIN, origin: advertisedOrigin(DSH_WEB_ORIGIN), port, socketPath: DSH_WEB_SSO_SOCKET,
-      apiKey, authMode, statusPath: DSH_STATUS_PATH })
+      apiKey, authMode, statusPath: DSH_STATUS_PATH, profileDir: join(DSH_HOME, 'profiles', 'web') })
   } catch {
     console.error('DSH Web 换票器配置无效')
     process.exitCode = 1

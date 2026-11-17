@@ -4,7 +4,7 @@
 
 ## [v1.2.4] - 2026-11-16
 
-模块：workbench、mcbot、client、ops
+模块：workbench、mcbot、client、dsh、ops
 
 本版已于 2026-11-16 部署。生产是 v1.2.4 / schema 22。Workbench `/opt/antifieldcloud/releases/20261116T135139Z`，mcbot `/opt/mcbot/releases/20261116T135658Z`。恢复 v1.2.3 必须使用迁移前快照 `db-predeploy-20261116T135240676Z.sqlite`。验收见 `docs/ACCEPTANCE.md`。
 
@@ -14,8 +14,8 @@
 - Minecraft Bot 页收成 Bot 状态、会话、事件记录。会话展示内存中的 DSH 步骤，不落库，不展示工具参数、令牌、提示词或世界记忆正文。
 - 删除固定返回 409 的 Bot 写入口、契约 v1 读取、历史卡片代理和自然语言目标草案。在线模式、急停、停任务和只读状态保留。
 - 去掉 PWA 安装与离线壳。站点图标和 Tauri 图标保留。
-- 插件页只读取 DSH Web 进程。QQ 插件与 Minecraft Bot 工具分别在各自的 Agent 中，页面不列出这两项，也不把它们装进 Web 进程。
-- 插件安装查询先执行 `pnpm view`，再调用 `npm`。两者缺失或 `npm` 指向主目录时，安装框显示「无法获取插件信息」。`install-pnpm.sh` 把 npm 12.2.2 与 pnpm 10.34.9 装到 `/usr/local/bin`。Web 策略指定该 pnpm。2026-11-16 生产主机已装好这两个命令，仓库策略已写入正在运行的 DSH release，并只重启了 `antifield-dsh-web`。隔离查询能返回包名和版本。真实安装与卸载尚未做。公网冒烟的 Access 探测改为 `GET /api/version`，期望 401；`/sw.js` 与 `/offline.html` 期望 404。
+- 插件页列出 QQ 与 Minecraft Bot。这两项只负责显示，分别由 `antifield-dsh-qq` 与 `antifield-dsh-mcbot-agent` 运行。Web 进程不启动第二个 QQ 机器人，也不装入 Minecraft Bot 工具。页面不能停用或卸载这两项。
+- 插件安装查询经 `/usr/local/bin/pnpm-dsh`。该包装只在 `view` 去掉 npm 12 不接受的 `fetch-retries` 参数，其它子命令原样交给 `/usr/local/bin/pnpm`。`install-pnpm.sh` 把 npm 12.2.2、pnpm 10.34.9 和这个包装装到 `/usr/local/bin`。npm 或 pnpm 缺失，或 npm 指向主目录时，安装框仍显示「无法获取插件信息」。2026-11-17 生产把包装、两个显示插件和 Web 策略写入正在运行的 DSH release，并只重启了 `antifield-dsh-web`。隔离查询在带上 `fetch-retries` 时返回包名和版本。真实安装与卸载尚未做。公网冒烟的 Access 探测改为 `GET /api/version`，期望 401；`/sw.js` 与 `/offline.html` 期望 404。
 
 ## [v1.2.3] - 2026-11-14
 

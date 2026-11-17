@@ -1,0 +1,4 @@
+# 只把 QQ 显示条目装入 Web。不读取平台凭据。
+- insert:
+    - id: antifield-qq-plugin
+      name: '@antifield/dsh-qq-plugin'

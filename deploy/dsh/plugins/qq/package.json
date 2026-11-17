@@ -1,0 +1,17 @@
+{
+  "name": "@antifield/dsh-qq-plugin",
+  "version": "0.5.5",
+  "private": true,
+  "description": "由 antifield-dsh-qq 运行。这里只显示这项，Web 进程不会再启动一个 QQ 机器人。",
+  "type": "module",
+  "exports": {
+    ".": "./index.mjs",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

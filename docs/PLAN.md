@@ -20,5 +20,5 @@ schema 22。契约保持 v2。DSH 0.2.2-rc.3，QQ 插件 0.5.5。本版已于 20
 
 ## 未完成
 
-见 [BACKLOG](BACKLOG.md)。插件页只读取 DSH Web 进程，不列出 QQ Agent 与 Minecraft Bot Agent 的插件。插件查询使用 `/usr/local/bin/pnpm`，并要求同目录下的 npm 不指向主目录。真实安装与卸载尚未做。
+见 [BACKLOG](BACKLOG.md)。插件页列出 QQ 与 Minecraft Bot 的只显示条目。这两项分别由各自的 Agent 运行。Web 进程不启动第二个 QQ 机器人，也不装入 Minecraft Bot 工具。插件查询使用 `/usr/local/bin/pnpm-dsh`。真实安装与卸载尚未做。
 

@@ -16,6 +16,7 @@ trap 'echo "DSH 候选安装失败，检查受限 release 与安装日志" >&2' 
 assets=(
   package.json package-lock.json patch-qq.mjs qq-policy.mjs qq-memory.mjs qq-memory-cli.mjs
   qq-agent.mjs qq-watchdog.mjs web-broker.mjs runtime-status.mjs web-policy.yml web-account.yml web-account.conf web-scope.yml web-workspace.mjs install-pnpm.sh
+  pnpm-dsh.mjs external-plugins.mjs plugin-page-guard.mjs plugin-page-hook.mjs
   mcbot-agent.mjs mcbot-minimal.yml dsh-mcbot.mjs
 )
 for asset in "${assets[@]}"; do
@@ -27,6 +28,10 @@ done
   PATH="/usr/local/bin:$PATH" npm ci --ignore-scripts --no-audit --no-fund
   /usr/local/bin/node ./patch-qq.mjs
   test "$(/usr/local/bin/node ./node_modules/@deepseek-ai/dsh/lib/bin.js --version)" = 0.2.2-rc.3
+  install -d -m 0755 node_modules/@antifield/dsh-qq-plugin node_modules/@antifield/dsh-mcbot-plugin
+  cp -a -- "$source_dir/plugins/qq/." node_modules/@antifield/dsh-qq-plugin/
+  cp -a -- "$source_dir/plugins/mcbot/." node_modules/@antifield/dsh-mcbot-plugin/
+  chmod -R a+rX node_modules/@antifield
 )
 # 专用 socket 组和无登录系统账号。
 getent passwd antifieldcloud >/dev/null

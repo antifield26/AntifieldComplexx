@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # 给 DSH Web 的插件查询安装固定的 npm 与 pnpm。只写入 /usr/local，不读取凭据，不改 profile。
 # Web 服务启用 ProtectHome，不能执行指向主目录的 npm。pnpm view 会转去调用 npm。
+# npm 12 不接受 view 上的 fetch-retries 参数，查询包装只在该子命令去掉它。
 set -euo pipefail
 npm_version=12.2.2
 pnpm_version=10.34.9
 prefix=/usr/local
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 if [[ "$(id -u)" != 0 ]]; then
   echo "请以 root 安装 pnpm" >&2
   exit 2
@@ -47,6 +49,12 @@ if [[ ! -x "$prefix/bin/pnpm" || "$("$prefix/bin/pnpm" --version)" != "$pnpm_ver
 fi
 if [[ "$("$prefix/bin/pnpm" --version)" != "$pnpm_version" ]]; then
   echo "pnpm 不可用于 Web 服务" >&2
+  exit 1
+fi
+wrapper="$prefix/bin/pnpm-dsh"
+install -m 0755 -- "$script_dir/pnpm-dsh.mjs" "$wrapper"
+if [[ ! -x "$wrapper" || "$(head -n 1 -- "$wrapper")" != "#!/usr/local/bin/node" ]]; then
+  echo "pnpm 查询包装不可用" >&2
   exit 1
 fi
 echo "npm $npm_version 与 pnpm $pnpm_version 已在 $prefix/bin"

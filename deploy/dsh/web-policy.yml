@@ -7,10 +7,10 @@
   disabled: true
 - id: tool-plugin-manager
   disabled: true
-# 插件查询与安装使用系统 pnpm。模型侧插件管理工具保持关闭。
+# 插件查询去掉 npm 12 不接受的 fetch-retries 参数。模型侧插件管理工具保持关闭。
 - id: plugin-manager
   config:
-    pnpmCommand: /usr/local/bin/pnpm
+    pnpmCommand: /usr/local/bin/pnpm-dsh
 - id: agent-default-model
   config:
     provider: deepseek-official

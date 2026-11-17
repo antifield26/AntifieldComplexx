@@ -154,7 +154,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 ## 8. 已知环境事实（不要重复踩坑）
 
-- **当前生产**：v1.2.4 / schema 22。Workbench `/opt/antifieldcloud/releases/20261116T135139Z`，mcbot `/opt/mcbot/releases/20261116T135658Z`，DSH `/opt/antifield-dsh/releases/20261114T051442Z`（0.2.2-rc.3，QQ 插件 0.5.5）。插件列表代理放行 `/api/pluginManager/` 与 `/api/pluginInventory/`。插件页只读取 DSH Web 进程。QQ 插件在 `antifield-dsh-qq`，Minecraft Bot 工具在 `antifield-dsh-mcbot-agent`，页面不列出这两项。插件查询使用 `/usr/local/bin/pnpm` 与同目录的 npm。npm 指向主目录时，ProtectHome 会拒绝执行，安装框显示无法获取插件信息。恢复 v1.2.3 必须先换回迁移前快照 `db-predeploy-20261116T135240676Z.sqlite`，再把 Workbench 指回 `20261114T082631Z` 并只重启应用。不能只切换 release。再退与跨 schema 快照见 `docs/DEPLOY.md`。沿革见 CHANGELOG。
+- **当前生产**：v1.2.4 / schema 22。Workbench `/opt/antifieldcloud/releases/20261116T135139Z`，mcbot `/opt/mcbot/releases/20261116T135658Z`，DSH `/opt/antifield-dsh/releases/20261114T051442Z`（0.2.2-rc.3，QQ 插件 0.5.5）。插件列表代理放行 `/api/pluginManager/` 与 `/api/pluginInventory/`。插件页列出 QQ 与 Minecraft Bot 的只显示条目。QQ 仍由 `antifield-dsh-qq` 运行，Minecraft Bot 工具仍由 `antifield-dsh-mcbot-agent` 运行。Web 进程不启动第二个 QQ 机器人，也不装入 Minecraft Bot 工具。插件查询使用 `/usr/local/bin/pnpm-dsh`，只在 `view` 去掉 npm 12 不接受的 fetch-retries 参数。npm 指向主目录时，ProtectHome 会拒绝执行。恢复 v1.2.3 必须先换回迁移前快照 `db-predeploy-20261116T135240676Z.sqlite`，再把 Workbench 指回 `20261114T082631Z` 并只重启应用。不能只切换 release。再退与跨 schema 快照见 `docs/DEPLOY.md`。沿革见 CHANGELOG。
 - mcbot 部署默认保留最新 3 个 release，并保护 current 与 previous。
 - Pi：`antifield@192.0.2.10` 直连（TEST-NET 占位；实际值见 `.local/DEPLOYMENT.md`）；WiFi 示例 `198.51.100.10` 与 PC 不通（AP 隔离）；直连 SSH 偶发超时，脚本需重试。
 - 校园网有 Portal 认证（占位 `https://portal.<domain>`；实际端点见 `.local`）；树莓派重启后认证可能失效，表现为 Cloudflare 7844 出站阻断、tunnel 1033/公网 530；需从 Pi 出口重新完成认证，再 `systemctl reset-failed cloudflared && systemctl restart cloudflared`。
