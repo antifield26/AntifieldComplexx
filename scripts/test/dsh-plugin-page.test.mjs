@@ -1,6 +1,6 @@
 /** 核对插件查询参数和插件页上的 QQ、Minecraft Bot 显示条目。 */
 import assert from 'node:assert/strict'
-import { lstatSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -93,9 +93,13 @@ test('插件页保护拒绝停用两个显示插件，且不改其它模块', as
   const managerUrl = 'file:///opt/antifield-dsh/current/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js'
   const guarded = await load(managerUrl, {}, async () => ({ format: 'module', source: fixture }))
   assert.match(guarded.source, /__antifieldExternalPlugins/)
-  const real = readFileSync(join(root, 'deploy/dsh/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js'), 'utf8')
-  assert.match(real, /protectsManager\(name\)/)
-  assert.doesNotThrow(() => pluginManagerGuard(real))
+  // 上游源码不进仓库。本机存在时才核对套用形状。
+  const realPath = join(root, 'deploy/dsh/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js')
+  if (existsSync(realPath)) {
+    const real = readFileSync(realPath, 'utf8')
+    assert.match(real, /protectsManager\(name\)/)
+    assert.doesNotThrow(() => pluginManagerGuard(real))
+  }
 })
 
 test('显示插件的补丁不装入 QQ 机器人或 Minecraft Bot 工具', () => {
@@ -160,21 +164,30 @@ test('保护模块可以在启动时登记', () => {
   const registered = spawnSync(process.execPath, ['--import', guard, '-e', 'console.log("guard-ok")'], { encoding: 'utf8' })
   assert.equal(registered.status, 0, registered.stderr)
   assert.match(registered.stdout, /guard-ok/)
-  const checked = spawnSync(process.execPath, [
-    '--import', guard, '--input-type=module', '-e',
-    [
-      "import { PluginManager } from '@deepseek-ai/dsh-plugin-manager'",
-      'const manager = Object.create(PluginManager.prototype)',
-      'manager.managementBundles = new Set()',
-      'manager.bundleRows = () => []',
-      "if (manager.protectsManager('@antifield/dsh-qq-plugin') !== true) process.exit(2)",
-      "if (manager.protectsManager('@antifield/dsh-mcbot-plugin') !== true) process.exit(3)",
-      "if (manager.protectsManager('@deepseek-ai/dsh-base') !== false) process.exit(4)",
-      "console.log('protects-ok')",
-    ].join('\n'),
-  ], { cwd: join(root, 'deploy/dsh'), encoding: 'utf8' })
-  assert.equal(checked.status, 0, checked.stderr)
-  assert.match(checked.stdout, /protects-ok/)
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-guard-register-'))
+  const packageDir = join(directory, 'node_modules', '@deepseek-ai', 'dsh-plugin-manager')
+  try {
+    mkdirSync(join(packageDir, 'lib'), { recursive: true })
+    writeFileSync(join(packageDir, 'package.json'), `${JSON.stringify({
+      name: '@deepseek-ai/dsh-plugin-manager', type: 'module', exports: './lib/index.js',
+    })}\n`)
+    writeFileSync(join(packageDir, 'lib', 'index.js'), 'export class PluginManager { protectsManager(name) { return false } }\n')
+    const checked = spawnSync(process.execPath, [
+      '--import', guard, '--input-type=module', '-e',
+      [
+        "import { PluginManager } from '@deepseek-ai/dsh-plugin-manager'",
+        'const manager = Object.create(PluginManager.prototype)',
+        "if (manager.protectsManager('@antifield/dsh-qq-plugin') !== true) process.exit(2)",
+        "if (manager.protectsManager('@antifield/dsh-mcbot-plugin') !== true) process.exit(3)",
+        "if (manager.protectsManager('@deepseek-ai/dsh-base') !== false) process.exit(4)",
+        "console.log('protects-ok')",
+      ].join('\n'),
+    ], { cwd: directory, encoding: 'utf8' })
+    assert.equal(checked.status, 0, checked.stderr)
+    assert.match(checked.stdout, /protects-ok/)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 test('配置不是普通文件时拒绝写入', () => {
