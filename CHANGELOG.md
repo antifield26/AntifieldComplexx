@@ -16,6 +16,7 @@
 - 去掉 PWA 安装与离线壳。站点图标和 Tauri 图标保留。
 - 插件页列出 QQ 与 Minecraft Bot。这两项只负责显示，分别由 `antifield-dsh-qq` 与 `antifield-dsh-mcbot-agent` 运行。Web 进程不启动第二个 QQ 机器人，也不装入 Minecraft Bot 工具。页面不能停用或卸载这两项。
 - 插件安装查询经 `/usr/local/bin/pnpm-dsh`。该包装只在 `view` 去掉 npm 12 不接受的 `fetch-retries` 参数，其它子命令原样交给 `/usr/local/bin/pnpm`。`install-pnpm.sh` 把 npm 12.2.2、pnpm 10.34.9 和这个包装装到 `/usr/local/bin`。npm 或 pnpm 缺失，或 npm 指向主目录时，安装框仍显示「无法获取插件信息」。2026-11-17 生产把包装、两个显示插件和 Web 策略写入正在运行的 DSH release，并只重启了 `antifield-dsh-web`。隔离查询在带上 `fetch-retries` 时返回包名和版本。用户已在插件页完成一次安装和卸载。公网冒烟的 Access 探测改为 `GET /api/version`，期望 401；`/sw.js` 与 `/offline.html` 期望 404。
+- 已发布 annotated Tag `v1.2.4`，指向本发布记录。生产进程仍是 `3259bb1`。发布页附带 `AntifieldComplexx_1.2.4_x64-setup.exe`（3,368,949 字节）、`AntifieldComplexx_1.2.4_arm64.apk`（16,877,993 字节）与 `SHA256SUMS`。Android 文件是 APK，使用本机 debug 密钥签名。手机未用这份安装包复验。
 
 ## [v1.2.3] - 2026-11-14
 
