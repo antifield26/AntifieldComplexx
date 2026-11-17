@@ -26,10 +26,11 @@
     "test:web": "npm run test:web -w @antifieldcomplexx/workbench",
     "test:web:coverage": "npm run test:web:coverage -w @antifieldcomplexx/workbench",
     "test:web:watch": "npm run test:web:watch -w @antifieldcomplexx/workbench",
-    "check": "npm run check:app && npm run check:mcbot && npm run check:naming && npm run check:docs && npm run check:client",
+    "check": "npm run check:app && npm run check:mcbot && npm run check:naming && npm run check:agents && npm run check:docs && npm run check:client",
     "check:app": "npm run typecheck && npm run lint && npm run test && npm run test:web",
     "check:mcbot": "npm run check -w @antifieldcomplexx/mcbot",
     "check:naming": "node scripts/check-naming.mjs",
+    "check:agents": "node scripts/check-agent-instructions.mjs",
     "check:docs": "node scripts/check-mcbot-claims.mjs",
     "provision": "node scripts/provision.mjs",
     "backup": "node scripts/backup.mjs"

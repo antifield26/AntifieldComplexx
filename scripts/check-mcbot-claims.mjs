@@ -1,8 +1,8 @@
 /**
  * mcbot 文档-实现一致性检查。
  *
- * 以代码常量为真相，校验 README、docs/MCBOT.md、docs/API.md 与 env 模板的关键声明；
- * 只读仓库文件，不修改任何内容。失败时输出逐条错误并以 1 退出。
+ * 以代码常量为真相，校验工具、任务、环境键、版本及部分文案，不证明全部文档语义或生产行为。
+ * HTTP 行为由路由回归验证。本脚本只读仓库，失败时输出逐条错误并以 1 退出。
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -98,6 +98,8 @@ for (const key of envKeys) {
 requireText('docs/AUDIT.md', '文档声明', 'audit-matrix')
 requireText('docs/AUDIT.md', '代码', 'audit-code-column')
 requireText('docs/AUDIT.md', '状态', 'audit-status-column')
+requireText('docs/AUDIT.md', '应用不提供的直接行动入口返回 404', 'retired-action-routes')
+forbidText('docs/AUDIT.md', '行动写入口返回 409', '旧行动入口状态码')
 const rootPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
 const version = rootPackage.version
 requireText('README.md', `v${version}`, 'readme-version')

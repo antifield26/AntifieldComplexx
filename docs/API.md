@@ -10,7 +10,7 @@ Workbench 与前端共同遵守本文前半部分。Minecraft Bot 的本机 HTTP
 - 原生文件 IPC 只允许 main 的本地来源。内容端点限定 `/api/files/:id/content`。预览句柄限 loopback，可撤销，支持 Range，令牌不进入 URL。
 - AI 顶层导航只允许固定的 AI 与 Access HTTPS 源。Access 登录后最多由主窗口再换票一次。
 
-生产启用 DSH Web 后，`GET /api/dashboard` 给出 `dsh.webUrl` 与 `dsh.readiness`。就绪键是 `dsh_web`、`dsh_qq`、`dsh_mcbot`，只列出已配置的服务。Workbench 不再提供 QQ 管理或 Webhook。
+生产启用 DSH Web 后，`GET /api/dashboard` 给出 `dsh.webUrl` 与 `dsh.readiness`。就绪键是 `dsh_web`、`dsh_qq`、`dsh_mcbot`，只列出已配置的服务。Workbench 不提供 QQ 管理或 Webhook。
 
 ## 0. 约定
 
@@ -25,7 +25,7 @@ Workbench 与前端共同遵守本文前半部分。Minecraft Bot 的本机 HTTP
 ```
 
 - 常见状态码：`400 invalid_request`、`401 unauthenticated/invalid_password`、`403 csrf_failed`、`404 not_found`、`410 share_expired/share_revoked/share_exhausted`、`409 conflict/quota_exceeded/archive_encrypted/chunk_conflict/backup_busy/restore_busy/plan_expired/archive_exists`、`413 file_too_large`、`415 unsupported_media_type`、`429 rate_limited`、`500 internal_error`、`502 mcbot_auth_failed/mcbot_upstream_error`、`503 chatbot_disabled/chatbot_key_missing/chatbot_ai_tool_isolation_unavailable/chatbot_ai_context_unavailable/mcbot_disabled/mcbot_control_disabled/mcbot_unavailable/mcbot_task_disabled/mcbot_history_disabled/mcbot_not_found`、`507 insufficient_storage`。`429` 同时带 `Retry-After` 响应头与 `error.details.retryAfterSec`。
-- 认证：登录成功后服务端在 **app 主机**下发 host-only `af_session`（HttpOnly）与 `af_csrf`（可读）Cookie（均不设 `Domain`；`ai` 主机使用独立 host-only 会话 Cookie）。除 `GET/HEAD` 外的所有 `/api` 请求必须带 `X-CSRF-Token: <af_csrf>`，并满足 `Origin` 为 `https://app.example.com` / 本机；`ai` 源不再作为 app 写请求的受信 Origin。例外：既有公开分享 `POST /api/public/shares/:token/unlock` 也只校验 Origin 与限流。客户端设备会话使用 `Authorization: Bearer` 与设备签名，签名通过后不再要求 CSRF；`Authorization` 存在但不是合法 Bearer 时不回退 Cookie（见 §2）。
+- 认证：登录成功后服务端在 **app 主机**下发 host-only `af_session`（HttpOnly）与 `af_csrf`（可读）Cookie（均不设 `Domain`；`ai` 主机使用独立 host-only 会话 Cookie）。除 `GET/HEAD` 外的所有 `/api` 请求必须带 `X-CSRF-Token: <af_csrf>`，并满足 `Origin` 为 `https://app.example.com` / 本机；`ai` 源不作为 app 写请求的受信 Origin。例外：既有公开分享 `POST /api/public/shares/:token/unlock` 也只校验 Origin 与限流。客户端设备会话使用 `Authorization: Bearer` 与设备签名，签名通过后豁免 CSRF；`Authorization` 存在但不是合法 Bearer 时不回退 Cookie（见 §2）。
 - AI 主机 SSO：app 登录/已登录后访问 `GET /api/auth/ai-ticket?next=<ai 完整 URL>`，服务端校验 `next` 必须属于配置的 `AI_ORIGIN`，签发 60 秒一次性 ticket 并 302 到 `https://ai.example.com/__af/sso/<ticket>?next=<ai 相对路径>`；代理校验/消费 ticket 后设置 ai 主机 host-only `af_session` 并 302 到目标路径。ticket 一次性、绑定 aiOrigin、不落库。请求头 `Accept` 包含 `application/json` 时改为 `200 { "url": "<同一地址>" }`，不跳转。
 - mcbot 功能开关：`MCBOT_ENABLED=false` 时 `GET /api/mcbot/status` 仍返回 `enabled:false` 的空壳快照，其余端点返回 `503 mcbot_disabled`。任务开始、目标读写、自主开始、移动、游戏发言和历史代理不存在。控制 Token 为空时，对话、急停、在线模式、停止任务和停止自主会话返回 `503 mcbot_control_disabled`。`MCBOT_URL` 只允许 `http(s)://loopback[:port]` 根地址（拒绝 userinfo/路径/查询/片段）。上游未启用/网络不可达返回 `503 mcbot_unavailable`；鉴权失败/上游异常返回 `502 mcbot_auth_failed`/`mcbot_upstream_error`；上游 5xx 的稳定业务码 `task_disabled`/`control_disabled`/`admin_unavailable` 保留为 `mcbot_*`。响应与错误文本不包含 mcbot URL/Token。
 - 安全响应头：`Cache-Control: no-store`（静态 hash 资源除外）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、CSP（见 docs/SECURITY.md）。
@@ -40,7 +40,7 @@ Workbench 与前端共同遵守本文前半部分。Minecraft Bot 的本机 HTTP
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "1.2.3", "schemaVersion": 21, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
+{ "ok": true, "version": "1.2.4", "schemaVersion": 22, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
 ```
 
 - `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
@@ -122,7 +122,7 @@ Workbench 与前端共同遵守本文前半部分。Minecraft Bot 的本机 HTTP
 - `X-Device-Nonce`：16–64 位 `[A-Za-z0-9_-]`，在偏差窗口内不可重复
 - `X-Device-Signature`：64 字节 Ed25519 签名的 base64url
 
-待签名字符串为 UTF-8，各段以 `\n` 连接：`v1`、设备 id、时间戳原文、nonce、大写方法、含查询的路径、原始请求体的 SHA-256 十六进制。无请求体时对空字节串取哈希。签名通过后写操作不再要求 CSRF。
+待签名字符串为 UTF-8，各段以 `\n` 连接：`v1`、设备 id、时间戳原文、nonce、大写方法、含查询的路径、原始请求体的 SHA-256 十六进制。无请求体时对空字节串取哈希。签名通过后写操作豁免 CSRF。
 
 `/api` 的跨源预检只接受 `http://tauri.localhost`、`https://tauri.localhost` 与 `tauri://localhost`。其它 Origin 不返回跨源头。预检不要求登录或签名，响应不带凭据。
 
@@ -487,13 +487,13 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "1.2.1", "schemaVersion": 21, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
-  - `schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。旧服务端不下发时前端按关闭/未配置/null 降级。
-  - `mcbotEnabled`/`mcbotControlEnabled`（v0.8.0）：mcbot 集成是否启用、控制接口是否可用（`MCBOT_ENABLED=true` 且 `MCBOT_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 mcbot 标签与控制操作。两者都不含 mcbot 地址/Token。
+- `GET /api/version`（需要会话）：`{ "version": "1.2.4", "schemaVersion": 22, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
+  - `schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。字段缺失时前端按关闭/未配置/null 降级。
+  - `mcbotEnabled`/`mcbotControlEnabled`：mcbot 集成是否启用、控制接口是否可用（`MCBOT_ENABLED=true` 且 `MCBOT_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 mcbot 标签与控制操作。两者都不含 mcbot 地址/Token。
   - schema **17**；`audit.persisted` 表示诊断是否来自 DB 持久化行（DB 不可用时 false，回退内存计数）。
   - `backupRestoreEnabled` 与 `deploy/env.example` 默认一致（默认 `false`；Web 文件级恢复需显式开启）。
 - `GET /api/storage`（需要会话；轻量端点，供文件页取配额，避免触发 Dashboard 的 MC/opencode/systemctl 聚合）：`{ "quotaBytes": 10737418240, "usedBytes": 1234, "trashBytes": 0, "fileCount": 3, "freeBytes": 1 }`。字段与 `/api/dashboard.storage` 一致；`usedBytes` 含笔记附件与回收站，`fileCount` 只统计普通文件（`origin='user'`）。
-- 静态资源：`PUBLIC_APP_SHELL` 默认 `true`。开关开启时，以及 Host 为 `127.0.0.1`、`localhost` 或 `::1` 时，`/`、`/files`、`/trash`、`/knowledge`、`/shares`、`/minecraft`、`/settings`、`/s/:token` 等 SPA 路径返回 `index.html`；`/assets/*` 长缓存；`/manifest.webmanifest` 为 `application/manifest+json`。安装与离线壳已删除，`/sw.js` 与 `/offline.html` 返回 404。
+- 静态资源：`PUBLIC_APP_SHELL` 默认 `true`。开关开启时，以及 Host 为 `127.0.0.1`、`localhost` 或 `::1` 时，`/`、`/files`、`/trash`、`/knowledge`、`/shares`、`/minecraft`、`/settings`、`/s/:token` 等 SPA 路径返回 `index.html`；`/assets/*` 长缓存；`/manifest.webmanifest` 为 `application/manifest+json`。站点不提供 PWA 安装和离线壳，`/sw.js` 与 `/offline.html` 返回 404。
 - `PUBLIC_APP_SHELL=false` 且 Host 等于 `APP_ORIGIN` 的主机名时，`GET/HEAD /` 以及 `Accept` 含 `text/html` 的页面返回说明页，标题为「请使用客户端」。响应为 `text/html; charset=utf-8`，`cache-control: no-store`，`x-robots-tag: noindex, nofollow`。`/assets/`、`/icons/`、`/sw.js`、`/manifest.webmanifest`、`/offline.html`、`/index.html`、`/favicon.svg` 返回 `404 not_found`。`/healthz`、`/api/*` 与 AI 主机保持原有行为。不带 `text/html` 的其它路径仍返回 JSON 404。
 - 同一条件下，`GET /s/:token` 在 `Accept` 含 `text/html` 时由服务端渲染分享页。token 必须匹配 `^[A-Za-z0-9_-]{20,128}$`。无效链接返回 404 HTML，正文为「分享链接不存在」；过期、吊销或用尽返回 410 HTML。密码分享提交 `POST /s/:token/unlock`，正文为 `application/x-www-form-urlencoded` 的 `password`，并校验 Origin。成功返回 `303` 到 `/s/:token`，同时设置两枚 `af_share`：Path `/api/public/shares/<token>` 与 Path `/s/<token>`。不带 `text/html` 的 `GET /s/:token` 仍返回 JSON 404。开关开启时，HTML 请求继续返回 `index.html`，该解锁路由返回 JSON 404。
 - `ai.example.com/*`：不是本应用 API，全部经会话校验后反代到 opencode；未登录 HTML 302，API 401。
@@ -512,7 +512,7 @@ RCON 不可用：`502 rcon_unavailable`。
 - `GET /api/notes/tags` → `{items:[{name,count}]}`。
 - Bookmark 形状：`{id,url,title,description,tags,pinned,createdAt,updatedAt}`；端点 `/api/bookmarks`、`/:id`、`/tags`，查询/分页同上。
 - 限制：标题 ≤200、正文 ≤200KB、标签 ≤20 个且单个 ≤32；书签 URL 仅 http/https；FTS5 中文自动回退 LIKE。
-- 笔记列表与详情均附带 `attachments`；列表项中的附件为增量字段，旧前端可忽略。
+- 笔记列表与详情均附带 `attachments`；列表项的附件为可选字段，调用方可忽略。
 
 ## 9. 文件分享
 
@@ -546,13 +546,13 @@ RCON 不可用：`502 rcon_unavailable`。
 { "items": [{ "id":1,"event":"disk_low","severity":"critical","status":"firing","title":"…","message":"…","createdAt":"…","deliveredAt":null,"deliveryError":null,"deliveries":{ "webhook":{ "status":"pending","attempts":0,"nextAttemptAt":"…","error":null },"qq":{ "status":"skipped","attempts":0,"nextAttemptAt":"…","error":"未启用或没有可通知的目标" } } }], "state": [{ "event":"disk_low","status":"firing","lastFiredAt":"…","lastOkAt":null }], "config": { "enabled":true,"webhookConfigured":false,"webhookType":"generic","diskFreePct":15,"tempC":80,"memoryUsedPct":90,"backupMaxAgeHours":48,"cooldownMinutes":360,"repeatHours":24,"checkIntervalSeconds":300,"lastEvaluatedAt":null } }
 ```
 
-- 每条事件增加只读 `deliveries`。没有 `external_alert_deliveries` 行时为 `null`。有行时 `webhook` 与 `qq` 各自为 `{status,attempts,nextAttemptAt,error}`，缺该通道时为 `null`。`status` 取 `pending|done|dead|skipped`。`error` 已脱敏。本接口不提供重投。`deliveredAt` 与 `deliveryError` 保持原字段。
-- 主机条件的 `firing`、`resolved`、`unknown` 及周期重通知，与两条通道任务在同一 SQLite 事务提交。Webhook 最多同时处理 2 条，失败退避 1 秒、2 秒，最多 3 次，重试沿用同一 `Idempotency-Key`。同一条件、同一通道按事件顺序投递，前序进入 `done`、`skipped` 或 `dead` 后再处理后序。`status='event'` 不参与该顺序。通道关闭或没有可通知目标时插入即为 `skipped`。进程关闭时先停止评估和领取，再等待在途请求。不回补本版之前的历史事件。
+- 每条事件包含只读 `deliveries`。没有 `external_alert_deliveries` 行时为 `null`；有行时仅含 `webhook`（`{status,attempts,nextAttemptAt,error}` 或 `null`），不包含 QQ 通道。`status` 取 `pending|done|dead|skipped`。`error` 已脱敏。本接口不提供重投。`deliveredAt` 与 `deliveryError` 保持原字段。
+- 主机条件的 `firing`、`resolved`、`unknown` 及周期重通知，与 webhook 投递任务在同一 SQLite 事务提交。Webhook 最多同时处理 2 条，失败退避 1 秒、2 秒，最多 3 次，重试沿用同一 `Idempotency-Key`。同一条件、同一通道按事件顺序投递，前序进入 `done`、`skipped` 或 `dead` 后再处理后序。`status='event'` 不参与该顺序。Webhook 关闭或未配置接收端时插入即为 `skipped`。进程关闭时先停止评估和领取，再中止在途请求并等待收口。只处理具有投递任务的事件，不为缺少任务的事件自动补建投递项。
 - `POST /api/alerts/test`（会话 + CSRF，10 次/小时）→ `{ok:true,delivered:boolean,message?}`；未配置 webhook 返回 200 `{ok:false,delivered:false,message:"未配置 webhook URL"}`。测试仍直接投递，不写投递箱。
 - Webhook 请求体 `{source,version,event,severity,status,title,message,details,at}`；可选 HMAC 头 `x-antifieldcloud-signature: sha256=<hex>`；10s 超时、最多 3 次尝试。
 - 告警条件：磁盘、温度、内存（默认 90%）、服务、备份超期、pending 备份、备份密钥包、MC、欠压（health probe JSON）、世界备份/世界拉取/恢复演练超期与异地副本超期（`offsite_overdue`）；同状态去重/冷却，恢复时发 resolved。`status` 可能为 `unknown`（连续 3 次数据源不可用后降级并产生一次事件）；`alert_events` 保留 90 天。
   `config` 含 `offsiteMaxAgeHours`（小时，0 表示关闭；状态文件缺失/未配置时该条件不进入列表，不误报）；`status` 字段另含世界备份/拉取/演练阈值。
-- 外部事件告警（v0.8.0，mcbot）：上游 `alert` 事件由服务端映射为 `status='event'` 写入 `alert_events`，**不写 `alert_state`、不参与 firing/resolved 状态机、不产生恢复通知**；`severity`：已知类型（low_health/chest_full/defense_retreat → warning，task_failed/disconnected → critical），未知类型上游 `severity='error'` 为 critical，否则 warning；`event` 名为 `mcbot_low_health`/`mcbot_task_failed`/`mcbot_disconnected`/`mcbot_chest_full`/`mcbot_defense_retreat`/`mcbot_alert`（未知），`details` 含 `source:"mcbot"`、`mcbotEventId`、`mcbotType` 与清洗后的上游 details（深度≤2、键≤20、数组≤20、字符串≤300）。写入与两条通道任务在同一事务，随后由投递箱处理，不阻塞请求；`ALERTS_ENABLED=false` 时不写库/不投递。schema v19 起 mcbot 告警带 `dedupe_key=mcbot:<bootId>:<eventId>`（各段去空白、拒绝控制字符、截断后拼接）。同一键再次写入返回已有 id，不新增行、不重复 webhook、不重复入队。空键或纯空白键视为无键，各自插入且 `dedupe_key` 为 NULL。
+- 外部事件告警（mcbot）：上游 `alert` 事件由服务端映射为 `status='event'` 写入 `alert_events`，**不写 `alert_state`、不参与 firing/resolved 状态机、不产生恢复通知**；`severity`：已知类型（low_health/chest_full/defense_retreat → warning，task_failed/disconnected → critical），未知类型上游 `severity='error'` 为 critical，否则 warning；`event` 名为 `mcbot_low_health`/`mcbot_task_failed`/`mcbot_disconnected`/`mcbot_chest_full`/`mcbot_defense_retreat`/`mcbot_alert`（未知），`details` 含 `source:"mcbot"`、`mcbotEventId`、`mcbotType` 与清洗后的上游 details（深度≤2、键≤20、数组≤20、字符串≤300）。写入与 webhook 投递任务在同一事务，随后由投递箱处理，不阻塞请求；`ALERTS_ENABLED=false` 时不写库/不投递。mcbot 告警带 `dedupe_key=mcbot:<bootId>:<eventId>`（各段去空白、拒绝控制字符、截断后拼接）。同一键再次写入返回已有 id，不新增行、不重复 webhook、不重复入队。空键或纯空白键视为无键，各自插入且 `dedupe_key` 为 NULL。
 - 服务条件在 `MCBOT_ENABLED=true` 时包含 mcbot。systemd 为 `inactive`/`failed`，或轮询快照 `enabled && stale`，都记为 inactive 并走既有 `service_down`。单次失败且 `stale=false` 不触发。恢复后写 `resolved`，`alert_state` 回到 `ok`。这不把上游 `alert` 升格为 firing。
 
 ## 11. 备份管理 / 文件级恢复
@@ -562,13 +562,13 @@ RCON 不可用：`502 rcon_unavailable`。
 - `GET /api/backups` → `{items:[Archive],inbox,orphans,state,world,worldPull,drill}`。Archive 含 `name/mode/createdAt/sizeBytes/sha256/status/origin/available/verifiedAt/pulledAt/ackedAt/lastError/manifest/encrypted`；`available=false` 表示服务端文件已被 PC ack 清理（acked 后正常），此状态不可用于恢复；`encrypted=true` 表示 age 加密归档（Web 不可校验/恢复）；不返回归档路径或下载 URL。`world`/`worldPull`/`drill` 为只读状态对象（见 §12），`state` 可含 `pendingBytes/ackedBytes/encryptedPendingCount/encryptedAckedCount` 统计（缺失时前端按 0 降级）。
 - `POST /api/backups/prepare` body `{totpCode,full?,confirmText:"PREPARE"}`（3 次/小时）→ 只生成 Pi pending 归档，不 ack、不推进游标；输出可带 `warnings`/`skippedMissing`/`missingFiles`/`missingFileCount`/`partials`，加密开启时另带 `encrypted:true/archiveFormat:"tar.gz.age"/metaName/plainSha256/plainSize`（明文哈希只在 sidecar/DB，不在加密归档内）。超时由 `BACKUP_PREPARE_TIMEOUT_SEC`（默认 3300s）控制；加密开启时 age/公钥/空间任一不满足即失败关闭（不产生 pending、不降级明文）。TOTP 失败写审计 `backup_reauth_failed`。
 - `POST /api/backups/import`（multipart 字段 `file`，TOTP 走 `X-TOTP-Code`；10 次/小时）→ 201 `{archive,verify,warnings?}`。归档名必须匹配 `^snapshot-[0-9TZ]+(?:-[0-9]+)?-(full|inc)\.tar\.gz$`（明文）或 `…\.tar\.gz\.age$`（加密，**导入返回 409 `archive_encrypted`**）；落盘 `DATA_DIR/backups/imports` 0700，拒绝覆盖；单请求 ≤ min(MAX_UPLOAD_BYTES, 100 MiB)。导入归档（origin=import）不计入 pending，也不影响 Pi 增量水位。
-- `POST /api/backups/verify` body `{name}` → 流式 SHA-256 + tar 安全解析；**加密归档（`.age`）在名称校验之前返回 `409 archive_encrypted`**（Pi 无私钥）；明文归档错误：409 checksum_mismatch、422 invalid_archive/unsafe_archive、404 archive_not_found；校验失败会清除 `verified_at/manifest_json` 并记录 `last_error`。
+- `POST /api/backups/verify` body `{name}` → 流式 SHA-256 + tar 安全解析；**加密归档（`.age`）在名称合法化后、读取或解包前返回 `409 archive_encrypted`**（Pi 无私钥）；明文归档错误：409 checksum_mismatch、422 invalid_archive/unsafe_archive、404 archive_not_found；校验失败会清除 `verified_at/manifest_json` 并记录 `last_error`。
 - `GET /api/backups/archives/:name/entries?path=/` → `{path,items,truncated}`，用于恢复选择；仅已校验明文归档；`.age` 返回 `409 archive_encrypted`；30 次/分钟/IP，超出 429；只返回 `origin='user'` 的普通文件（笔记附件/系统文件不参与恢复）。
-- `POST /api/backups/restore-plan` body `{archive?,paths?,targetName?,totpCode,confirmText:"RESTORE"}` → `{plan}`；校验 full+inc 链、空间/配额、文件数上限；计划 30 分钟过期。不指定归档时**自动恢复目标跳过 `.age`**；指定 `.age` 或链中含 `.age` 返回 `409 archive_encrypted`。计划会剔除链 manifest 中 `skippedMissing` 的文件并返回 `plan.skippedMissing: string[]`；选择全部缺失时 `400 invalid_selection`。
+- `POST /api/backups/restore-plan` body `{archive?,paths?,targetName?,totpCode,confirmText:"RESTORE"}` → `{plan}`；校验 full+inc 链、空间/配额、文件数上限；计划 30 分钟过期。不指定归档时**自动恢复目标跳过 `.age`**；指定 `.age` 或链中含 `.age` 返回 `409 archive_encrypted`。计划按目标快照和链内实际 tar 内容从新到旧查找文件，并返回真正缺失内容的 `plan.skippedMissing: string[]`；链内可用内容不因其他 manifest 的 `skippedMissing` 而剔除；选择全部缺失时 `400 invalid_selection`。
 - `POST /api/restores/:planId/execute` body `{totpCode,confirmText:"RESTORE"}` → `{plan,result}`；只恢复文件内容到**新文件夹**（新 ID，不覆盖），单并发/锁；`410 plan_expired`、`409 restore_busy/plan_completed`；`result.filesRestored/bytesRestored/durationMs/skippedMissing`，其中 `result.skippedMissing` 列出执行时仍缺失、已跳过未恢复的文件 ID，非空时不能视为完整恢复。启动/维护会清理崩溃遗留的陈旧 `restore.lock`。
 - `GET /api/restores/:planId` → `{plan}`（用于恢复向导刷新/断网后继续轮询）。
 - 错误码：`archive_encrypted` 409（加密归档 Web 不可操作）、`restore_disabled` 403、`archive_not_verified`/`archive_chain_invalid` 409、`invalid_selection`/`confirmation_failed` 400、`invalid_totp` 401、`restore_too_many_files` 400。
-- 归档导入的信任边界：归档来自管理员（TOTP 门禁），但 tar 仍按不可信输入校验路径穿越/链接/设备/超大条目；不提供归档下载。schema v16 启动时会拒绝高于支持版本的数据库（迁移 5–16 保留；本版无新迁移）。
+- 归档导入的信任边界：归档来自管理员（TOTP 门禁），但 tar 仍按不可信输入校验路径穿越/链接/设备/超大条目；不提供归档下载。程序启动拒绝高于支持版本的数据库；当前支持 schema 22，与迁移常量和 tool-versions 交叉校验。
 - 整库恢复：不在 Web API 内，按 `docs/DEPLOY.md` 的「15.8.1 应用数据（整库离线恢复）」执行（停服、解包校验、替换数据、pre-restore 备份与失败回滚）；加密归档必须先在 PC 用离线私钥解密，再按同流程恢复。
 
 ## 12. 可观测性与备份状态
@@ -606,7 +606,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ### 告警与审计筛选
 
-- `GET /api/alerts?limit=20&offset=0&event=&status=&severity=` → `{items,total,state,config}`；`status` 取值 `firing|resolved|unknown|event`（`event` 为 mcbot 等外部服务的事件记录），`event` 为条件名，全部参数可选。`items[].deliveries` 见 §10，分页与旧字段不变。
+- `GET /api/alerts?limit=20&offset=0&event=&status=&severity=` → `{items,total,state,config}`；`status` 取值 `firing|resolved|unknown|event`（`event` 为 mcbot 等外部服务的事件记录），`event` 为条件名，全部参数可选。`items[].deliveries` 见 §10，分页与字段遵循本文定义。
 - `GET /api/audit?limit=50&offset=0&action=&q=&from=&to=` → `{items,total}`；`q` 对 action/target/ip 做转义 LIKE 搜索；`from/to` 为 ISO 时间；参数可选。
 
 ### 备份状态对象
@@ -684,7 +684,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 14. Bot 平台
 
-Workbench 不再提供 QQ 管理、Webhook、发布或 OpenCode Chat。这些路径不存在。生产 QQ 由 DSH 管理。告警投递只有 `webhook`。
+Workbench 不提供 QQ 管理、Webhook、发布或 OpenCode Chat。这些路径不存在。生产 QQ 由 DSH 管理。告警投递只有 `webhook`。
 
 ## 15. mcbot Bot 对接
 
@@ -713,61 +713,60 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
   "sayEnabled": true,
   "alertsEnabled": true,
   "eventsSupported": true,
-  "version": "1.0.9",
+  "version": "1.2.4",
   "contractVersion": 2,
   "lastPollAt": "2026-10-27T09:00:00.000Z",
   "lastSuccessAt": "2026-10-27T09:00:00.000Z",
   "error": null,
   "eventGap": null,
-  "status": { "version": "1.0.9", "contractVersion": 2, "uptimeSec": 123, "state": "connected", "minecraft": { "connected": true, "username": "lofii" }, "player": { "health": 20, "food": 20 }, "server": { "reachable": true, "online": 1, "max": 6 }, "task": { "enabled": true, "active": false, "name": null, "state": "idle", "pendingResume": null, "queue": [] }, "admin": { "rcon": true, "tps": { "one": 19.9, "five": 19.8, "fifteen": 19.7 } } },
+  "status": { "version": "1.2.4", "contractVersion": 2, "uptimeSec": 123, "state": "connected", "minecraft": { "connected": true, "username": "lofii" }, "player": { "health": 20, "food": 20 }, "server": { "reachable": true, "online": 1, "max": 6 }, "task": { "enabled": true, "active": false, "name": null, "state": "idle", "pendingResume": null, "queue": [] }, "admin": { "rcon": true, "tps": { "one": 19.9, "five": 19.8, "fifteen": 19.7 } } },
   "events": [ { "id": "036e732d-10", "type": "presence", "ts": "2026-10-27T08:59:58.000Z", "data": {} } ]
 }
 ```
 
 - `status`：上游 `/status` 快照（只接受契约 v2；示例里的版本号只说明字段形状），不含 Token/记忆正文；**不承诺固定字段**，前端对缺失嵌套段（`task`/`admin`/`ai`/`memory`/`minecraft`/`player`/`server`）安全读取并显示“—”，不会整页崩溃。
 - `stale`：连续 3 个轮询周期无成功或距上次成功超过 3 个周期；`reachable=false` 时保留最后一次成功快照。
-- `eventsSupported`：上游是否提供 `/events/recent`（旧版 404 时 false）；字段缺失/`undefined` 时前端**不把 undefined 当作支持**，回退为按 `contractVersion`（仅 number 有效）或已有事件数组判断；`contractVersion` 仅接受 number（否则显示“—”，不显示 `vundefined`）。
+- `eventsSupported`：上游是否提供 `/events/recent`（接口不可用时 false）；字段缺失/`undefined` 时前端**不把 undefined 当作支持**，回退为按 `contractVersion`（仅 number 有效）或已有事件数组判断；`contractVersion` 仅接受 number（否则显示“—”，不显示 `vundefined`）。
 - `events`：内存环最近事件，**newest-first，最多 100 条且序列化总字节 ≤512 KiB**；服务端重启清空；不写入 DB/日志。
 - `error`：稳定错误码（如 `mcbot_unavailable`/`mcbot_auth_failed`/`mcbot_cursor_failed`/`mcbot_upstream_error`），不是上游原文。**`reachable=true` 时 `error` 仍可能非空**（如 `/status` 成功但 `/events/recent` 失败或游标写库失败），前端必须展示可见警告，不得把“可达”等同于“事件/告警正常”。
 - `lastPollAt` 为最近一次轮询**尝试**时间，失败也会更新。`lastSuccessAt` 只在 `/healthz` 契约与 `/status` 核心字段通过校验后更新；从未成功为 `null`。面板过期文案用 `lastSuccessAt`，null 时显示“尚无成功轮询”。
-- `navigation` 可选。v1.0.7 起含 `lastFallbackReason`（最近一次兜底原因，≤160 字符）；无兜底或旧版缺字段时为 `null`。该短文本只给面板，不进入自主提示。
+- `navigation` 可选。包含 `lastFallbackReason`（最近一次兜底原因，≤160 字符）；无兜底或字段缺失时为 `null`。该短文本只给面板，不进入自主提示。
 - `eventGap`：同一 `bootId` 下，最早可用事件序号超过已确认游标加 1 时为 `{bootId,fromSeq,toSeq,discoveredAt}`。只记录一次，`discoveredAt` 保持首次发现时间，游标越过空洞后仍保留。写入独立 meta `mcbot.event_gap`。首次连接、`bootId` 变化和单纯网络失败不新记缺口；`bootId` 变化不清掉已有缺口。集成关闭时为 `null`。契约版本不变。
-- 游标/告警重试：`recordExternal` 写告警失败时游标停在上一条**已完整处理**的事件，下一轮重新处理失败事件。同一 `dedupe_key` 再次写入视为已处理，游标可以前进，且不再通知。`MCBOT_ALERTS_ENABLED=false` 时仍推进游标但不写告警。
+- 游标/告警重试：`recordExternal` 写告警失败时游标停在上一条**已完整处理**的事件，下一轮重新处理失败事件。同一 `dedupe_key` 再次写入视为已处理，游标可以前进，且不重复通知。`MCBOT_ALERTS_ENABLED=false` 时仍推进游标但不写告警。
 
-### GET /api/mcbot/autonomy（v1.0.2）
+可选 `autonomy` 字段经 `normalizeAutonomy` 归一化，缺失为 `null`；`status.autonomy` 与上游 `/status.autonomy` 一致。前端对未知 state 保留字符串并 label 兜底，不丢弃。
 
-需要会话 + GET 60/min 限流。返回 `{ "autonomy": { ... } }`；上游 mcbot 未启用自主模式时 `autonomy.enabled=false`。旧版 mcbot 无 `/autonomy` 时返回稳定上游错误（应用降级为无自主卡）。
+### GET /api/mcbot/autonomy
 
-应用不再提供 `POST /api/mcbot/autonomy/start`、`GET /api/mcbot/goals`、`POST /api/mcbot/goals`、`POST /api/mcbot/goals/:goalId/:action`、`POST /api/mcbot/tasks`、`POST /api/mcbot/tasks/resume`、`POST /api/mcbot/move`、`POST /api/mcbot/say` 和 `GET /api/mcbot/history`。这些路径不存在。游戏内口令仍可使用 mcbot 本机对应入口。
+需要会话 + GET 60/min 限流。返回 `{ "autonomy": { ... } }`；上游 mcbot 未启用自主模式时 `autonomy.enabled=false`。上游无 `/autonomy` 时返回稳定上游错误（应用不展示自主事实）。
 
-### POST /api/mcbot/autonomy/stop（v1.0.2）
+应用不提供 `POST /api/mcbot/autonomy/start`、`GET /api/mcbot/goals`、`POST /api/mcbot/goals`、`POST /api/mcbot/goals/:goalId/:action`、`POST /api/mcbot/tasks`、`POST /api/mcbot/tasks/resume`、`POST /api/mcbot/move`、`POST /api/mcbot/say` 和 `GET /api/mcbot/history`。这些路径不存在。游戏内口令仍可使用 mcbot 本机对应入口。
+
+### POST /api/mcbot/autonomy/stop
 
 需要会话 + CSRF + 控制 20/min。body 可为 `{}` 或 `{ "reason": "..." }`（≤200、无控制字符）；幂等。成功 **200** `{ "ok": true, "autonomy": { ... } }`。
 
-### GET /api/mcbot/presence（v1.0.5）
+### GET /api/mcbot/presence
 
 需要会话 + GET 60/min 限流；返回 `{ "presence": { "mode": "auto|always|off", "source": "default|env|persisted", "updatedAt": "...", "connected": true, "lastDecision": "..." } }`。
 
-### POST /api/mcbot/presence（v1.0.5）
+### POST /api/mcbot/presence
 
 需要会话 + CSRF + 控制 20/min；body `{ "mode": "auto|always|off" }`。成功 200 `{ "ok": true, "presence": ... }`；任务/自主会话运行中切 `off` 返回 `409 mcbot_presence_busy`；控制未启用 503；审计只记模式。
 
-### GET /api/mcbot/status（v1.0.2 增量）
-
-新增可选 `autonomy` 字段（`normalizeAutonomy` 归一化；旧版缺失为 `null`）；`status.autonomy` 与上游 `/status.autonomy` 一致。前端对未知 state 保留字符串并 label 兜底，不丢弃。
 ### POST /api/mcbot/tasks/stop
 
 需要会话 + CSRF，body 可为空。成功 `200 { "ok": true, ... }`（中断当前任务并清空队列；只有 pending 时取消 pending 与队列）。无任务 → `409 mcbot_no_active_task`。
 
-### GET /api/mcbot/chat（v1.2.3）
+### GET /api/mcbot/chat
 
 需要会话 + GET 60/min。关闭时 `503 mcbot_disabled`。返回 mcbot 内存中的 `{ "messages", "turn", "steps" }`。`turn` 为 `{ "id", "status": "pending|ok|error", "error" }` 或 `null`。每条消息含 `id`、`role`（`user` 或 `assistant`）、`text`、`at`，最多 40 条。`steps` 最多 80 条，种类只有 `user`（`text`）、`assistant`（`text`）、`tool`（`name` 与 `status: ok|error`）、`goal`（`action` 与最多 120 字的 `title`）、`todo`（`action` 与最多 120 字的 `title`）。工具名只来自现有 13 个 mcbot 工具。不返回工具参数、令牌、提示词或世界记忆正文。正文和步骤不进 SQLite，不进审计，重启即丢失。急停清空步骤。
 
-### POST /api/mcbot/chat（v1.2.3）
+### POST /api/mcbot/chat
 
 需要会话、CSRF、控制 Token，以及发言限流 10 次/分钟/IP。body `{ "message": "1..2000 字符" }`。允许 ASCII `/`，拒绝 C0 与 DEL（`400 invalid_request`）。关闭时 `503 mcbot_disabled`，无控制 Token 时 `503 mcbot_control_disabled`。成功 **200** `{ "ok": true, "turnId": "...", "status": "pending" }`。mcbot 本机接受为 202，应用返回该 JSON，不把公网请求挂到模型的长等待上。上一轮未完成时 **409** `mcbot_chat_busy`，消息「上一条对话还在处理，请稍后再发」。对话不可用时 **503** `mcbot_admin_unavailable`。审计 `mcbot.chat` 只记 `{ "chars" }`。同一管理员会话会复用，以便 goal 与 todo 保持；30 分钟空闲、急停或进程退出后删除。
 
-### POST /api/mcbot/emergency-stop（v1.2.3）
+### POST /api/mcbot/emergency-stop
 
 需要会话、CSRF、控制 Token，以及控制限流 20 次/分钟/IP。不调用模型。依次停止活动自主会话、打断目标并停止活动任务或待恢复、关闭管理员对话，并清空会话步骤。某一腿失败时继续其余腿。空闲算成功。返回 `{ "ok": true|false, "failures": ["task"|"autonomy"|"admin"] }`。审计 `mcbot.emergency_stop` 只记 `failures`。`POST /api/mcbot/tasks/stop` 与 `POST /api/mcbot/autonomy/stop` 仍单独可用，空闲任务停止仍是上游的 `409 mcbot_no_active_task`。
 
@@ -814,7 +813,7 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
 ```json
 {
   "status": "ok",
-  "version": "1.0.9",
+  "version": "1.2.4",
   "contractVersion": 2,
   "uptimeSec": 123,
   "state": "connected",
@@ -824,15 +823,15 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
 
 `state`：`idle` / `connecting` / `connected` / `backoff` / `cooldown`。动态模式下 `idle` 是正常状态（无玩家在线）。
 
-`contractVersion` 为只读契约版本（当前 `2`），与 `/status`、`/events/recent` 返回值一致；新增可选字段不升版本，破坏性变更才递增。契约 v2 把发言划入控制 Token。
+`contractVersion` 为只读契约版本（当前 `2`），与 `/status`、`/events/recent` 返回值一致；新增可选字段不升版本，破坏性变更才递增。契约 v2 的发言要求控制 Token。
 
 ## 3. GET /status
 
-需要读 Token。返回完整快照；v0.2 字段保持兼容，`task` 增加 `pendingResume`。
+需要读 Token。返回完整快照；task 包含 pendingResume 与当前任务状态。
 
 ```json
 {
-  "version": "1.0.9",
+  "version": "1.2.4",
   "contractVersion": 2,
   "uptimeSec": 123,
   "state": "connected",
@@ -992,7 +991,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 
 ```json
 {
-  "version": "1.0.9",
+  "version": "1.2.4",
   "bootId": "036e732d",
   "lastEventId": "036e732d-10",
   "resync": false,
@@ -1085,7 +1084,7 @@ Authorization: Bearer <HTTP_TOKEN>
 
 ## 7. 控制接口
 
-本机任务、移动、游戏发言和自主启动仍给游戏内口令与内部调用使用。Workbench 面板不再代理其中的开始、移动和发言。
+本机任务、移动、游戏发言和自主启动仍给游戏内口令与内部调用使用。Workbench 面板不代理其中的开始、移动和发言。
 
 ### 7.0 GET /admin/chat 与 POST /admin/chat
 
@@ -1128,7 +1127,7 @@ Authorization: Bearer <HTTP_TOKEN>
 - active 失败、防御撤退、恢复超时、`/task/stop` → 清空队列。
 - `GET /task.queue` 与 `/status.task.queue` 可见当前队列。
 - 队列与 active 一起写入 `task-state.json` v2；服务重启后 pending + queue 保留，resume 后继续。
-- v0.3 的 v1 task-state 文件自动迁移，新进度字段补 0。
+- task-state 支持 v1 格式，缺失的进度字段按 0 归一化。
 
 ### 7.3 POST /task/resume
 
@@ -1268,14 +1267,14 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 - 安全区扩至 `x111–239, z410–474`；挖矿/天然林只在安全区、保护盒外操作；天然林只 oak/spruce/birch 并补种；挖矿只煤/铁/铜裸露矿、不挖隧道。
 - 睡觉用 Vote2Sleep（min 1、40%）；非夜晚/无床/vote 失败正常结束。
 - 巡逻四角安全区边界（内缩 4 格），最多 15 分钟，不主动追怪。
-- v0.5 仍默认保留游戏内/AI 意图直接触发；`HTTP_ONLY_HIGH_RISK=true` 可关闭高风险触发。
+- 游戏内/AI 意图默认可触发受控动作；`HTTP_ONLY_HIGH_RISK=true` 可关闭高风险触发。
 - 任务期间即使 Antifield 下线，Lofii 保持在线；任务结束恢复动态下线。
 
 ## 12. 自主会话
 
-自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.2.4（`/opt/mcbot/releases/20261116T135658Z`），`AUTONOMY_ENABLED=true`。主人通过游戏聊天，或在 Minecraft Bot 页对话后由模型决定是否启动。应用面板不再直接启动自主会话。生产由 DSH 插件经私有 Unix socket 调用受控工具，mcbot 策略层校验并执行。配置该 socket 后 `/autonomy/mcp` 返回 404。OpenCode 原生 MCP 只属于已退役的回滚路径。**不要为普通面板/第三方开放 `/autonomy/mcp` 或该 socket**。
+自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.2.4（`/opt/mcbot/releases/20261116T135658Z`），`AUTONOMY_ENABLED=true`。主人通过游戏聊天，或在 Minecraft Bot 页对话后由模型决定是否启动。应用面板不直接启动自主会话。生产由 DSH 插件经私有 Unix socket 调用受控工具，mcbot 策略层校验并执行。配置该 socket 后 `/autonomy/mcp` 返回 404。在线自主工具不通过 OpenCode 或公开 MCP。**不要为普通面板/第三方开放 `/autonomy/mcp` 或该 socket**。
 
-v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱动重决策；应用对缺失字段/工具保持兼容。
+自主工具提供有界环境观察、只读容器、进食/装备与事件驱动重决策；可选字段缺失按契约安全降级。
 
 ### 12.1 GET /autonomy
 
@@ -1285,7 +1284,7 @@ v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱
 {"autonomy":{"enabled":true,"active":true,"state":"running","goal":"准备食物","startedAt":"...","elapsedSec":12,"remainingSec":1188,"toolCalls":2,"maxToolCalls":12,"lastAction":"start_task","lastReason":"目标需要鱼","lastError":null,"lastDecisionAt":"...","decisionCycles":0,"lastEvent":null,"lastObservedAt":"...","blockers":[]}}
 ```
 
-`/status` 同时包含同一 `autonomy` 对象（可选字段；旧版 mcbot 缺失时应用按 null 降级；v1.0.3 新增字段为追加）。
+`/status` 同时包含同一 `autonomy` 对象（可选字段，缺失时应用按 null 降级）。
 
 ### 12.2 POST /autonomy/start
 
@@ -1300,7 +1299,7 @@ v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱
 
 ### 12.3 POST /autonomy/stop
 
-需要控制 Token。body 可为空或 `{ "reason": "..." }`（≤200 字符、无控制字符）；幂等。返回 202 `{ "ok": true, "autonomy": {...} }`。会中断 OpenCode 会话、停止活动任务并清理 MCP/session；v1.0.3 同时关闭容器窗口并停止自主寻路。
+需要控制 Token。body 可为空或 `{ "reason": "..." }`（≤200 字符、无控制字符）；幂等。返回 202 `{ "ok": true, "autonomy": {...} }`。先撤销工具调用权，再取消 DSH 模型回合、停止活动任务/自主寻路并关闭容器，等待会话与子进程收口。
 
 ### 12.4 原生 MCP 工具
 
@@ -1313,16 +1312,16 @@ v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱
 | `go_home` | `run_id, reason` | 无 active/pending 任务 |
 | `deposit` | `run_id, reason` | 无 active/pending 任务 |
 | `task_status` | `run_id` | 只读 |
-| `observe` | `run_id` | v1.0.3；只读环境快照 + 半径内 allowlist 方块/容器；计入工具预算 |
-| `inspect_chest` | `run_id, target, reason` | v1.0.3；target 为 `x,y,z`；仅扫描半径内、allowlist 容器、无 active/queue/pending；短距寻路不传送、不破块；只读不取物并立即关闭 |
-| `eat` | `run_id, item, reason` | v1.0.3；item 必须是背包内食物；仅 `food < AUTONOMY_EAT_BELOW` 且空闲 |
-| `equip` | `run_id, item, reason` | v1.0.3；item 必须是背包内护甲/工具/武器；仅空闲；目标槽位由类型决定 |
+| `observe` | `run_id` | 只读环境快照 + 半径内 allowlist 方块/容器；计入工具预算 |
+| `inspect_chest` | `run_id, target, reason` | target 为 `x,y,z`；仅扫描半径内、allowlist 容器、无 active/queue/pending；短距寻路不传送、不破块；只读不取物并立即关闭 |
+| `eat` | `run_id, item, reason` | item 必须是背包内食物；仅 `food < AUTONOMY_EAT_BELOW` 且空闲 |
+| `equip` | `run_id, item, reason` | item 必须是背包内护甲/工具/武器；仅空闲；目标槽位由类型决定 |
 | `finish` | `run_id, summary` | 结束会话；会话结束会清理活动任务 |
 | `memory_read` | `run_id`，可选 `category`、`key` | 读取世界记忆正文。分类仅限 `place`、`resource`、`food`、`danger`、`route`、`note`。给出 `key` 时必须同时给出 `category`。不启动任务，计入工具预算 |
 | `memory_write` | `run_id, category, key, text, reason` | 按分类和键写入或覆盖。键 1–64，正文 1–240，均不含控制字符。最多 200 条；已有键可更新，满额后拒绝新键。不启动任务 |
 | `memory_forget` | `run_id, category, key, reason` | 删除一条记忆。不存在则返回错误。不启动任务 |
 
-每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码、容器类型/摘要计数，不记录 prompt/Token/完整容器内容。记忆工具只记分类和键，不记正文。世界记忆与聊天记忆分开，按当前维度选取 `world-memory.json`／`world-memory.nether.json`／`world-memory.end.json`（均 0600，每文件最多 200 条），历史主世界 version 1 格式兼容。提示词只带当前维度、分类计数和最近 8 个键，`observe` 返回半径内方块和容器。挖矿／天然林可记录已扫描并复核的 resource 坐标；到场继续复核，失效时回退扫描。工具表仍是上面 13 个，不新增环境变量、参数或跨维度移动。
+每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码、容器类型/摘要计数，不记录 prompt/Token/完整容器内容。记忆工具只记分类和键，不记正文。世界记忆与聊天记忆分开，按当前维度选取 `world-memory.json`／`world-memory.nether.json`／`world-memory.end.json`（均 0600，每文件最多 200 条），支持主世界 version 1 数据格式。提示词只带当前维度、分类计数和最近 8 个键，`observe` 返回半径内方块和容器。挖矿／天然林可记录已扫描并复核的 resource 坐标；到场继续复核，失效时回退扫描。工具表仍是上面 13 个，不新增环境变量、参数或跨维度移动。
 
 断线时无法确认当前维度，记忆工具返回 `memory_dimension_unavailable`，不会回退读取主世界记录；未知维度返回 `memory_dimension_invalid`。
 
@@ -1338,20 +1337,20 @@ v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱
 
 **持久化与安全**：`presence.json` 与 `goals.db` 位于 `/var/lib/mcbot`，权限 `0640`，不保存 Token/聊天正文；目标重启后为 `paused`，必须主人显式恢复；`path` 失败最多安全重试一次，生存中断恢复且无威胁后最多自动恢复一次。
 
-**v1.0.5 环境变量**：`PRESENCE_MODE`、`PRESENCE_FILE`、`AUTO_SURVIVAL`、`AUTO_SURVIVAL_INTERVAL_MS`、`AUTO_EAT_BELOW`、`AUTO_RESTOCK`、`AUTO_RESTOCK_INTERVAL_MS`、`GOALS_FILE`、`GOALS_MAX_STEPS`；`AUTONOMY_TASKS` 默认追加 `clearing`。
+**在线模式与生存环境变量**：`PRESENCE_MODE`、`PRESENCE_FILE`、`AUTO_SURVIVAL`、`AUTO_SURVIVAL_INTERVAL_MS`、`AUTO_EAT_BELOW`、`AUTO_RESTOCK`、`AUTO_RESTOCK_INTERVAL_MS`、`GOALS_FILE`、`GOALS_MAX_STEPS`；`AUTONOMY_TASKS` 默认白名单包含 `clearing`。
 
 ### 12.9 确定性导航与受控路点
 
-`/status` 新增可选 `navigation`：`state ∈ idle|planning|executing|fallback`、`source ∈ pathfinder|planner|ai|teleport|stopped|null`、`attempts`、`lastFailureKind`、`lastFallback ∈ teleport|stopped|null`、`aiUsed`、`updatedAt`。旧版缺失时应用隐藏该字段。
+`/status` 包含可选 `navigation`：`state ∈ idle|planning|executing|fallback`、`source ∈ pathfinder|planner|ai|teleport|stopped|null`、`attempts`、`lastFailureKind`、`lastFallback ∈ teleport|stopped|null`、`aiUsed`、`updatedAt`。字段缺失时应用隐藏该项。
 
 - 导航顺序：pathfinder 快速路径 → 确定性 A*（只读现有方块，支持台阶/楼梯/半砖与 1 格抬高、2 格下落）→ 受控执行 → AI 路点建议（默认 OpenCode 配置可用时启用）→ 安全锚点/传送/停止。
-- 不挖掘、不放置、不跑酷、不跨维度。v1.0.6 当时把任务、目标和自主限制在安全区矩形内。v1.0.10 起行走不再受该矩形限制，见下一节。玩家实体未加载或跨维度时仍拒绝按名字传送。
+- 不挖掘、不放置、不跑酷、不跨维度；行走不受安全区矩形约束，扫描和任务继续使用各自边界。玩家实体未加载或跨维度时拒绝按名字传送。
 - 安全传送必须是最后手段，同时写 `movement` 事件与 `navigation.lastFallback='teleport'`，并通过聊天提示。
 - AI 只在确定性失败后单次请求，超时/非法/越界建议一律丢弃；AI 不直接控制移动。
 
-**v1.0.6 环境变量**：`PATH_PLANNER_ENABLED`、`PATH_PLANNER_MAX_NODES`、`PATH_PLANNER_TIMEOUT_MS`、`PATH_MAX_REPLANS`、`PATH_TELEPORT_FALLBACK`、`PATH_OUTSIDE_SAFE_RADIUS`、`PATH_AI_ENABLED`、`PATH_AI_TIMEOUT_MS`、`PATH_AI_COOLDOWN_MS`。
+**导航环境变量**：`PATH_PLANNER_ENABLED`、`PATH_PLANNER_MAX_NODES`、`PATH_PLANNER_TIMEOUT_MS`、`PATH_MAX_REPLANS`、`PATH_TELEPORT_FALLBACK`、`PATH_OUTSIDE_SAFE_RADIUS`、`PATH_AI_ENABLED`、`PATH_AI_TIMEOUT_MS`、`PATH_AI_COOLDOWN_MS`。
 
-**v1.0.10 活动范围**：行走不再受 `SAFE_*` 限制。`SCAN_RADIUS` 默认 32、最大 64。`CRITICAL_HEALTH` 默认 6，设为 0 关闭濒危回基地。寻路失败不再把目标点当作传送落点；`PATH_TELEPORT_FALLBACK` 仍被读取，但不触发任意点传送。
+**活动范围**：行走不受 `SAFE_*` 限制。`SCAN_RADIUS` 默认 32、最大 64。`CRITICAL_HEALTH` 默认 6，设为 0 关闭濒危回基地。寻路失败不把目标点当作传送落点；`PATH_TELEPORT_FALLBACK` 仍被读取，但不触发任意点传送。
 
 ### 12.5 事件驱动重决策
 
@@ -1384,7 +1383,7 @@ AUTONOMY_TASKS=fishing,farming,woodcutting,mining,forest,sleep,patrol,guard,esco
 
 ### 12.7 `autonomy` 事件
 
-SSE `/events` 与 `/events/recent` 新增 `type:"autonomy"`，data 形如 `{action,state,reason,error}`；应用用于展示自主状态变化。该事件是追加字段。当前契约为 2，发言使用控制 Token。
+SSE `/events` 与 `/events/recent` 包含 `type:"autonomy"`，data 形如 `{action,state,reason,error}`；应用用于展示自主状态变化。事件按统一 envelope 返回。当前契约为 2，发言使用控制 Token。
 ## 11. 对接建议
 
 - 面板后端用 `fetch` + `Authorization` 消费 `/events`，不要用浏览器 EventSource 直连。
@@ -1392,5 +1391,5 @@ SSE `/events` 与 `/events/recent` 新增 `type:"autonomy"`，data 形如 `{acti
 - 不便长期持有 SSE 时，可低频轮询 `GET /events/recent`（默认 50 条，可带 `limit`），由后端按 `bootId`/`lastEventId` 去重；`bootId` 变化时重新拉 `/status` 与 `/task`。`/healthz.contractVersion` 可用于契约兼容性检查。
 - 控制调用只从面板后端发出，控制 Token 放后端 env；不要下发到浏览器。
 - `/admin/status`、`/history` 使用读 Token；不可写。
-- 告警建议后端按 `type` 去重/展示，并自行决定是否通知；本版没有 webhook。
-- 本版不提供 `/metrics`、webhook、审计查询接口、跨维度/多 Bot/语音/桥接。
+- 告警建议后端按 `type` 去重/展示，并自行决定是否通知；本机契约不提供 webhook。
+- 本机契约不提供 `/metrics`、webhook、审计查询接口、跨维度/多 Bot/语音/桥接。

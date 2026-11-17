@@ -1,295 +1,90 @@
 # 安全说明
 
-管理员对话是 Minecraft Bot 面板的行动入口。审计只记字符数。正文、提示词和工具参数不进 SQLite，也不进审计。急停不经过模型。应用上退役的写入口在会话与 CSRF 之后返回 409，不调用上游。mcbot 本机游戏发言仍拒绝 ASCII `/` 与 C0。
-
-DSH Web 插件页对已登录管理员开放。路径是 `/api/pluginManager/` 与 `/api/pluginInventory/`。没有新增 Access bypass。模型侧 `tool-plugin-manager` 保持关闭。会话上传、设置写入和凭据写入仍拒绝。`/autonomy/mcp` 不对外。插件页列出 QQ 与 Minecraft Bot 的只显示条目。2026-11-17 已完成一次安装和卸载。
-
-整包 age 加密已开启。私钥有两份离线副本。应用和 Pi 不读取私钥。异地只传密文和校验旁文件。
-
-固定维护入口只开放备份、密钥包、固定归档删除、固定状态读写和只读 smoke。无限免密 sudo 已撤销。SSH 配置不变。
-
-设备绑定会话不能降级成应用 Cookie。nonce 覆盖完整的有效秒。严格 HTTP 模式拒绝游戏内自主启动。原生 IPC 同时检查 main 标识和本地来源。AI 只导航固定的 AI 与 Access 来源。
-
-Web、QQ 和 mcbot Agent 使用独立账号、凭据和状态目录。DSH Web 只监听 loopback。Workbench 通过私有 socket 交换启动令牌。应用会话失效后关闭旧 WebSocket。
+本文件描述当前信任边界、控制与残余风险。当前应用 schema 22，mcbot 契约 v2，在线 Agent 使用 DSH；离线回滚运行时：OpenCode v2.2.5。运行指针与验证缺口见 [ACCEPTANCE](ACCEPTANCE.md)，操作见 [DEPLOY](DEPLOY.md)。
 
 ## 1. 资产与信任边界
 
-- **公网入口**：`app.example.com`、`ai.example.com` 经 Cloudflare Tunnel（名称 `pi`，出站）；Cloudflare 终止 TLS，可见明文。
-- **Pi 本机**：应用只监听 `127.0.0.1:3000`；cloudflared 出站连接；DSH Web `127.0.0.1:3080`；nginx/certbot 不作为监控项。
-- **现有服务**：Minecraft（Paper 26.1.2，在线模式关闭、白名单开启）、SakuraFRP、RDP/桌面、opencode。
-- **秘密**：`/etc/antifieldcloud/env`（RCON/opencode 密码、`CHATBOT_SECRET_KEY`、`MCBOT_READ_TOKEN`/`MCBOT_CONTROL_TOKEN`、APP_VERSION）、SQLite（TOTP secret、会话哈希、恢复码哈希、
-  Bot 凭据密文）、备份归档（默认明文含 TOTP/会话；开启整包加密后为 age 密文）、密钥包 age 私钥、**备份整包加密独立 age 私钥**（离线 ≥2 份，Pi 只有公钥）。
-- **mcbot Token（v0.8.0 引入，v0.8.1 加固）**：`MCBOT_READ_TOKEN`（`/status`、`/events/recent`、`/history`）与 `MCBOT_CONTROL_TOKEN`（`/task/*`、`/move`、`/say`；v0.8.1 起游戏内聊天必须控制 Token）分离，来自独立服务 mcbot 的 `/etc/mcbot/env`（root:mcbot 0640），由 root 执行 `scripts/sync-mcbot-tokens.sh` 同步到应用 env（v0.8.1 改为同目录临时文件 + `mv` 原子替换）；应用/文档/日志/前端都不持有或回显 Token；控制 Token 为空即只读（含禁用 `/say`）。应用不读取/复制 mcbot 的 RCON/OpenCode 密钥。
-- **Bot 凭据**：QQ 官方 Bot AppSecret 由 `CHATBOT_SECRET_KEY`（AES-256-GCM）加密后落库；
-  `CHATBOT_SECRET_KEY` 只存在于 env 与加密备份中，丢失后已存 AppSecret 不可解密（只能重新录入）。
-- **数据与状态**：`/var/lib/antifieldcloud`（DB/files/backups/world-backups/secrets/bot-memory）、只读状态文件
-  `{world-backup,world-pull,drill,backup-offsite}-status.json`（0644，由 root/PC 脚本写入，应用只读，读取有 64 KiB 上限）。`bot-memory/` 为 Bot 长期记忆镜像（0700/0600，不对外）。
+| 资产 | 保存位置与暴露范围 |
+|---|---|
+| 密码、TOTP、恢复码、会话 | Workbench 受限 SQLite；密码/恢复码/token 按契约哈希，TOTP secret 需要受保护备份 |
+| 设备私钥 | 原生受控凭据存储；服务端仅保存公钥与吊销状态，不回传私钥 |
+| 文件、附件、笔记、分享 | DB id 与 origin 管理；公开分享只暴露授权内容 |
+| DSH 模型/QQ/Web Cookie 凭据 | 隔离服务的受限文件/LoadCredential，不由 Workbench QQ 管线保存 |
+| mcbot 读/控制 Token | 独立受限 env，由固定脚本同步；不进入浏览器/API 响应/日志 |
+| RCON 密码 | Minecraft 受限配置；应用 API 仅固定查询与白名单管理 |
+| age 私钥与 OAuth/rclone 凭据 | 私钥离线至少两份；Pi 只持公钥，PC OAuth 配置按 ACL 限制 |
 
-## 2. 威胁模型
+Cloudflare 终止公网 TLS，边缘可见明文。Access 保护页面；原生客户端 API 放行到应用后仍执行密码/TOTP/设备签名等应用认证。loopback、Unix socket、服务账号和目录权限共同构成内部服务边界。
 
-| 威胁 | 影响 | 控制 |
-|---|---|---|
-| 互联网暴力破解登录 | 账号接管 | scrypt、TOTP、每 IP 5 次/15 分钟限流、全局 60 次/小时（loopback 免占）、统一错误、300 ms 失败延迟 |
-| 会话劫持/CSRF | 未授权文件/白名单操作 | HttpOnly+Secure+SameSite=Lax Cookie、CSRF 双提交、Origin 校验、改密失效其它会话 |
-| 跨站借用 opencode 会话 | 以用户身份操作 AI 工作区 | ai 主机 HTTP/WS 均校验 `Origin`（仅 app/ai 正式 origin），拒绝 403 + 审计 |
-| 路径穿越/任意文件读取 | 读取/覆盖 Pi 文件 | 只接受 DB id；物理路径由 id 派生；文件名清洗；无路径参数 |
-| 恶意预览内容 XSS | 窃取会话 | 仅栅格图片/PDF/白名单音视频内联；文本走 JSON 由 React 转义；SVG/HTML/XML 强制下载；CSP `media-src 'self'` |
-| 上传耗尽磁盘 | 服务不可用 | 10 GiB 配额（含回收站与笔记附件）、单请求 100 MiB/20 文件、分片单文件 5 GiB/8 MiB 块；写前/流中/事务内检查、507；分片会话 24h 过期、3 并发/用户 |
-| 笔记附件越权展示 | 隐私附件出现在云盘/搜索/分享 | `files.origin='note'` 隔离：用户列表/搜索/回收站/分享只接受 `origin='user'`；附件仅经笔记接口管理 |
-| 多文件分享越权枚举 | 拿到不属于该分享的文件 | 公开 `items/:itemId/content` 校验条目归属（否则 404 `share_item_not_found`）；未解锁不返回文件清单 |
-| opencode 端口被直接访问 | AI 工作区被滥用 | 端口仅 loopback；ai 主机会话校验；服务端注入 Basic；不向浏览器下发密钥 |
-| RCON 被滥用 | 白名单/服务器被改 | 应用 API 不提供任意命令；仅白名单增删与只读状态；世界备份 root 脚本只发固定 save 命令；nftables 阻断非 loopback |
-| 备份泄露 | 文件与 TOTP 泄露 | 两阶段 pending/ack、归档 0640、PC 目录 ACL（当前用户+Administrators+SYSTEM）、`.sha256` 旁文件；密钥包 age 加密；可选整包 age 加密（默认关闭，含 TOTP/会话的归档落地即密文）；未加密归档仍含 TOTP，须按敏感数据保护 |
-| 备份加密密钥/元数据泄露 | 加密失败或无法恢复 | Pi 只存公钥（root、组/其他不可写、格式校验）；私钥离线 ≥2 份、应用/CLI 不读取；明文哈希/大小放归档外 sidecar（避免自引用）；失败关闭不降级明文；启用前强制私钥解密演练 |
-| 加密归档 Web 误操作 | 应用尝试解密/恢复导致失败或泄露 | Web 不持私钥；verify/import/entries/plan/execute 对 `.age` 在名称校验前返回 409 `archive_encrypted`；恢复目标自动跳过；仅在 PC 用离线私钥解密/校验/恢复 |
-| 异地副本误传明文/删除链 | 明文外泄或恢复链断裂 | 只上传 `.age`（明文计 `plaintextSkipped` 拒绝）；链感知保留且绝不删最新 full；上传后 `--checksum`/远端大小校验；状态只含别名/计数/时间 |
-| AI 主机未认证洪泛/写放大 | 审计表/磁盘被刷、服务拖慢 | `/__af/sso/*` 鉴权前按 IP 60/min、匿名请求 120/min 限流；`auth.sso_ai`/`opencode_origin_rejected` 审计按 action+IP 60s 去重（容量 4096）；`ai` 主机已有 Access/WAF 前置 |
-| 备份归档被恶意替换/注入 | 文件覆盖/路径穿越/压缩炸弹 | Web 导入需 TOTP；文件名白名单、SHA-256、tar 路径/链接/设备/条目大小校验；快照行数与数据库快照大小上限；恢复只到新目录、不覆盖；整库恢复仅离线 root 手工流程 |
-| 备份解包耗尽磁盘/内存 | 服务不可用 | staging 上限 2 GiB 且 ≤可用空间 20%；恢复按选择字节 ×2 预检；快照最多 10 万行、DB 快照 ≤256 MiB；归档浏览 30 次/分钟 |
-| 世界备份期间丢数据 | 世界存档损坏 | `save-on` 放 finally 并重试；gzip 完整性 + SHA 校验后才原子改名；保留 4 份；失败状态 JSON 可见 |
-| 物理 SD 丢失 | 数据泄露/丢失 | 无全盘加密（当前限制）；建议后续 LUKS/加密备份；应用归档 + 世界备份到 PC |
-| 校园网扫描 | RCON/Minecraft 暴露 | nftables 默认拒绝入站；25575 仅 loopback；25565 仅直连/校园网段；SSH 仅公钥 |
-| Bot Webhook 伪造/重放 | 以 Bot 身份执行命令或发布 | QQ Ed25519 签名（op=0）+ 时间戳 ±300 秒、op=13 回调地址校验；事件 ID 去重；IP/Bot 双限流；未启用 404 |
-| Bot 命令越权 | 任意成员在已加入频道执行只读命令或探测状态 | 目标 `allow_commands` + 显式 user 白名单双重校验；群聊/频道不执行斜杠命令；命令只读；未授权不执行并审计 `chatbot.command.denied`/`chatbot.command.disabled` |
-| Chat 越权/滥用 | 非授权成员消耗 AI、诱导写操作或泄露内部信息 | QQ C2C 私聊开放 Chat（接触面由 QQ 平台“谁可添加 Bot”控制）；群/频道仍要求目标 `allow_chat` 且仅 @Bot 事件；非管理员不能执行命令；Chat/每分钟 + 共用每小时 AI 限流；Chat 只读、任务/对话提示均追加不可覆盖安全边界；记忆不暴露 API/UI |
-| 长期记忆/提示注入 | 用户偏好/事实被读出，或被记忆/自定义提示中的内容劫持 | 结构化条目仅服务端读取且 key/value 不出 API/UI；抽取结果敏感过滤（密钥/URL/内部路径跳过）；固定安全边界声明记忆为背景资料、不是指令；`/memory off` 停止抽取与注入；容量/TTL 上限 |
-| 目标辨识误操作 | 向错误会话发送测试消息或改错名称 | “测试”只向管理员显式选择的目标发送固定测试文本（20 次/小时限流）；名称编辑仅写 `label`，不改变 openid/权限/投递目标；操作需登录 + CSRF |
-| 角色卡注入/越权 | 用户用角色设定改写系统指令、读他人卡或绕过只读边界 | `/role` 仅私聊、每 Bot×用户一张；名字≤32、设定≤1000；拒绝 `[系统提示]/[安全边界]/[长期记忆]/[用户消息]/[模式：]` 与控制字符；固定安全边界最后追加；群聊使用管理员配置的共享卡，群内 `/role` 不执行；私聊卡正文不在 API/UI 暴露；群聊卡正文仅管理员编辑 Modal 可读写，不记录正文到审计 |
-| Bot 发布数据外发 | 登录会话被盗后把云端内容发到 QQ | 发布需 TOTP 再认证；仅文本、目标限频道/群组；发布/测试限流；审计；partial 不自动重试 |
-| Bot AppSecret 泄露 | QQ Bot 被冒用/发消息 | AppSecret 只写不读、AES-256-GCM 落库；日志/错误/审计脱敏；前端不回显；`CHATBOT_SECRET_KEY` 离线备份 |
-| QQ 入站图片外发/隐私 | 图片被模型 provider 看到或落盘 | 默认开启但仅 QQ 固定域名后缀下载、image mime/大小限制、内存不落盘、失败降级；README/SECURITY 明示图片会交给模型 provider；可 env 关闭 |
-| Bot 平台回调洪泛 | CPU/DB/限流资源耗尽 | Webhook 未验签 120/min/Bot、已验签 300/min/Bot（验签后才扣、分桶）、IP 120/min；命令 120/min/用户；拒绝/限流审计按窗口聚合；事件保留 7 天并定期清理；队列重试上限/死信 |
-| AI 工具隔离降级 | 以默认工具权限运行 Chat，模型可越权调用工具 | 降级 fail-closed——启用发送工具且隔离不可用时拒绝新 Chat（503/固定提示/诊断事件），10 分钟重试窗口，上游恢复自动恢复；不以默认权限继续 |
-| mcbot Token 泄露/被引到外部主机 | 攻击者可读状态/控制 mcbot 或伪造告警 | 读/控制 Token 分离；上游仅 loopback + http(s) 且 `MCBOT_URL` 仅根地址（拒绝 userinfo/路径/查询/片段）；客户端 `redirect:'error'`；Token 只在服务端 env/内存，不下发浏览器/日志/API；错误文本大小写不敏感地移除 URL/Token；同步脚本仅 root、不回显、同目录 `mv` 原子替换 |
-| mcbot 控制面被滥用 | 未授权启停任务/移动/游戏内发言/命令注入 | 全部接口需登录；写操作（含 `/say`）CSRF + 控制 Token + 每 IP 限流（控制 20/min、`/say` 10/min）；服务端任务/移动/长度白名单；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符（防切行后的命令注入）；`taskId` 拒绝空白/控制字符；UI 对开始/停止/恢复/发送二次确认；审计只记动作与元数据；未配置控制 Token 即只读 |
-| mcbot 聊天/事件隐私 | 聊天正文落库或进入日志/浏览器 | 事件/聊天仅服务端内存缓存（≤100 条且序列化 ≤512 KiB），不落库、不写日志/审计正文；`/say` 审计只记字符数；事件 `data` 视为不可信 unknown，UI 只读白名单字段（own-property 查表）并纯文本渲染，不展示 Token/URL/内部路径 |
-| mcbot 告警污染/重放 | 重复历史事件或伪造活跃告警 | 上游 alert 映射为 `status='event'`，不写 `alert_state`、不参与 firing/resolved；`meta.mcbot.event_cursor`+`bootId` 基线防止重放；details 深度/键数/数组/字符串清洗；`MCBOT_ALERTS_ENABLED=false` 可只推进游标不写 |
-| 供应链/依赖 | 代码执行 | 运行时依赖少；`npm ci --ignore-scripts`；不做服务端构建；CI `npm audit --omit=dev`、gitleaks、Dependabot |
+## 2. 威胁与控制
 
-## 3. 已实现控制
+| 威胁 | 当前控制 |
+|---|---|
+| 暴力登录/凭据重放 | scrypt、TOTP step 去重、恢复码一次性使用、分层限流和统一失败响应 |
+| 会话劫持/CSRF/设备重放 | Secure/HttpOnly/SameSite Cookie、CSRF、Origin、Ed25519 签名与 nonce、吊销和会话失效 |
+| 路径穿越/越权预览 | DB id、文件名与 origin 校验、不可变存储、预览白名单和 CSP |
+| 上传/归档耗尽空间 | 配额、流式上限、并发和预留、磁盘预检、超时与事务终态 |
+| 分享越权/超次数下载 | item 归属验证、解锁会话、原子名额预占、多端点共用计数 |
+| SSRF/内部凭据泄露 | 固定 loopback 上游、redirect:error、Host/Origin、服务端覆盖 Authorization、响应流上限和脱敏 |
+| 模型越权/迟到动作 | 最小工具策略、主人显式指令、短期运行凭据、执行 ID、安全阈值、急停先撤权及清理后再启动 |
+| 备份泄露/不可恢复 | age、公钥权限、离线多份私钥、完整性/链校验、异地密文与隔离恢复 |
+| 告警污染/重复投递 | status=event 与条件状态隔离、游标、dedupe_key、持久化投递箱和接收端幂等 |
 
-### 网络
+## 3. 认证、HTTP 与原生客户端
 
-- 应用绑定 127.0.0.1；公网唯一入口为 Cloudflare Tunnel（出站）。
-- nftables（`deploy/nftables.conf`，模板使用 TEST-NET 占位，安装前按 `.local/DEPLOYMENT.md` 替换为实际直连/校园网段）：默认 drop 入站；loopback/established/ICMP 放行；
-  **22 仅 `192.0.2.0/24` + `198.51.100.0/24`（示例占位），且 `ct state new` 限速 20/minute burst 40**；
-  **25565 仅同网段**（IPv6 仅 `fe80::/10`）；25575 显式 drop；DHCP 续租仅 `eth0`/`wlan0`；80 不再放行。
-- 不在 Pi 上开 3000/4096 的任何外部监听；credentialed 服务（RCON/opencode）仅 loopback。
-- SSH：`/etc/ssh/sshd_config.d/00-` drop-in 仅公钥（密码/键盘交互关闭，`PermitRootLogin no`），旧配置归档在 `/var/backups/antifieldcloud/`；
-  `fail2ban` 启用 `sshd` jail（nftables 后端、24h ban），`nft -f`/重启 nftables 后需重启 fail2ban 恢复封禁 set。
+- 密码 scrypt 参数 N=2^15、r=8、p=1，随机盐与恒定时间比较。TOTP、恢复码、挑战过期和会话轮换按 API 执行。
+- 会话 Cookie 为 host-only、HttpOnly、Secure、SameSite=Lax；仅 loopback HTTP 可例外。app/ai 使用各自的 Cookie，不能依赖父域共享会话。
+- Cookie 写操作校验 CSRF；app/loopback 是 app 写请求的可信 Origin，AI Origin 不在其中。公开分享解锁按自己的 Origin/限流规则处理。
+- 合法 Bearer 必须同时通过设备签名，覆盖方法、路径/查询、原始体、时间戳和 nonce；验证后豁免 CSRF。非法 Authorization 不回退 Cookie。同一公钥不能绕过吊销重新登记。
+- 设备签名体上限 9 MiB；原生允许来源为固定 Tauri Origin，不反射任意 Origin。文件传输流式处理，不把会话令牌放入下载链接。
+- Windows 隔离 AI 窗口与 Android 独立 Activity/WebView 只接受固定 AI 来源和 SSO 路径；远端页面不获得设备命令、文件或签名权限。换票 User-Agent 保持一致，登出关闭旧连接。
+- 对 UI 和事件字段按 unknown 验证、纯文本渲染；SVG/HTML/XML 强制下载，文本预览≤1 MiB，Markdown/HTML 按当前白名单净化。
+- 安全头包括 CSP、禁止嵌入、nosniff 和 Referrer Policy；错误返回稳定业务码，不带堆栈、内部 URL、Token 或正文。
 
-### 认证
+## 4. 文件、上传与分享
 
-- scrypt（N=2^15, r=8, p=1，64 B key，16 B 随机盐），恒定时间比较；用户不存在时执行等价哈希。
-- TOTP：RFC 6238 SHA-1/6 位/30 秒，±1 步，记录 `totp_last_step` 防重放；恢复码 10 个，一次性，SHA-256 存储。
-- 挑战 5 分钟一次性；会话 7 天；Cookie 属性按协议严格设置；密码最少 12 字符；改密注销其它会话。
-- Cookie 作用域：app 主机 host-only `af_session`/`af_csrf`（不设 `Domain`，HttpOnly/Secure/SameSite=Lax）；ai 主机通过 app 签发的 60 秒一次性 ticket（`/api/auth/ai-ticket` → `/__af/sso/<ticket>`）获得自己的 host-only `af_session`，不使用父域共享 Cookie；app 写请求与公开 unlock 的受信 Origin 只保留 appOrigin（+ loopback 开发例外）。登录/退出响应及每次 `/api/auth/me` 都会清理旧父域 Cookie。
-- 设备会话：客户端登记 Ed25519 公钥。后续请求带 `Authorization: Bearer` 与设备头，签名覆盖方法、路径、查询、原始请求体、时间戳和 nonce。签名通过后不再要求 CSRF。`Authorization` 形状不合法时不回退到 Cookie。签名、会话 token 与私钥不写入日志或审计。同一账号最多 10 台未吊销设备；吊销后保留公钥行。在线只看 90 秒内的显式心跳。带签名的请求体上限 9 MiB。跨源只放行 `http://tauri.localhost`、`https://tauri.localhost` 与 `tauri://localhost`，不反射其它 Origin，响应不带凭据。客户端与 schema 21 绑定。退回 v1.1.1 必须恢复迁移前快照、旧 release、Access 策略与公网界面。`PUBLIC_APP_SHELL` 默认开启；只恢复公网界面时改回 true 并重启，不改 schema。
-- 限流：登录每 IP 5 次/15 分钟、全局 60 次/小时（loopback 不占全局桶）；TOTP 全局 120 次/小时；
-  再认证每 IP 5 次/15 分钟 + 全局 30 次/小时 + TOTP 共享桶；失败审计与恒定延迟。
-- 未认证用户名 ≤64 字符（超长直接 400）；审计写入 actor≤64、target≤256、detail≤4 KiB，读取时再次截断。
+- 物理路径仅由 DB id 派生，文件内容不可覆盖；上传先写 tmp，再校验/原子 rename/登记。配额 10 GiB 包含回收站与附件。
+- `origin=user|note|system` 决定可见性。普通列表、搜索、回收站和分享只接受适用 user 文件，附件只能经笔记接口管理。
+- 分片逐片与整文件校验 SHA-256。坏片失效但保留其他分片与预留；文件行、completed/file_id 和块索引删除同事务，提交后清理失败不重复登记文件。
+- 公开分享 token 只存 SHA-256，密码使用 scrypt；过期、吊销、次数耗尽分别返回稳定 410。多文件 item 必须属于分享，密码未解锁时不暴露清单。
+- 内容端点按分享会话原子预占一次名额，同会话多文件/Range 共用。HEAD/304/416 不占用；全部在途发送未完成且中断时可归还，进程异常、结果未知则保留并允许同会话续传。
+- 审计只记元数据，actor≤64、target≤256、detail≤4 KiB。非安全审计失败不回滚业务，失败诊断经 `/api/version.audit` 暴露；安全关键审计逐条尝试，公开下载计数在事务内。
 
-### 文件与分享
+## 5. DSH、QQ 与 mcbot
 
-- 物理路径 `files/<id 前两位>/<id>`，id 由服务端生成；无用户路径拼接。
-- 名称 NFC、去控制字符/路径分隔符、长度限制、冲突自动后缀；同目录同 origin 唯一索引。
-- 内容不可变（无在线编辑）；上传先写临时文件再原子移动；配额包含回收站与笔记附件；删除为软删除；30 天自动清理。
-- `files.origin` 隔离：`user`（云盘）/`note`（附件）/`system`；用户可见查询与目录操作只作用于 `origin='user'`。
-- 笔记附件：只经 `GET/POST/DELETE /api/notes/:id/attachments` 管理；单文件 ≤25 MiB、每请求 1–5、每笔记 ≤100；计入配额；删除笔记硬删附件；维护任务清理孤儿附件。
-- 分片上传：会话只按服务端 id 访问，块序号/大小由会话约束；临时目录 0700/文件 0600；complete 重新拼接并校验 SHA；24h 过期/取消释放配额与临时文件；不缓存文件内容到 localStorage。
-- MIME/预览白名单；音视频仅允许 mp4/webm/mp3/m4a/ogg/flac/wav，不转码；`X-Content-Type-Options: nosniff`；下载 `Content-Disposition` 文件名编码。
-- 分享：token 只存 SHA-256；新建密码 ≥8 位（旧短密码分享仍可解锁）；公开 POST 校验 Origin；
-  限流（创建 30/min、metadata 120/min、unlock 8/15min、content 240/min）；`af_share` 5 分钟 HttpOnly Cookie，Path 限定单 token；
-  下载次数按会话计且仅在内容流完整读完后 +1；文件删除/回收站吊销整个分享（含作为条目之一的分享）。
+- DSH Web、QQ、mcbot Agent 的账号/Home/工作目录/凭据独立。Web 命令在专用工作目录与 Bubblewrap/审批策略内执行；Minecraft Agent 不启用 shell、文件系统或插件管理。
+- Web 代理固定 loopback 上游，HTTP/WS 校验 Host/Origin。一次性 SSO 经受限 socket 换原生 Cookie，启动令牌不进入 URL/日志/错误。插件页沿用路径允许列表，模型侧 tool-plugin-manager 关闭。
+- QQ 每 AppID 单一入站，私聊/群聊白名单、群 @Bot、分发前斜杠命令拦截和平台确认身份共同限制范围。图片下载有来源/重定向/大小/寿命限制；本地文件/交付物外发关闭。
+- QQ 角色与结构化记忆在独立 profile 按 AppID/用户或群/成员隔离。变更候选本机审核；确认清除撤销相关记忆及候选。不能确认归属的内容不进入活动记忆。
+- Workbench 不提供 QQ Webhook、发布、管理或 OpenCode Chat，不保存 QQ 业务表。企业微信仅是独立告警 webhook 的接收端。
+- mcbot 只监听 loopback，应用客户端禁止重定向，单次请求有超时且响应体流式≤2 MiB。读/控制 Token 分离，上游 URL/Token 脱敏；应用不读取 RCON/DSH 凭据。
+- 应用只接受契约 v2，仅代理只读状态、在线模式、管理员对话、停止和急停。直接任务开始/恢复、目标读写、移动、游戏发言、自主开始与 history 路径不存在，返回 404。
+- 管理员对话要求会话/设备认证、CSRF 或签名、控制 Token 与限流；允许 ASCII `/`、拒绝 C0。mcbot 本机 `/say` 使用控制 Token 且拒绝 ASCII `/` 与 C0。
+- 自主工具为现有 13 个，经私有 Unix socket 调用；没有 socket 自主不可用，配置后 `/autonomy/mcp` 返回 404。普通聊天/意图/路点建议没有动作工具。任务名与动作由 Bot 白名单校验，不向模型开放任意命令。
+- 急停先撤销执行权，再取消模型、任务、移动和容器操作；旧会话清理结束后才接受新运行。超时、预算、失败、断线和手动操作均 fail-closed。
+- 世界记忆按维度、固定分类隔离；提示词仅索引，正文经工具受控读取。观察只读，inspect_chest 不取物、不传送、不破块，eat/equip 仅空闲时使用背包物品。
+- 聊天、事件和 DSH 步骤只留内存；事件缓存≤100 条且≤512 KiB，步骤≤80，短标题≤120 字。急停清空时间线；工具参数、prompt、凭据和记忆正文不进入应用 DB/审计。
+- mcbot alert 只写 `status='event'`，不改变 `alert_state`。事件/去重键/投递项同事务，告警写失败不推进游标。webhook 使用持久化重试和 Idempotency-Key，接收端必须去重。
 
-### Bot
+## 6. 运维与灾备
 
-Workbench 不托管 QQ 收发、发布或 OpenCode Chat。schema 22 删除旧 QQ 表。生产 QQ 由 DSH 管理，凭据不进入 Workbench。告警只走 webhook。不要恢复 `CHATBOT_*` 或 QQ 入队。
+- Pi systemd 使用专用服务账号、空 capability、只读系统与最小可写路径；不通过关闭 ProtectHome 等加固解决路径问题。root 无人值守动作仅固定维护入口，不授予通用 shell/node/npm 免密 sudo。
+- nftables 默认拒绝入站；SSH/Minecraft 游戏端口只放允许网段，RCON 只放 loopback。SSH 仅公钥，fail2ban 使用持久化数据库；规则重建后恢复封禁 set。应用不修改 Minecraft/frpc/SSH 或重启 Minecraft。
+- 世界备份 root 服务仅固定 save-off/save-all flush/save-on，save-on 在 finally 收口；不从应用 API 触达。其他服务不继承该能力。
+- 部署包明确清单和逐文件 SHA；切换前校验 DB 一致性快照、schema、指针和配置。健康检查验证版本/schema/运行时就绪。同 schema 回滚保留 DB/WAL，跨 schema 使用匹配快照前先保全现行数据。
+- 备份 prepare/ack 分离，未确认归档不删。生产整包 age 与 Google Drive 异地开启，模板默认关闭；Pi 仅独立公钥、root 属主且组/其他不可写，私钥离线至少两份。
+- 加密失败关闭，不生成 pending、不降级明文；临时明文只用 `.plain.tmp`，密文/sidecar 落盘后删除；空间按 2× 明文预算。plain SHA/size 位于 sidecar/DB，避免归档内自引用。
+- `.age` 的 Web verify/import/entries/plan/execute 在名称合法化后、读取/解包前返回 `409 archive_encrypted`；Web 不持私钥，恢复目标跳过密文。PC 解密后仍须校验链、DB 和全部引用内容。
+- 密钥包收录 DSH 配置/凭据/记忆与 mcbot 一致性目标库/任务/维度记忆；部署冷备另外包含 DSH 会话历史。服务启用但关键状态缺失或读取失败时，密钥包失败。
+- 异地仅 age 密文及旁文件，链感知保留，最新 full 及所需增量受保护；状态不含远端真实路径/凭据。Windows 凭据和备份目录仅当前用户/Administrators/SYSTEM。
+- 状态文件由 root/PC 写固定路径，应用同句柄检查普通文件、限制实际读取≤64 KiB；失败降级 null，不能让状态文件变成任意文件读取入口。
 
-- **审计策略**：非安全审计事务外 best-effort，失败不阻断已完成的业务；失败计数/最近错误/时间在 best-effort 写入 `audit_write_failures` 并经 `GET /api/version.audit` 暴露（含 `persisted`），跨重启可见；安全关键审计保持逐条记录；公开下载计数仍在事务内。
+## 7. 当前残余与检查要求
 
-### AI 自主模式（v1.0.2，默认关闭）
+- 单进程与内存限流、SQLite NORMAL 的断电窗口、Cloudflare 边缘明文、单存储介质及依赖外部平台的可用性是当前限制。
+- 审计 best-effort 在底层 DB 故障时仍可能丢失；需监控 failureCount/persisted 并处理存储错误。
+- 加密归档的私钥丢失无法恢复。受限明文预部署快照和崩溃残留临时明文仍需权限与清理控制；密文孤儿只报告，不擅自删除。
+- mcbot 状态存在轮询延迟，内存会话/事件会随重启清空。未实际验证的真机、平台和恢复场景不能写成通过，缺口以 AUDIT/ACCEPTANCE 为准。
+- 发布检查覆盖应用认证、设备吊销、非法 Origin、分享并发、分片损坏、工具撤权、告警受控投递、备份拉取和隔离恢复；负路径在候选夹具验证，生产仅执行获准验收。
 
-- 仅主人显式启动。应用不再提供 `POST /api/mcbot/autonomy/start`。`GET /api/mcbot/autonomy` 为 60 次/分钟。`POST /api/mcbot/autonomy/stop` 需要控制 Token 和 20 次/分钟。管理员对话可调用同一组工具。Token 不下发浏览器。
-- 没有 DSH socket 时自主会话不可用，不回退到 OpenCode。工具白名单固定。每次会话随机 run_id + 短期 Bearer。
-- 模型不能执行任意命令/坐标/玩家名；任务白名单、预算、失败上限、断线/手动指令/急停由 mcbot 策略层 fail-closed。
-- 目标/停止原因只做长度/控制字符校验；审计只记字符数，不记录正文；不记录 prompt/Token。
-- 端点 `/autonomy/mcp` 不得经应用/Cloudflare/nftables 暴露。配置 DSH socket 后该路径返回 404。
-### mcbot（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
-
-- **网络/上游**：mcbot 是独立服务（本版 v1.2.4，契约只接受 v2；生产进程是 `/opt/mcbot/releases/20261116T135658Z`），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `mcbot_unavailable` 且不暴露底层 message。自 v0.6.1 起上游逐行把行首 `/` 中和为全角 `／`。
-- **Token 分离**：读 Token 仅用于 `/status`、`/events/recent`、`/history`；控制 Token 仅用于 `/task/*`、`/move`、`/say`（v0.8.1 起 `/say` 是写操作，只读模式返回 `503 mcbot_control_disabled`）；控制 Token 为空时控制方法直接 `mcbot_control_disabled`（不发请求）。Token 来自独立 env，由 root 的 `scripts/sync-mcbot-tokens.sh` 同步（只读 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，不读取 RCON/OpenCode 密码；写前备份 env、同目录临时文件 + `mv` 原子替换、保持 0640，不回显 Token）。
-- **HTTP 面**：`/api/mcbot/*` 全部 `requireAuth`；写操作额外 `csrfGuard`。任务开始、目标读写、自主开始、移动、游戏发言和历史代理都不存在。仍开放的控制类 20/min/IP，管理员对话 10/min/IP。对话 trim 后 1–2000，允许 ASCII `/`，拒绝 C0。mcbot 本机 `/say` 仍拒绝任意 ASCII `/` 与 C0。上游 5xx 的 `task_disabled`/`control_disabled`/`admin_unavailable` 保留为 `mcbot_*`，其它错误统一映射为固定中文文案，不含上游原文/URL/Token。
-- **审计**：`mcbot.task.stop`、`mcbot.autonomy.stop`、`mcbot.presence.set`、`mcbot.control_failed` 记录动作与元数据；`mcbot.chat` 只记录字符数，`mcbot.emergency_stop` 只记录失败腿名。对话正文、步骤、prompt 和工具参数不写审计。
-- **告警联动**：`AlertService.recordExternal` 只写 `alert_events(status='event')`，不写 `alert_state`、不参与 firing/resolved；details 只保留清洗后的基础类型（深度≤2、键≤20、数组≤20、字符串≤300，跳过 `__proto__`/`constructor`/`prototype` 键），并附加 `source`/`mcbotEventId`/`mcbotType`；异步只走 webhook（可选 HMAC），失败只记脱敏日志；游标 `meta.mcbot.event_cursor` 防重放；**告警写入失败时游标停在上一条已处理事件，下一轮重试**。
-- **内存/降级**：每轮上游取最近 200 条；事件缓存 ≤100 条且序列化总字节 ≤512 KiB；`/status` 可达但 `/events/recent`/游标失败时前端展示可见警告（不静默停更）；前端对缺失嵌套段安全读取，不把整页交给 ErrorBoundary。v1.0.7 起快照下发 `lastSuccessAt`，面板过期文案用成功时间；从未成功时显示“尚无成功轮询”。失败轮询只推进 `lastPollAt`。
-- **浏览器边界**：前端不接触 mcbot Token/上游地址，不直连 SSE/mcbot；`/api/mcbot/status` 只返回聚合快照与内存事件；事件与管理员对话纯文本渲染。会话步骤只显示用户文本、助手文本、工具名与成败、目标或待办的动作和短标题。不显示工具参数、令牌、提示词或世界记忆正文。控制未启用时管理员对话和急停禁用。
-- **默认关闭/回滚**：`MCBOT_ENABLED=false` 默认；回滚设 false（可选清空 Token）并重启即可，无 schema/DB 变更；生产 v1.1.1 已启用（`MCBOT_ENABLED=true`，读/控制 Token 均配置且 `--check` match，仅 loopback；2026-11-10 部署）。v0.8.0、v0.8.1 与 v1.0.6 至 v1.0.12 随各版本发布 Tag+Release。v1.0.11 与 v1.0.12 分开发布。
-
-### HTTP
-
-- CSP：`default-src 'self'; script-src 'self'; media-src 'self'; frame-ancestors 'self'; object-src 'none'` 等。
-- `X-Frame-Options: SAMEORIGIN`（同源 PDF 预览）、`Referrer-Policy: no-referrer`、`Permissions-Policy` 最小化。
-- API 全部 `no-store`；错误响应不含堆栈；日志脱敏 Cookie/Authorization/密码/TOTP。
-- 公开分享页 `X-Robots-Tag: noindex, nofollow`；指标/存储/审计/备份接口均需会话。
-
-### 运维
-
-- 服务用户 `antifieldcloud` 无 shell/无 sudo；systemd 只读系统、仅数据目录可写、`NoNewPrivileges`、`MemoryMax=512M`、
-  `CapabilityBoundingSet=`（空）、`RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`、`PrivateDevices`、
-  `ProtectClock/Hostname/KernelLogs`、`RestrictNamespaces/SUIDSGID/Realtime`、`LockPersonality`、`StartLimit`。
-  `MemoryMax` 依赖内核 memory cgroup：`/sys/fs/cgroup/cgroup.controllers` 必须包含 `memory`（检查见 docs/DEPLOY.md §8）。
-- 世界备份 unit：`User=root`、`ProtectSystem=strict`、`ProtectHome=read-only`、`ReadOnlyPaths=/home/antifield/minecraft-server`、
-  `ReadWritePaths=/var/lib/antifieldcloud`、`flock -w 600`、`TimeoutStartSec=4h`、`Nice`/IO 降优先级。
-- 环境文件 0640 root:antifieldcloud；非敏感部署值放 `/etc/antifieldcloud/deploy.conf`（root 只读）；
-  仓库/CI 不含秘密，实际部署值只记录在 gitignored 的 `.local/DEPLOYMENT.md`。
-- 部署脚本：上传后校验 tar SHA-256、远端 package.json 与本地版本一致、磁盘 ≥2 GiB + 包体预检；切换前
-  `backup.mjs --snapshot-db`；注入 `APP_VERSION` 并断言 `/healthz.version`；失败先停服、还原迁移前 DB 快照、切回 previous、重启复检；
-  release 保留 3 个且清理保护 current/previous；部署后跑只读 smoke 子集。
-- CI：`npm run check` + `npm run build`、服务端/前端覆盖率门禁、生产依赖边界、`npm audit --omit=dev --audit-level=high`、
-  gitleaks secret-scan、shellcheck、nftables 语法、全部 `scripts/*.ps1` 的 PS 5.1 解析/BOM 检查；concurrency 取消旧任务、作业超时。
-- 备份两阶段：`--prepare` 只生成 pending，`--ack` 校验 SHA-256 后才推进游标；pending 未确认不删除；
-  已确认归档最多 2 个；归档 0640；PC 原子改名并写 `.sha256` 旁文件；`.part` 成功后才原子改名。
-- 备份 CLI：pending 只统计 `origin='pi'`（Web 导入不参与 ack）；物理文件缺失记录为 `skippedMissing` 不中断；
-  归档快照行数 ≤10 万、DB 快照 ≤256 MiB、staging ≤2 GiB/20%；归档浏览 30 次/分钟。
-- 密钥包：`backup-secrets.sh` 用 age 公钥加密 env/cloudflared/Minecraft/opencode 配置与 opencode DB 快照；
-  明文临时目录优先 `/run/antifieldcloud/secrets-tmp`（tmpfs，0700），退出清理；opencode 快照失败只降级警告；
-  Pi `KEEP=2` 滚动保留；私钥只离线保存。
-- 备份状态分开记录 `secretsOk/secretsLastError/lastSecretsAt`；密钥包失败不冒充文件备份成功。
-- **备份整包加密**：独立 age 密钥对；Pi 只存 `/etc/antifieldcloud/backup-age.pub`（root、组/其他不可写、
-  单行 `age1…`、≤4 KiB、启动/prepare 校验）；私钥离线 ≥2 份、禁止放 Pi。失败关闭：age 缺失/公钥非法/加密失败/空间不足（2× 明文预算）
-  → `--prepare` 失败，不产生 pending、不回退明文；明文 tar 仅短暂使用 `*.plain.tmp`（>24h 残留由启动/下次 prepare 清理），
-  sidecar 写入后立即删除。加密归档识别只看名后缀 `.age`（无 schema 迁移）；Web 不持私钥，`.age` 的危险端点一律 409。
-- **异地副本**：PC 端 `backup-offsite.mjs/.ps1` 只上传 `.age`（拒绝明文，`plaintextSkipped` 计数），
-  链感知保留且绝不删最新 full，`rclone copyto --checksum` + 远端大小校验；状态 JSON 写 Pi（0644，随机临时名 + `sudo install`），
-  只含远端别名/计数/时间/错误，不含远端真实路径/URL/凭据；应用只读展示；`offsite_overdue` 在状态缺失/未配置时不进入条件（不误报）。
-- **主机配置模板与密钥包**：`deploy/host/` 提供 sshd drop-in、fail2ban jail、cloudflared/journald/log2ram 脱敏模板与重建清单；
-  `backup-secrets.sh --include-host-config` 可把安装后的 `/etc/nftables.conf`、sshd drop-in、fail2ban jail、cloudflared/journald/nftables drop-in、
-  应用 units 等纳入 age 密钥包（输出 `includesHostConfig/hostConfigFileCount`），弥补“主机重建配置未备份”缺口。
-- **部署/发布工程**：`deploy.ps1` restart 失败同样进入回滚；回滚前校验迁移前快照 SHA-256；写 `release.json`/`deploy-history.log`；
-  `deploy/tool-versions.json` 为 schema/OpenCode 单一来源，`check-version.mjs` 交叉校验 db.ts 与文档当前事实；`check-prod-deps.mjs` 校验依赖边界；
-  smoke 增加 OpenCode/MCP/fail2ban/unit 漂移/加密/异地/任务安装标记只读检查（`SKIP:`/`SoftCheck` 避免 WARN+PASS 双计数）。
-- 主机健康探针：root 每 60s 写 `/run/antifieldcloud/pi-health.json`（0644，含欠压/降频/温度/风扇），告警模块只读。
-- 世界/拉取/演练状态：脚本写 0644 JSON，应用只读；文件缺失时面板/告警降级 unknown；状态不含密钥或绝对路径。
-
-## 4. 残留风险（按用户选择保留）
-
-1. **SSH 仅公钥**：`/etc/ssh/sshd_config.d/00-` drop-in 禁用密码/键盘交互；
-   旧回滚备份已归档到 `/var/backups/antifieldcloud/`（0600 root），`/root` 无残留，活动配置未改；`fail2ban` 已启用 `sshd` jail
-   （nftables 后端、24h ban），但封禁 set 依赖 nftables，`nft -f`/重启 nftables 后必须重启 fail2ban 恢复已有封禁。
-   **注意：若管理员当前来源不在允许网段内，应用 nftables 规则会锁死 SSH；须先确认来源网段并保留物理键鼠/已建立连接。**
-2. **Pi 登录用户 `antifield` 拥有 `NOPASSWD ALL` sudo（既有残留，未修改）**：任何拿到 `antifield` 账号的人可提权为 root；
-   `antifieldcloud` 服务用户本身无 sudo。建议后续按用户确认收紧 sudoers。
-3. **RCON 已轮换为 32 位随机密码，但仍监听 0.0.0.0（Paper 无 bind 配置）**：nftables 仅放行 loopback；
-   本机被攻破仍可控制 RCON。世界备份脚本以 root 使用固定命令，扩大了 RCON 凭据的暴露面（仅 root 可读）。
-4. **Cloudflare Access 已在生产配置**：主应用 `app.<domain>`（One-time PIN + Owner allow + Service Auth）与 4 个 Bypass 路径
-   （`/healthz`、`/api/chatbot/webhook`、`/s`、`/api/public/shares`）已通过 API 创建并验证；`ai` 主机另有 Access 应用
-   （Owner allow + Smoke service token；Free 套餐无自定义 WAF 规则集），smoke 支持 `-AccessClientId/-AccessClientSecret`。
-   service token 只保存在 PC gitignored `.local/cf-access.env`，应使用专用/最小范围并定期轮换；配置用高权限 API Token 完成后应 Revoke。
-   仍建议给 Cloudflare 账号开启 2FA；Access 只作为应用 TOTP 之外的第二层，不替代应用认证。
-5. **Cloudflare 可见明文**：文件内容与登录流量对 Cloudflare 可见；敏感数据可考虑后续应用层加密。
-6. **单管理员、无多用户/权限分离**：审计日志可被管理员删除；适合个人使用。
-7. **备份整包加密默认关闭且 Web 不可恢复**：未开启时普通归档仍含 TOTP secret 与文件内容，PC 端 ACL 与物理安全是最后防线；
-   开启后 Pi 不持私钥，`.age` 只能在 PC 用离线私钥解密/校验/恢复，私钥丢失即不可恢复；预部署 DB 快照继续明文（0600、保留 2 份，供自动回滚），
-   属威胁模型明确豁免项（Pi 被入侵/介质丢失仍可能暴露快照）。加密的 `*.plain.tmp` 崩溃残留最长 24h、`孤儿密文只报告不自动删`。
-   密钥包 use age 加密，私钥丢失将无法恢复密钥包。
-8. **世界备份依赖 RCON 与 Minecraft 运行**：服务器未运行时备份失败（状态 JSON 可见）；`save-off` 期间若进程崩溃，
-   `save-on` 会重试/需人工恢复保存。`minecraft-backups` legacy 归档已清理，旧 cron 保持停用。
-9. **opencode 自身认证/UI 行为随版本变化**：当前生产 **v2.2.5** 已于 2026-11-08 从 Pi 退役，只作回滚运行时（2026-11-04 曾升级并在当时运行中的进程上完成 §3.2 矩阵；回滚备份 timestamp `20261104T062115Z`。2026-10-28 的 v2.1.4 备份只作更早回滚点）。回滚后通过注入 Basic 实现 SSO；
-   升级后按 `docs/DEPLOY.md` §3.2 复验 Basic/session/垫片注入/公开入口/MCP 进程/compaction。原生新建按钮在部分版本仍有缺陷，
-   失败时保留最小隐藏点击接管（无可见 UI）；UI/WS 实时事件需浏览器复测。
-10. **无 WAF/DDoS 防护**：Cloudflare 默认防护有限；大文件上传/登录仍可能消耗资源（有配额/限流）。
-11. **SD 卡无加密**：设备丢失即数据泄露；可后续迁移 SSD + LUKS。
-12. **限流在内存中**：应用重启清零；对分布式攻击效果有限。
-13. **Cloudflare 自动注入与严格 CSP 冲突**：Web Analytics/Challenge 脚本被 CSP 拦截；需在 Cloudflare 后台关闭自动注入或接受报错；
-    不建议放开 `script-src` 内联。
-14. **scrypt 仍为 N=2^15**：升级到 2^16/2^17 需要密码哈希版本迁移，列入后续。
-15. **`http-proxy` 在 Node 26 有 `util._extend` 弃用警告**：Node 27 前需评估替换。
-16. **Cloudflare 约 100 MiB/100s 限制**：普通上传仍受单请求限制；分片承载 5 GiB 文件，但总时长仍受 Cloudflare/网络影响。
-17. **Windows 世界拉取/演练任务**：`AntifieldCloud-World-Pull` 周任务（周日 12:00）由 `install-backup-task.ps1` 与每日任务一起安装。计划任务 `-File` 使用 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`（安装时从仓库复制）。任务名与该目录名不变。恢复演练 `drill.ps1` 保持手动/季度。异地副本已启用，每日 13:00，只上传 `.age`。任务以当前用户运行，依赖直连网线与 SSH 公钥；未安装/未运行时状态 unknown、告警可能触发。
-18. **Bot 测试为 mock-only**：QQ 适配器/队列/发布/Chat/记忆/文本分段/图片下载/自检/诊断/角色与记忆管理仅用进程内假平台、夹具与假 HTTP，未对真实 QQ 平台做限流、签名漂移、平台故障的负路径验收；
-    上线前必须在 QQ 开放平台完成回调地址/事件订阅并联调（`docs/DEPLOY.md` §9.8）。QQ 真实回调与真实模型已验证；AI 仅 Chat；图片/自助命令等真实消息已由用户实发验收通过（图片端到端成功）；诊断/角色记忆面板按用户确认整体通过。
-19. **Bot 仅文本、单平台**：QQ 官方 Bot 只支持文本（单条 ≤2000），无媒体/附件/按钮/引用；平台收敛后不再有 Telegram/Discord/Slack 备选通道，QQ 平台故障时 Bot 不可用；无多管理员审批流；发布仅有单管理员 TOTP + `PUBLISH` 双确认。
-    长文本分段发送，partial 失败不自动重试，需人工核对后处理。
-20. **`CHATBOT_SECRET_KEY` 丢失/轮换**：DB 中已有 QQ AppSecret 将不可解密，必须重新录入；轮换需先备份 DB + 旧密钥并接受一次性重录，
-    不做在线密钥版本迁移。`bootstrap-env.sh --force` 会复用旧 key，不会自动轮换。
-21. **AI 工具隔离依赖 OpenCode 版本**：Chat 新建会话传 deny-all 的 `permissions`；启用消息发送工具时仅额外放行 `botmsg_*`（搜索启用时放行 `searxng_*`）；文档模式再放行当前作用域 `external_directory` 与精确 `read` 两份文档。若 OpenCode 明确以 400 拒绝该字段，进入 10 分钟重试窗口并记录状态/审计，所有模式均**拒绝新 Chat**（503 `chatbot_ai_tool_isolation_unavailable` + 固定提示），不再以默认权限继续；窗口到点放行一次重试，上游恢复后自动恢复。
-    v2.2.0 的 OpenAPI 已声明支持该字段（2026-10-28 矩阵验证创建会话 200、模型 assistant text 正常与 deny-all 负路径无 tool）。v2.2.5 把名为 `bash` 的工具调用映射为 `shell`，本窗口必须在运行中的 2.2.5 上重测 deny-all，含 `bash`/`shell` 负路径；矩阵未通过前不部署应用，也不预先加显式 bash/shell deny。仍不把 Chat 当作强隔离沙箱，模型行为非强保证。
-    **文档模式残余**：read 范围依赖 OpenCode 对 session `permissions` 资源的实际匹配语义；生产已于 2026-10-27 用真实 OpenCode 完成作用域内/外负路径矩阵 **7/7 通过**（作用域外/env/DB/其他作用域/shell/注入全部拒绝），随后才启用；首轮角色卡仍存在于 OpenCode 会话历史，后续请求不再发送正文；OpenCode 进程本身仍是信任边界（其可读全部上下文作用域）。
-    产品代价：隔离不可用期间 Bot Chat 暂停，属明确取舍（可用性让位于安全）。
-22. **fail2ban 持久化依赖 drop-in**：dbfile 已持久化，`nftables.service` drop-in 会在启动后异步重启 fail2ban 恢复 set；手工 `systemctl reload nftables` 不触发，仍需手动 restart。
-    生产已安装并实测封禁恢复；Cloudflare Access 也已配置并纳入带 token 的 smoke，剩余为 service token/API Token 轮换与季度演练。
-23. **Bot 记忆镜像文件**：DB 摘要为权威且随 DB 备份；`DATA_DIR/bot-memory/memory-<uuid>.md` 不通过 API/UI 暴露，用户 `/forget confirm` 与管理员删除记忆会同时删除对应镜像；
-    删除 Bot 时只级联删除 DB 行，镜像文件无自动清理路径，需按保留期/人工清理；不要把该目录挂到 Web 静态目录。
-24. **QQ 群/频道触发限制**：默认只推送 @Bot 事件；可在目标开启“接受全部消息”并由 QQ 后台开启接收所有消息，但仅 @/名字模式仍过滤，全量模式由模型 `NO_REPLY` 决定是否发送；C2C 私聊开放 Chat 但接触面由 QQ 平台“谁可添加 Bot”控制；
-    管理员应确认目标 `allow_chat` 与入站目标登记，避免误以为群内所有消息都会触发。
-25. **Node.js 运行时安全更新**：生产 `/usr/local/bin/node` 为 **v26.13.0**（2026-11-07，官方 linux-arm64 + SHA-256 校验）。相对 v26.12.1 只切换 Lithium LTS 标记。
-    旧回滚二进制 `node.v26.12.1`、`node.v26.11.1` 与目录 `node-v26.12.1-linux-arm64` 已删除；当前树为 `/usr/local/lib/nodejs/node-v26.13.0-linux-arm64`。npm/npx 仍指向 nvm（12.2.0），仅作构建/部署工具。后续安全更新应重复
-    `docs/DEPLOY.md` §3.3 并跑带 Access token 的 smoke；Node 更新不影响 DB/schema。
-26. **Bot 出站连通性**：服务端探测只发无凭据只读 GET（外网 + QQ 平台 API），不记录平台响应正文或 AppSecret；`/api/chatbots/connectivity` 仅返回 `checkedAt/checking/internet/platforms`，无 `deviceOnline/proxy`。
-    Bot 出站为 Pi 直连，不读取代理变量；Pi 出站不可达时检查路由/DNS/防火墙，不要恢复代理变量。
-27. **QQ 群/频道全量消息**：目标可设 `groupReplyMode=all` 并订阅 `GROUP_MESSAGE_CREATE`，需 QQ 后台开启“接收所有消息”；默认 `mention` 只消费 @Bot/文本包含 Bot 名称的消息；群聊/频道不执行斜杠命令，模型可 `NO_REPLY` 静默；
-28. **诊断事件含平台目标/用户 ID**：`GET /api/chatbots/:id/events` 只对登录管理员开放，不存消息正文/用户名，保留 `CHATBOT_EVENT_RETENTION_DAYS`（7 天）；
-    仍应按内部数据处理，不截图/外传；`detail` 为固定短码，避免把平台响应正文写入。
-29. **角色/记忆删除不可撤销**：`DELETE roles/:userId` 会删除私聊角色卡并清该用户 chat 会话；`DELETE group-roles/:targetId` 删除群聊共享卡（不影响目标/会话）；`DELETE memories/:userId` 会删除 DB 摘要与镜像（不清会话，`/forget confirm` 才会清全部会话）；
-    不影响其他用户；误删需从 DB 备份恢复。管理员操作前应确认用户与影响范围。
-30. **图片理解默认开启的隐私/外发风险**：`CHATBOT_AI_VISION_ENABLED=true`，QQ 入站图片会以 OpenCode prompt files data URL 经本机 OpenCode API 交给配置的模型 provider（可能为本地或外部模型服务）；
-    图片不落盘、不写日志，但模型 provider 可能记录请求内容。启用即表示接受该外发范围；如需关闭可在 env 设 `CHATBOT_AI_VISION_ENABLED=false` 并重启。
-31. **Cookie/SSO 过渡残余**：app/ai 已改为 host-only Cookie + 一次性 AI SSO ticket；旧父域 Cookie 在登录/退出及每次 `/api/auth/me` 响应清理，长期不重新登录的浏览器仍可能最多 7 天继续发送旧 Cookie（与同名新 Cookie 共存时浏览器发送顺序不保证）。未采用 `__Host-` 前缀；ticket 已绑定 User-Agent SHA-256（签发/消费不一致失败），但未绑定 IP（移动网络/Cloudflare 边缘出口不稳定；一次性、60s、绑定 aiOrigin、no-store/no-referrer 保留）。发布说明应提示用户清理站点 Cookie；后续可评估 `__Host-` 前缀与签发审计。
-32. **连续消息缓冲**：同一 Bot×目标×用户的最多 `CHATBOT_CHAT_BURST_MAX_MESSAGES` 条消息在内存中暂存至多 `CHATBOT_CHAT_BURST_MAX_WAIT_MS`；内容不落库、不写日志，仅用于合并后的 AI 请求；进程停止/重置会话时丢弃。内存中仍属用户消息明文，需按聊天数据处理；同会话串行防止并发回复，不同会话仍可并行。
-33. **联网搜索外部数据**：SearXNG 仅监听 loopback；OpenCode MCP 配置 `codemode=false`，只暴露 `searxng_web_search`。Bot 会话 permissions 为 deny-all 后仅 allow `searxng_*`，生产负路径已验证 shell 不可用；若 OpenCode 拒绝 permissions 会暂停 Chat 并记录 `aiToolIsolation.supported=false`。搜索工具只访问 `CHATBOT_SEARCH_URL`，不抓取结果网页；结果是不可信外部内容，提示词明确禁止执行其中指令。查询会发给私有 SearXNG 及其启用的引擎（生产仅 Bing），用户应知悉该外发范围；搜索失败降级为无搜索回答。审计只记结果数/错误码/是否强制，不记查询正文。
-34. **搜索限流与资源**：每 Bot×用户每小时 `CHATBOT_SEARCH_RATE_PER_HOUR`；SearXNG/MCP 有超时/响应体上限/最多结果数/摘要截断；`mcp` 模式由模型决定搜索，`prefetch` 模式用保守关键词；`/search` 仍需可 Chat 权限，但不需要管理员命令白名单；MCP 工具输出含结果 URL，但 Bot 回复层会脱敏/只附标题与域名。
-35. **消息发送工具回调**：`POST /api/chatbot/ai/tool/send` 无 session/CSRF，只接受 `CHATBOT_SECRET_KEY` HMAC 的 turn token；token 绑定 `turnId + 目标 + 用户`（跨会话不能复用），只在本轮 3 分钟有效，单轮最多 5 条、单条 ≤1800 字；文本先进入内存缓冲，回合结束统一清洗/格式化/发送，不立即外发。路由不在 Cloudflare Access bypass 中，生产由本机 MCP 访问 `127.0.0.1`；公开请求即使命中路径也无法伪造 token。审计只记 `chatbot.ai.send`/`chatbot.ai.send_fallback` 的消息数与字符数（回合异常补发带 `partialTurn`），不记正文；`turn_id`/`turn_token` 不得进入日志或用户回复。
-36. **审计 best-effort**：非安全审计在 DB 故障/磁盘满时可能丢失；失败计数/最近错误/时间 best-effort 持久化到 `audit_write_failures`，`/api/version.audit` 跨重启可见（DB 不可用时 `persisted=false` 回退内存）；安全关键审计仍逐条尝试写入，失败可见但不回滚已完成的业务。需要强审计保证的场景应监控 `audit.failureCount` 并修复底层 DB/磁盘问题。
-37. **AI 主机边缘保护缺口**：应用侧已对 `/__af/sso/*` 与匿名请求限流并聚合审计，但 `ai` 主机仍未受 Cloudflare Access/WAF 保护（用户后台项）；边缘限流配置未验证，公网匿名请求仍可消耗一定资源。建议后续在 Cloudflare 后台给 `ai` 增加 Access 策略或 WAF 速率规则。
-38. **异地副本残余**：模板默认关闭。生产使用一个 Google Drive 远端，依赖 PC、rclone 和凭据。脚本不创建 remote，不管理凭据。状态文件由 PC 写入，应用只读。未配置时不告警。
-39. **群共享记忆迁移残余**：无法唯一映射到 `member_openid` 的旧条目保留 `legacy:` 前缀、不参与按成员删除；历史同名用户互相覆盖的内容无法自动还原；迁移只执行一次（`meta.chatbot_group_memory_owner_migrated_v1`），迁移后旧格式不再生成。
-40. **配置校验增强的运维影响**：`NODE_ENV` 非法值、`OPENCODE_URL` 非 loopback、`APP_ORIGIN==AI_ORIGIN`、`CHATBOT_SEARCH_MODE` 非法值会直接拒绝启动（失败即退出）。升级后若服务起不来，先检查 env 是否含遗留非法值，不要通过放宽校验绕过。
-41. **主机配置模板为占位**：`deploy/host/` 模板含 `<SSH_USER>` 等占位，安装时必须按实际替换并做 `sshd -t`/`nft -c`/服务重启验证；模板不包含用户自定义的额外加固项，重建后需与备份的密钥包对照。
-42. **mcbot 告警只有事件语义（v0.8.0，v0.8.1 仍保持）**：上游 `alert` 仅以 `status='event'` 记录，不参与 firing/resolved 状态机，无恢复通知/冷却/去重；告警只在轮询时发现，最多滞后一个 `MCBOT_POLL_MS` 周期。需要“活跃/恢复”语义时应在 mcbot 侧管理。
-43. **mcbot 聊天/事件不持久化（v0.8.0，v0.8.1 仍保持）**：事件与聊天只存在服务端内存（≤100 条且 ≤512 KiB），应用/mcbot 重启即丢失；不提供历史/导出/搜索，也不进入备份；`/say` 内容不落库/不写日志（审计只记字符数）。
-44. **mcbot 控制面**：应用上的任务开始、目标写、自主开始、移动和游戏发言返回 409，不调用上游。停止任务、停止自主会话和急停仍会作用到游戏。急停不经过模型。控制 Token 按需轮换。
-45. **mcbot 单实例与轮询延迟**：单进程内存缓存，单个上游。状态和事件最多滞后一个轮询周期。告警以 `status='event'` 写入，并用 `dedupe_key` 避免同一键重复通知。进程不在或轮询过期走 `service_down`。
-
-## 5. 运维安全清单
-
-- 每月 `sudo apt-get update && sudo apt-get upgrade`（Minecraft 重启需选择窗口）；关注安全更新与 cloudflared 版本提示。
-- 每月/收到 Node.js 安全公告时检查 `/usr/local/bin/node -v` 与 Node.js 官方安全版本；需要更新时按 `docs/DEPLOY.md` §3.3
-  使用官方 linux-arm64 包 + SHA-256 校验，保留旧二进制、重启并跑带 Access token 的 smoke。
-- 每周检查：应用备份 pending 是否堆积、`backup-pull.json` 是否超过 48h、PC 归档 `.sha256`、
-  世界备份/世界拉取状态是否新鲜（`world-backup-status.json`/`world-pull-status.json`）、计划任务 `LastTaskResult`；
-  日志 `%LOCALAPPDATA%\AntifieldCloud\backup.log`、`world-pull.log`。
-- 每周/启用加密后检查：`BACKUP_ARCHIVE_ENCRYPTION` 与公钥文件权限（root、0644、组/其他不可写）、最近归档是否 `.age` 且带 `.meta.json`、
-  `backup.mjs --pending` 无 `missingSidecars`、`*.plain.tmp` 无 >24h 残留、PC `plainVerified` 结果；Pi 上**永远不应出现私钥**。
-- 每周/启用异地副本后检查：`backup-offsite-status.json` 的 `lastRunAt/ok/plaintextSkipped/keptRemote/error`；`offsite_overdue` 是否 firing；
-  远端只应有 `.age` + `.sha256` + `.meta.json`；`rclone` 凭据与 remote 配置仅在 PC 当前用户范围。
-- 每周检查审计诊断：`GET /api/version` 的 `audit.failureCount/lastError/lastFailureAt` 应为 0/null；出现失败先查 DB 忙碌/磁盘满并保留现场。
-- 每周/启用 Bot 后检查：`GET /api/chatbots/status` 是否 `enabled=true`、`queuedDeliveries/queuedPublishes` 是否堆积、
-  `/api/chatbots/:id/metrics` 的成功率/失败/死信、`chatbot_deliveries` 死信（`status='dead'`）与 `chatbots.last_error`；QQ 开放平台后台回调地址/事件订阅是否仍正确；
-  确认 AppSecret 未出现在 `journalctl -u antifieldcloud`。启用 Chat 后检查 `CHATBOT_AI_ENABLED`、`chatbot_ai_sessions` 保留与限流（30/min、120/h）是否合理。
-  启用 Chat 后检查 `/api/chatbots/connectivity` 的 `internet`/`platforms.qq` 状态；PC 侧不应再有 `AntifieldCloudDiscordTunnel` 计划任务。
-  另查：`POST /api/chatbots/:id/check` 自检结果、`GET /api/chatbots/:id/events` 是否有异常 `error`/`denied` 激增；
-  用户自助 `/forget confirm` 后确认 `chatbot_memory_items`/`chatbot_memory_state`/legacy `chatbot_ai_memories` 与 `DATA_DIR/bot-memory` 对应数据已删除；`CHATBOT_AI_VISION_ENABLED` 是否为期望值；
-  审计 `chatbot.ai.image` 只应含 mime/大小/跳过原因，不应出现图片内容或媒体 URL。
-- 每月检查：`systemctl --failed`、`journalctl -u antifieldcloud -p warning`、`nft list ruleset`（确认 22 来源网段）、
-  `/sys/fs/cgroup/cgroup.controllers` 含 `memory`、`vcgencmd get_throttled`、`vcgencmd measure_temp`、磁盘/内存余量、
-  `crontab -l` 不含 `minecraft-backups` 行。
-- 每月检查 SSH/fail2ban：`sshd -T` 仍为仅公钥、`fail2ban-client status sshd` 有 jail 统计、`fail2ban-client get sshd bantime=86400`、
-  `ls -l /var/lib/fail2ban/fail2ban.sqlite3`（dbfile 持久化）、`systemctl cat nftables.service | grep -A2 fail2ban`（drop-in 生效）；
-  封禁 set 与 nftables 规则共存；任何 nftables 变更后执行 `systemctl restart fail2ban` 并复核封禁列表。
-- 每月检查 Cloudflare Access：`app` 页面仍要求登录，`/api` 到达应用（未登录为应用 401，不是 Access 302），bypass 路径（`/api/chatbot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*`）
-  是否被后续规则覆盖；service token 是否仍有效且未过期；用未登录浏览器验证公开分享仍可用、平台回调仍 200，并用 Tauri Origin 验证密码接口预检不是 Access 拦截。
-- 每季度检查：恢复演练（`scripts/drill.ps1`，schema 期望值来自 `deploy/tool-versions.json`，步骤见 `docs/DEPLOY.md` 的「15.7 恢复演练（自动化 + 记录）」）、
-  `cloudflared tunnel info` 连接与版本、Windows 备份目录 ACL 是否仍仅白名单主体、age 公钥/私钥保管情况、
-  世界备份保留 4 份/PC 保留 4 份是否正常、SSH 仅公钥配置是否仍生效（`sshd -T | grep -E 'passwordauthentication|pubkeyauthentication'`）。
-- 怀疑泄露时：
-  1. 登录设置页“退出全部会话”；
-  2. CLI 重置密码/TOTP；
-  3. 轮换 RCON/opencode 密码（opencode 需同步 `/etc/opencode/opencode.env`、`/etc/antifieldcloud/env` 与两个 `service.json`，
-     然后重启 opencode 与 antifieldcloud；`bootstrap-env.sh --force` 后也需重启应用，非敏感配置会沿用现有值）；
-  4. 重新生成 age 密钥包并离线保管私钥；
-  5. 若 Bot 凭据可能泄露：在 QQ 开放平台后台吊销/重建 AppSecret，重新录入 `/chatbots`（DB 旧密文随更新覆盖）；必要时轮换 `CHATBOT_SECRET_KEY`
-     并接受所有 QQ AppSecret 重录；
-  6. 检查审计日志、`journalctl`、备份 pending 与世界/演练状态文件；Bot 额外检查 `chatbot_webhook_rejected`/`chatbot_command`/`chatbot.ai.image` 审计；
-  7. 从备份恢复可疑文件。
-- 不要在聊天、截图、issue 中粘贴密码、TOTP 密钥、恢复码、age 私钥、QQ AppSecret。
+版本变更仅维护于 [CHANGELOG](../CHANGELOG.md) 与 [ROADMAP](ROADMAP.md)。

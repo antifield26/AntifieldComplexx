@@ -2,6 +2,14 @@
 
 记录按版本从新到旧排列。每个版本注明模块：workbench、mcbot、client、dsh、ops。
 
+## [未发布]
+
+模块：docs、ops
+
+- 工程指令按目录分层，根文件精简并增加体积、导航和命令引用检查。
+- 除 CHANGELOG/ROADMAP 外，文档统一为当前契约、能力、配置、操作与验收状态；版本引入叙述和 OpenCode 升级实验归档到本文件。
+- 对齐 QQ/告警单 webhook、mcbot 契约 v2 与 404 边界，清除操作手册中已经失效的 QQ 管线、OpenCode 在线升级和直接行动面板说明。
+
 ## [v1.2.4] - 2026-11-16
 
 模块：workbench、mcbot、client、dsh、ops
@@ -183,6 +191,27 @@ v1.0.7 主题是运行时可信：告警可重放、轮询成功时间可见、m
 ### 本版不修
 
 - `stop()` 不取消在途轮询、契约版本无守卫、`lastError` 原样透传、告警风暴并发上限、5 格垂直墙、`http-proxy` 弃用警告。这些仍是审计残余。
+
+### OpenCode 验证记录归档（2026-11-04）
+
+这份矩阵来自 OpenCode 2.2.5 升级验证，属于历史运行记录，不是当前 DSH 的部署前置条件。timestamp `20261104T062115Z` 标识更早的 v2.2.0 升级前备份，不能把升级后的运行版本误认为该档内二进制版本。现行离线回滚使用经过独立验证的 2.2.5 退役档。
+
+### 本窗口矩阵（在运行中的 2.2.5 上执行，通过前不部署应用）
+
+| 编号 | 检查 | 结果 |
+|---|---|---|
+| V1 | 运行中 `/api/info` 为 2.2.5，进程 exe 非 deleted，Basic `/api/session` | PASS（2026-11-04，`/api/info=2.2.5`，exe 非 deleted，会话列表 200） |
+| V2 | 会话列表 | PASS（200，`data` 为数组） |
+| V3 | deny-all 创建会话；名为 `bash` 与 `shell` 的工具调用均被拒绝 | PASS（会话 200，存下的规则为 `*:deny`。生产模型 `opencode-go/deepseek-v4.1-flash` 没有发出可执行的工具调用：要求 `bash` 时回复该工具不可用；要求 `shell` 时把 DSML 文本留在 assistant 正文，没有工具结果。未观察到 `deny *` 被绕过，未加显式 bash/shell deny） |
+| V4 | prompt → assistant content/finish | PASS（同一模型，`finish=stop`，正文 `OK`） |
+| V5 | `/api/experimental/session/:id/wait` | PASS（204） |
+| V6 | 会话列表形状/清理 | PASS（`data` 数组加 cursor；测试会话已删除） |
+| V7 | 图片 prompt files | PASS（1×1 PNG data URL，200；assistant `finish=stop`，正文 `IMAGE`） |
+| V8 | botmsg 与 searxng 各 1 个进程且 connected；自主会话只放行 `mcbot_autonomy_*` | PASS（`/api/mcp` 中 botmsg 与 searxng 均为 connected，MCP 进程各 1；searxng 服务进程另有 2 个。自主规则创建为 `*:deny` 加 `mcbot_autonomy_*:allow`。内置 `opencode_console` 为 needs_auth，本次未改配置） |
+| V9 | 会话删除/清理 | PASS（DELETE 204，随后 GET 404） |
+| V14 | 资源余量 | PASS（可用内存约 4.0 GiB，OpenCode RSS 约 456 MiB，根分区可用 35G、已用 38%） |
+
+V10–V13（真实 QQ）沿用既有验收，本次不重跑。2026-11-04 的备份 timestamp 是 `20261104T062115Z`。`opencode.json` 没有把 `integration.use` 拆成 `mcp.use`/`skill.use`/`plugin.use`，本次未改配置，也未改 `compaction.buffer`。默认不带模型的新会话会落到 `opencode/crouton-alpha-free`，该模型在当前地区返回 403；应用与 mcbot 显式使用 `opencode-go/deepseek-v4.1-flash`，矩阵 V3–V7 用的是这个模型。
 
 ## [v1.0.6] - 2026-10-30（已部署，核心实机矩阵通过；已发布 Tag/Release）
 

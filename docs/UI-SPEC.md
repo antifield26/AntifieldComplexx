@@ -95,7 +95,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 第二行：
   - Minecraft 详情卡：玩家名列表（空态“暂无玩家在线”）、TPS、服务状态、公共地址复制按钮、“管理白名单”链接。
   - 快捷入口卡：AI 工作区（`https://ai.example.com`）、RPi Connect、Minecraft 地址（复制）、云盘（本页）。客户端把 AI 工作区打开在单独窗口，地址是一次性登录链接。
-  - 服务状态卡：minecraft/cloudflared/opencode 三个圆点 + 状态文字；`MCBOT_ENABLED=true` 时再加 mcbot，标签为 `mcbot`。
+  - 服务状态卡：按配置显示 Minecraft、cloudflared、mcbot 及 DSH Web/QQ/Minecraft Agent 的状态与就绪信息；不把未配置服务显示为运行正常。
 - 第三行：最近活动（审计 8 条，图标 + 动作 + 目标 + 相对时间）。
 - 趋势区（四张 CPU/内存/温度/磁盘 SVG 趋势卡）与“备份状态”卡（应用归档/密钥包/世界备份/演练）见 §14。
 - 所有卡片有 loading 骨架；错误时卡片内“加载失败 + 重试”。
@@ -131,7 +131,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 - 页头与内容由当前标签决定：服务器标签标题“Minecraft”、副标题“服务器只读状态与白名单管理”；Minecraft Bot 标签标题“Minecraft Bot”、副标题“Bot 状态、会话与事件记录”。
 - **标签栏**（仅 `/api/version.mcbotEnabled=true` 时显示）：`role=tablist` + 两个 `role=tab` 按钮（“服务器”“Minecraft Bot”），`aria-selected`/`aria-controls`/`tabIndex` 随激活标签变化，面板 `role=tabpanel` 与 `aria-labelledby` 联动；左右方向键循环、Home/End 跳转，焦点随选中移动；`?tab=mcbot` 或 `#mcbot` 深链进入 Minecraft Bot 标签，切回服务器清理由该标签写入的 `?tab=mcbot` 与 `#mcbot`。路由仍是 `/minecraft`。侧栏桌面为“Minecraft”，紧凑为“MC”。
-- mcbot 未启用（`mcbotEnabled=false` 或旧服务端不下发）时不渲染标签栏，直接展示服务器内容，页面行为与旧版一致。
+- mcbot 未启用或启用字段缺失时不渲染标签栏，直接展示服务器内容。
 - **服务器标签**（原 `/minecraft` 内容）：
   - 顶部状态卡：在线/离线、版本、MOTD、在线人数、TPS、服务状态、公共地址（复制）；RCON 降级时黄色提示。
   - 玩家列表：在线玩家名（头像用首字母圆形）。
@@ -173,7 +173,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 ## 6. 文案与本地化
 
-- 全部中文；技术名词保留英文（TOTP、RCON、TPS、SHA-256、opencode）。
+- 全部中文；技术名词保留英文（TOTP、RCON、TPS、SHA-256、DSH）。
 - 语气简洁、陈述式；不卖萌、不感叹号堆叠。
 - 时间：`Asia/Shanghai`，绝对时间 `YYYY-MM-DD HH:mm`；相对时间用于列表。
 - 空态/错误文案必须给出下一步动作（重试/返回/上传）。
@@ -208,9 +208,8 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 上传进度（含分片整文件总进度/放弃并清理）、预览三种类型、搜索、多选分享、回收站恢复可完成。
 - Dashboard 数据/降级状态/刷新正常；趋势卡范围切换与空数据降级正常；备份状态卡四类状态可读；白名单增删有反馈。
 - 笔记附件上传/删除/插入、版本查看/恢复可用；Activity 关键词/时间范围筛选与 Alerts 筛选分页可用（详见 §14）。
-- Bot 页：未启用时配置指引、启用后六分区（概览/配置/目标/投递与发布/角色与记忆/诊断）可键盘切换；AppSecret 不回显；目标含 `allowChat` 与最近入站目标登记；
-  发布表单含 TOTP + `PUBLISH` 且仅文本（QQ 单条 ≤2000；超过返回 400 `publish_text_too_long`，不静默截断、不服务端分段）；配置页“检查连接”展示 QQ access_token 自检结果（详见 §15）。
-- `/minecraft`：启用 mcbot 时双标签可键盘切换、`?tab=mcbot`/`#mcbot` 深链生效；服务器标签保持原状态/白名单功能；mcbot 面板状态/任务/移动/聊天/事件/历史可用，开始/停止/恢复/发送有二次确认，禁用/不可达/过期/只读分别降级，不展示 Token/地址（详见 §17）。
+- QQ：Workbench 不提供管理页或发布表单；DSH Web 的 QQ 条目只负责显示独立服务。
+- `/minecraft`：启用 mcbot 时双标签可键盘切换，`?tab=mcbot`/`#mcbot` 深链有效；Bot 由状态、会话和事件组成，在线模式/急停二次确认，管理员对话直接提交，禁用/不可达/过期/只读分别降级（详见 §17）。
 - 键盘可完成登录、打开弹窗、关闭弹窗。
 
 ## 10. 知识库与文件界面
@@ -241,7 +240,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 - Dashboard“告警”卡片：当前 active 条件、最近历史、webhook 状态、严重度中文标签。
 - 历史状态含 `firing/resolved/unknown/event`：`event` 显示“已记录”并使用中性色调，表示 mcbot 等外部服务的事件记录，**不当作活跃告警**；状态筛选含“已记录”；`mcbot_*` 事件名有中文映射（血量过低/任务失败/断线/箱子已满/防御撤退/告警）。
-- 事件带 `deliveries` 时只显示 webhook 一行：完成显示「已送达」；`skipped` 显示「跳过」；`pending` 且 `attempts>0` 显示「待重试」，否则「待投递」；`dead` 显示「投递失败」并附脱敏原因。有投递详情时，`skipped` 不再显示旧的「通知发送失败」。`deliveries` 为 `null` 且存在 `deliveryError` 时仍显示「通知发送失败」。本卡片只读，没有重投按钮。
+- 事件带 `deliveries` 时只显示 webhook 一行：完成显示「已送达」；`skipped` 显示「跳过」；`pending` 且 `attempts>0` 显示「待重试」，否则「待投递」；`dead` 显示「投递失败」并附脱敏原因。有投递详情时，`skipped` 只显示「跳过」。`deliveries` 为 `null` 且存在 `deliveryError` 时仍显示「通知发送失败」。本卡片只读，没有重投按钮。
 - Settings“监控告警”：只读阈值/检查间隔/webhook 是否配置/最近评估；“测试 Webhook”按钮（POST /api/alerts/test）。
 - 未配置 webhook 时仍显示面板告警，不阻塞。
 
@@ -324,7 +323,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 ## 15. 机器人页
 
-Workbench 不再提供机器人管理页。侧栏没有“机器人”，路由 `/chatbots` 与 `/bots` 不存在。生产 QQ 由 DSH 管理。
+Workbench 不提供机器人管理页。侧栏没有“机器人”，路由 `/chatbots` 与 `/bots` 不存在。生产 QQ 由 DSH 管理。
 
 ## 16. 备份加密/异地副本与审计界面
 
@@ -334,7 +333,7 @@ Workbench 不再提供机器人管理页。侧栏没有“机器人”，路由 
   说明“加密归档文件名 `*.tar.gz.age`；Web 不持私钥，加密归档只能在 PC 用离线私钥校验/恢复”。公钥缺失且开关开启时显示 danger：
   “公钥缺失，prepare 会失败关闭”。不展示任何密钥/私钥内容。
 - **异地副本状态卡**（只读）：标题“异地副本”；展示最近同步时间（相对时间）、目标别名（无则“未配置”，**不展示远端真实路径/URL/凭据**）、
-  本次上传/跳过/失败数量与字节数、远端保留份数、`plaintextSkipped>0` 安全信号（只展示为异常说明）；未配置时为空态“未配置（默认关闭）”。
+  最近一次任务的上传/跳过/失败数量与字节数、远端保留份数、`plaintextSkipped>0` 安全信号（只展示为异常说明）；未配置时为空态“未配置（默认关闭）”。
 - **长任务**：prepare/verify/归档浏览/恢复计划/执行使用显式超时（prepare 3300s，其余 600s）；提交中禁用按钮并显示“服务端可能仍在执行，
   请勿重复提交”；超时 Toast 明确“服务端可能仍在执行，刷新后查看 pending/计划状态”，不提示“失败可重试”造成重复任务。
 - **prepare 结果警告**：展示 `warnings[]` 与 `skippedMissing[]`（不完整备份不得显示为完全成功）；缺失文件说明“已跳过、游标不越过、
@@ -359,7 +358,7 @@ Workbench 不再提供机器人管理页。侧栏没有“机器人”，路由 
 
 ### 前端工程
 
-- 样式集中在 `web/src/styles/v07.css`（在 `main.tsx` 引入），不引入第三方组件库；测试覆盖长任务超时、恢复持久化、
+- 样式由 `apps/client/src/styles/` 管理，在客户端入口引入，不引入第三方组件库；测试覆盖长任务超时、恢复持久化、
   加密/异地状态卡、prepare 警告、断点 `fileId`、`archive_encrypted` 文案与 MetaContext 降级。
 
 ## 17. Minecraft Bot 面板（`/minecraft?tab=mcbot`）
@@ -388,7 +387,7 @@ Minecraft Bot 面板是 `/minecraft` 的第二个标签页。标签文字是“M
 - 状态栅格（缺失字段显示“—”）：运行状态（中文徽章：空闲（动态下线）/连接中/已连接/重连等待/冷却中）、Minecraft 连接（已连接（用户名）/未连接）、服务器在线/上限（服务器不可达时提示）、TPS（1m/5m/15m，RCON 不可用时提示）、mcbot 血量/饥饿（维度作 hint）、AI 队列（排队/处理中，失败次数与最近延迟；AI 关闭时“—”）、记忆（玩家数/轮数）、mcbot 版本 + 契约版本、运行时长、白名单数量（上游 lastError 作 hint）、告警联动（已启用/未启用）、事件流条数（“内存环”）。
 - 附加警告：上次 Minecraft 断线（相对时间 + 原因 + 累计重连次数）、AI 最近错误（文本）。
 - 脚注：上次轮询相对时间（`lastPollAt`）；契约版本是数字且不是 2 时提示“mcbot 契约不是 v2”；`contractVersion` 非 number（缺失/`undefined`）时显示“—”，不显示 `vundefined`。
-- 寻路 Fact：有 `navigation` 时显示状态/来源/最近兜底；`lastFallbackReason` 非空时在其下显示“兜底原因：”加该短文本。旧版无 `navigation` 时不显示这一格。
+- 寻路 Fact：有 `navigation` 时显示状态/来源/最近兜底；`lastFallbackReason` 非空时在其下显示“兜底原因：”加该短文本。`navigation` 缺失时不显示这一格。
 
 ### 自主会话事实
 
@@ -406,14 +405,14 @@ Minecraft Bot 面板是 `/minecraft` 的第二个标签页。标签文字是“M
 ### 事件流
 
 - 卡片标题“事件记录”，描述“mcbot 内存事件环的最近事件（按时间倒序，最多显示 100 条）。”；右上角条数徽章。
-- 旧版 mcbot（`eventsSupported=false`）显示 warning：“mcbot 需升级到 v0.6.0 才能显示事件记录（当前 mcbot 未提供 /events/recent 或事件契约）。”
+- `eventsSupported=false` 时显示事件通道不可用的 warning；状态仍按有效契约独立展示，不把事件失败解释为允许其他契约。具体提示文案以事件卡组件为准。
 - 类型筛选按钮组（全部/聊天/任务/状态/移动/告警/自主，`aria-pressed`）；列表项 = 类型徽章（聊天 accent、任务 info、状态 muted、移动 info、告警 warning）+ 相对时间 + 纯文本正文：聊天事件显示“用户名：内容”或“mcbot：内容”，其余显示结构化摘要（任务动作/状态、连接状态/其他玩家、移动动作/目标/状态/错误、告警类型/级别/内容）；`data` 一律视为不可信 unknown，不使用 HTML 注入。
 - 空态区分“暂无事件”与“暂无「<类型>」事件”；脚注说明事件来自 mcbot 内存环、重启清空、本页不保存历史。
 
 ### 确认、降级与隐私
 
-- 二次确认：切换在线模式和急停使用统一 `ConfirmDialog`（危险操作默认焦点“取消”，加载中禁止重复提交）。发送管理员对话不再二次确认。
+- 二次确认：切换在线模式和急停使用统一 `ConfirmDialog`（危险操作默认焦点“取消”，加载中禁止重复提交）。发送管理员对话直接提交，无二次确认。
 - 降级矩阵：禁用 → 仅说明，`eventGap` 为 null；首次加载失败 → 卡片错误 + 重试；等待首次轮询 → 提示且控制禁用；不可达 → 缓存数据 + 警告 + 控制禁用；stale → 警告，时间用 `lastSuccessAt`，null 时为“尚无成功轮询”（不用失败轮询的 `lastPollAt`）；**事件缺口 → 可见缺口区间，状态卡仍显示**；**可达但事件/游标失败 → 可见部分失败警告，对话在控制可用时仍可尝试**；控制未启用 → 对话和急停禁用。
 - 隐私与安全：不展示 mcbot URL/Token/内部路径/记忆正文/模型 prompt/工具参数；事件与对话纯文本渲染；对话和急停在控制未就绪时禁用。管理员对话允许 `/`。mcbot 本机游戏发言仍拒绝任意 ASCII `/` 与 C0。
-- 历史错误码/错误提示使用中文映射（含 `mcbot_cursor_failed`/`mcbot_not_found`/`mcbot_history_disabled`），未知码原样显示；查表使用 own-property，不命中原型链。
+- 错误码/错误提示使用中文映射（含 `mcbot_cursor_failed`/`mcbot_not_found`/`mcbot_history_disabled`），未知码原样显示；查表使用 own-property，不命中原型链。
 - 响应式/可访问性：390 px 下状态栅格与双列卡片纵向堆叠、不横向滚动；标签键盘可操作；图标按钮有 `aria-label`；表单 label 关联；错误 `role="alert"`；不引入第三方组件库。
