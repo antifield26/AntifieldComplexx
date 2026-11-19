@@ -271,7 +271,7 @@
 }
 
 .file-grid-card-selected {
-  border-color: rgba(34, 211, 238, 0.55);
+  border-color: rgba(238, 116, 34, 0.55);
   background: var(--accent-soft);
 }
 
@@ -283,7 +283,7 @@
   display: inline-flex;
   padding: 3px;
   border-radius: 6px;
-  background: rgba(10, 14, 20, 0.62);
+  background: rgba(16, 15, 14, 0.62);
   backdrop-filter: blur(4px);
 }
 
@@ -327,7 +327,7 @@
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: rgba(34, 211, 238, 0.04);
+  background: rgba(238, 116, 34, 0.04);
 }
 
 .share-selection-head {

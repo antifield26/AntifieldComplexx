@@ -26,10 +26,10 @@ const NOTICE_HTML = `<!doctype html>
 <meta name="robots" content="noindex, nofollow">
 <title>AntifieldComplexx</title>
 <style>
-  body { margin: 0; font-family: system-ui, sans-serif; background: #0a0e14; color: #e8eef7; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #100f0e; color: #f7eee8; }
   main { max-width: 28rem; margin: 4rem auto; padding: 0 1.25rem; }
   h1 { font-size: 1.5rem; font-weight: 650; }
-  p { line-height: 1.6; color: #b7c3d4; }
+  p { line-height: 1.6; color: #c7c5c4; }
 </style>
 </head>
 <body>
@@ -85,11 +85,11 @@ function page(title: string, body: string): string {
 <meta name="robots" content="noindex, nofollow">
 <title>${escapeHtml(title)}</title>
 <style>
-  body { margin: 0; font-family: system-ui, sans-serif; background: #0a0e14; color: #e8eef7; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #100f0e; color: #f7eee8; }
   main { max-width: 32rem; margin: 3rem auto; padding: 0 1.25rem; }
   h1 { font-size: 1.25rem; overflow-wrap: anywhere; }
-  p, li { line-height: 1.5; color: #b7c3d4; }
-  a { color: #8ec5ff; }
+  p, li { line-height: 1.5; color: #c7c5c4; }
+  a { color: #f7bd96; }
   form { margin-top: 1rem; }
   input, button { font: inherit; }
   input { display: block; width: 100%; box-sizing: border-box; margin-top: 0.35rem; padding: 0.5rem; }

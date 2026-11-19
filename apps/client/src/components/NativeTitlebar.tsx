@@ -87,7 +87,7 @@ export function NativeTitlebar() {
         }}
         onDoubleClick={() => { void act('maximize') }}
       >
-        <span className="native-titlebar-mark" aria-hidden="true">AC</span>
+        <img className="native-titlebar-mark" src="/favicon.svg" width={20} height={20} alt="" />
         <span className="native-titlebar-product">AntifieldComplexx</span>
         <span className="native-titlebar-separator" aria-hidden="true">/</span>
         <span className="native-titlebar-page">{title}</span>

@@ -512,6 +512,7 @@ export function backupHealthLabel(entries: BackupStatusEntry[]): string {
   const tone = worstBackupTone(entries)
   if (tone === 'danger') return '存在异常'
   if (tone === 'warning') return '需要关注'
+  if (tone === 'success' && entries.some(entry => entry.tone === 'muted' && ['archive', 'secrets', 'world', 'worldPull', 'drill'].includes(entry.key))) return '部分状态未知'
   if (tone === 'success') return '状态正常'
   return '暂无数据'
 }

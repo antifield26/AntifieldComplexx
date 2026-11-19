@@ -27,6 +27,7 @@ import type { BackupHealthTone } from '../../lib/backup-status'
 
 export interface BackupStatusCardProps {
   /** /api/dashboard 的 backup（含 secretsOk/world/worldPull/drill 扩展字段） */
+  health?: BackupStatus['health']
   backup?: BackupStatus | null
   /** /api/backups 的 state */
   state?: BackupState | null
@@ -58,6 +59,7 @@ function toneBadgeTone(tone: BackupHealthTone): BadgeTone {
 
 /** 备份健康状态面板；所有数据缺失时降级为空态提示而不是报错。 */
 export function BackupStatusCard({
+  health,
   backup = null,
   state = null,
   world = null,
@@ -72,7 +74,7 @@ export function BackupStatusCard({
   onRetry,
   className,
 }: BackupStatusCardProps) {
-  const entries = buildBackupStatusEntries({
+  const legacy = buildBackupStatusEntries({
     backup,
     state,
     world: world ?? backup?.world ?? null,
@@ -83,6 +85,15 @@ export function BackupStatusCard({
     currentSchemaVersion,
     archives,
   })
+  const facts = health ?? backup?.health
+  const entries = facts?.length ? [...facts.map(item => ({
+    key: item.key, label: item.title, value: item.state,
+    tone: (item.state === '失败' ? 'danger' : ['超期','尚无证据'].includes(item.state) ? 'warning' :
+      item.state === '正常' ? 'success' : 'muted') as BackupHealthTone,
+    timestamp: item.lastSuccessAt, detail: [item.location, item.reason,
+      ...(item.key === 'drill_stale' || item.key === 'cloud_drill' ? ['已验证可恢复到 ' + (item.recoveryPoint ? new Date(item.recoveryPoint).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '暂无数据')] : [])
+    ].join(' · '), alert: ['失败','超期','尚无证据'].includes(item.state),
+  })), ...legacy.filter(item => ['encryption','acked','orphan'].includes(item.key))] : legacy
   const hasAnyData =
     Boolean(backup) ||
     Boolean(state) ||
@@ -107,7 +118,7 @@ export function BackupStatusCard({
       <header className="backup-status-header">
         <div className="backup-status-summary">
           <span className="backup-status-title">备份健康</span>
-          <Badge tone={toneBadgeTone(worstBackupTone(entries))}>{backupHealthLabel(entries)}</Badge>
+          <Badge tone={toneBadgeTone(worstBackupTone(entries))}>{facts?.[0]?.state ?? backupHealthLabel(entries)}</Badge>
         </div>
         {onRetry ? (
           <button type="button" className="link-button backup-status-retry" onClick={onRetry}>
@@ -127,6 +138,7 @@ export function BackupStatusCard({
       <ul className="backup-status-grid">
         {entries.map((entry) => (
           <li
+            id={'backup-' + entry.key}
             key={entry.key}
             className={cx(
               'backup-status-item',

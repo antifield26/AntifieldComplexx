@@ -4,7 +4,7 @@
 
 Minecraft Bot 页只有三块：Bot 状态、会话、事件记录。任务、移动和游戏内发言由会话里的模型或游戏内口令发起。页面不提供目标草案。
 
-- 单一暗色青色品牌，深浅分层、青蓝光感、短 opacity／transform 过渡，遵守减少动画设置。
+- 单一石墨黑与暖橙品牌，深浅分层、暖橙强调、短 opacity／transform 过渡，遵守减少动画设置。
 - Windows 自绘标题栏提供拖动、最大化、最小化、还原与关闭，原生权限限定本地 main。
 - Android 底部首页／文件／MC／更多，更多集中知识库、分享、回收站、活动与设置。适配安全区、键盘及至少 44px 触控区域。
 - Android 使用产品 AC 自适应图标；固定顶栏／底栏不参与 WebView 容器拉伸，保留内容惯性滚动。
@@ -38,8 +38,8 @@ CSS 变量（`web/src/styles/tokens.css`）：
   --text: #e6edf3;
   --text-muted: #93a4b8;
   --text-dim: #6b7d92;
-  --accent: #22d3ee;
-  --accent-strong: #06b6d4;
+  --accent: #ff9d59;
+  --accent-strong: #ef8944;
   --accent-soft: rgba(34, 211, 238, 0.12);
   --success: #34d399;
   --warning: #fbbf24;
@@ -52,12 +52,12 @@ CSS 变量（`web/src/styles/tokens.css`）：
 }
 ```
 
-- 背景 `--bg`；卡片 `--surface` + 1px `--border`；强调色 cyan 仅用于主按钮、选中态、进度、关键数字。
+- 背景 `--bg`；卡片 `--surface` + 1px `--border`；强调色 暖橙仅用于主按钮、选中态、进度、关键数字。
 - 圆角 14/9；卡片内边距 20；桌面内容最大宽度 1320；栅格间距 16/20。
 - 字号：正文 14；辅助 12.5；标题 20/16；大数字 28–34（等宽数字）。
 - 图标：`lucide-react`，18–20 px，颜色随文本；不使用彩色 emoji。
 - 动效：150–200 ms ease；只做 opacity/transform；尊重 `prefers-reduced-motion`。
-- Logo：方形渐变（cyan→blue）+ `AC` 字母；登录页与侧栏使用。
+- Logo：方形渐变（石墨底暖橙）+ `AC` 字母；登录页与侧栏使用。
 
 ## 3. 布局
 
@@ -420,3 +420,7 @@ Minecraft Bot 面板是 `/minecraft` 的第二个标签页。标签文字是“M
 - 隐私与安全：不展示 mcbot URL/Token/内部路径/记忆正文/模型 prompt/工具参数；事件与对话纯文本渲染；对话和急停在控制未就绪时禁用。管理员对话允许 `/`。mcbot 本机游戏发言仍拒绝任意 ASCII `/` 与 C0。
 - 错误码/错误提示使用中文映射（含 `mcbot_cursor_failed`/`mcbot_not_found`/`mcbot_history_disabled`），未知码原样显示；查表使用 own-property，不命中原型链。
 - 响应式/可访问性：390 px 下状态栅格与双列卡片纵向堆叠、不横向滚动；标签键盘可操作；图标按钮有 `aria-label`；表单 label 关联；错误 `role="alert"`；不引入第三方组件库。
+
+## 工作台交互
+
+首页优先展示搜索与常用入口。Ctrl/Cmd+K 打开全局搜索，方向键选择，Enter 打开，Esc 或系统返回关闭；手机使用全屏窗口。备份异常可跳转到设置页对应条目，磁盘快照显示采样时间、完整性、分类增量和保留原因。

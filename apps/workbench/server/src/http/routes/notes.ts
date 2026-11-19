@@ -60,6 +60,19 @@ export function registerNoteRoutes(
 ): void {
   const csrf = csrfGuard(config)
 
+  app.get('/api/search', { preHandler: [requireAuth] }, async (request) => {
+    const q = asRecord(request.query).q
+    if (typeof q !== 'string' || !q.trim() || q.length > 160) throw badRequest('搜索词需为 1–160 个字符')
+    const query = { q: q.trim(), pageSize: 6 }
+    const groups = {
+      files: (files?.search(query.q, 6).items ?? []).map(file => ({ id: file.id, title: file.name, detail: '文件' })),
+      notes: notes.list(query).items.map(note => ({ id: note.id, title: note.title, detail: note.bodyMd.slice(0, 96) })),
+      bookmarks: bookmarks.list(query).items.map(bookmark => ({ id: bookmark.id, title: bookmark.title, detail: bookmark.description.slice(0, 96) })),
+    }
+    return Object.fromEntries(Object.entries(groups).map(([kind, items]) =>
+      [kind, { items: items.slice(0, 5), more: items.length > 5 }]))
+  })
+
   // ---------- 笔记 ----------
 
   app.get('/api/notes', { preHandler: [requireAuth] }, async (request) => {

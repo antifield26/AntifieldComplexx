@@ -59,7 +59,14 @@ jobs:
           expected="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync("deploy/tool-versions.json","utf8")).dshVersion)')"
           test -n "$expected"
           test "$(node deploy/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js --version)" = "$expected"
-          node deploy/dsh/smoke-runtime.mjs
+          release=$(mktemp -d)
+          bash deploy/dsh/assemble.sh "$release"
+          (cd "$release" && sha256sum --quiet --check SHA256SUMS)
+          test "$(cat "$release/source-commit")" = "$GITHUB_SHA"
+          DSH_STAGED_ROOT="$release" node deploy/dsh/smoke-runtime.mjs
+          mv "$release/session-steps.mjs" "$RUNNER_TEMP/session-steps.mjs"
+          if node "$release/mcbot-agent.mjs" 2>"$RUNNER_TEMP/mcbot-start.log"; then exit 1; fi
+          grep -q 'ERR_MODULE_NOT_FOUND.*session-steps.mjs' "$RUNNER_TEMP/mcbot-start.log"
           node --test scripts/test/dsh-*.test.mjs
 
   coverage:

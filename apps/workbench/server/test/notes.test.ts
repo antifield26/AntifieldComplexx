@@ -20,6 +20,26 @@ function expectAppError(fn: () => unknown, status: number, code: string): void {
   assert.fail('预期抛出 AppError，但没有抛错')
 }
 
+test('全局中文搜索分组、结果上限与会话限制', async () => {
+  const fx = phase2Fixture()
+  const notes = new NoteService(fx.db)
+  const bookmarks = new BookmarkService(fx.db)
+  const app = await createAuthedApp(fx.db, server => registerNoteRoutes(server, fx.config, notes, bookmarks, fx.files))
+  try {
+    for (let i = 0; i < 6; i++) notes.create(ACTOR, { title: String(i), bodyMd: '树莓派' })
+    bookmarks.create(ACTOR, { title: '树莓派文档', url: 'https://example.com' })
+    const url = '/api/search?q=' + encodeURIComponent('树莓派')
+    assert.equal((await app.inject({ url })).statusCode, 401)
+    const response = await app.inject({ url, headers: authHeaders() })
+    assert.equal(response.statusCode, 200)
+    assert.equal(response.json().notes.items.length, 5)
+    assert.equal(response.json().notes.more, true)
+    assert.equal(response.json().bookmarks.items[0].title, '树莓派文档')
+    assert.deepEqual(response.json().files.items, [])
+    assert.equal((await app.inject({ url: '/api/search?q=', headers: authHeaders() })).statusCode, 400)
+  } finally { await app.close(); fx.close() }
+})
+
 test('笔记 CRUD、标签、置顶排序与分页', () => {
   const fx = phase2Fixture()
   try {

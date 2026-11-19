@@ -220,7 +220,7 @@ test('告警：世界备份/拉取/演练超期触发、失败 critical、恢复
     fx.files.set(fx.config.drillStatusFile, JSON.stringify({ lastRunAt: isoHoursAgo(40 * 24), ok: true }))
 
     const result = await fx.alerts.evaluateOnce()
-    assert.equal(result.checked, 12)
+    assert.equal(result.checked, 13)
     const firing = eventsOf(fx).filter((row) => row.status === 'firing')
     assert.deepEqual(
       firing.map((row) => row.event).sort(),

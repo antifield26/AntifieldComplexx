@@ -148,7 +148,7 @@
 }
 
 .restore-step-active {
-  border-color: rgba(34, 211, 238, 0.32);
+  border-color: rgba(238, 116, 34, 0.32);
   background: var(--accent-soft);
   color: var(--accent);
 }

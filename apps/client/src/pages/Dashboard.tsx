@@ -39,6 +39,7 @@ import { Avatar } from '../components/Avatar'
 import { RelativeTime } from '../components/RelativeTime'
 import { AuditEntry } from '../components/AuditEntry'
 import { AlertsCard } from '../components/alerts/AlertsCard'
+import { StorageInventory } from '../components/StorageInventory'
 import { BackupStatusCard } from '../components/backups/BackupStatusCard'
 import { MetricsCharts } from '../components/dashboard/MetricsCharts'
 import { SkeletonText } from '../components/Skeleton'
@@ -159,8 +160,9 @@ export function Dashboard() {
   const memPercent = percentOf(host.mem.usedBytes, host.mem.totalBytes)
   const rootPercent = percentOf(host.root.usedBytes, host.root.totalBytes)
   const backupStale = backup
-    ? Boolean(backup.overdue) || (backup.ageHours !== null && backup.ageHours > 48)
+    ? backup.overdue ?? (backup.ageHours !== null && backup.ageHours > 48)
     : false
+  const overall = backup?.health?.[0]?.state
   const backupOverview = backups.data ? summarizeBackups(backups.data) : null
   // 优先使用 dashboard 下发字段；旧服务端回退到 /api/backups 汇总
   const pendingBackups = backup?.pendingCount ?? backupOverview?.pending ?? 0
@@ -178,7 +180,11 @@ export function Dashboard() {
   const unknownServices = Object.values(services).filter((state) => state === 'unknown')
   if (unknownServices.length > 0) concerns.push({ label: `${unknownServices.length} 项服务状态待确认`, to: '#service-status' })
   if (aiUnavailable && services.dsh_web !== 'inactive' && services.opencode !== 'inactive') concerns.push({ label: 'AI 工作区尚未就绪', to: '#service-status' })
-  if (backupStale || backupError) concerns.push({ label: '备份需要处理', to: '/settings#backup' })
+  if (backup?.health?.length) {
+    for (const fact of backup.health.filter(fact => !['正常','未启用'].includes(fact.state))) {
+      concerns.push({ label: fact.title + ' · ' + fact.location + ' · ' + fact.reason, to: '/settings#backup-' + fact.key })
+    }
+  } else if (backupStale || backupError) concerns.push({ label: '备份需要处理', to: '/settings#backup' })
   else if (pendingBackups > 0) concerns.push({ label: `${pendingBackups} 个备份待确认`, to: '/settings#backup' })
   else if (!backup?.lastPullAt) concerns.push({ label: '备份尚无拉取记录', to: '/settings#backup' })
   if (storagePercent >= 90) concerns.push({ label: '文件空间紧张', to: '/files' })
@@ -213,7 +219,7 @@ export function Dashboard() {
       ) : null}
 
       <section className="dashboard-launchpad" aria-label="常用入口">
-        <div className="dashboard-launchpad-heading"><span className="section-eyebrow">连接你的日常</span><span>文件 · 智能 · 世界</span></div>
+
         <div className="dashboard-launchpad-grid">
           {aiUrl ? (
             <a className="launch-card launch-card-ai" href={aiUrl} target="_blank" rel="noopener noreferrer" onClick={(event: MouseEvent<HTMLAnchorElement>) => {
@@ -229,6 +235,7 @@ export function Dashboard() {
             <div className="launch-card launch-card-ai launch-card-disabled" aria-disabled="true"><span className="launch-icon"><Sparkles size={24} aria-hidden="true" /></span><span className="launch-text"><strong>AI 工作区</strong><span>AI 地址尚未配置</span></span></div>
           )}
           <Link className="launch-card" to="/files"><span className="launch-icon"><FolderOpen size={24} aria-hidden="true" /></span><span className="launch-text"><strong>我的文件</strong><span>{storage.fileCount} 个文件，随时取用</span></span><ChevronRight size={17} aria-hidden="true" /></Link>
+          <Link className="launch-card" to="/knowledge"><span className="launch-icon"><FolderOpen size={24} /></span><span className="launch-text"><strong>知识库</strong><span>笔记与书签</span></span><ChevronRight size={17} /></Link>
           <Link className="launch-card" to="/minecraft"><span className="launch-icon"><Gamepad2 size={24} aria-hidden="true" /></span><span className="launch-text"><strong>Minecraft</strong><span>{minecraft.online ? `${minecraft.players.online} 位玩家在线 · 查看 mcbot` : '服务器与 mcbot 控制中心'}</span></span><ChevronRight size={17} aria-hidden="true" /></Link>
         </div>
       </section>
@@ -238,6 +245,7 @@ export function Dashboard() {
         {concerns.length > 0 ? <div className="dashboard-health-items">{concerns.map((item) => <Link key={item.label} to={item.to}>{item.label}<ChevronRight size={13} aria-hidden="true" /></Link>)}</div> : <span className="dashboard-health-note">主机、文件与服务状态已同步</span>}
       </section>
 
+      <StorageInventory />
       <div className="stats-grid" id="host-status">
         <Stat
           label="主机"
@@ -311,7 +319,7 @@ export function Dashboard() {
           value={backup?.lastPullAt ? <RelativeTime ts={backup.lastPullAt} /> : '无记录'}
           tone={backupStale ? 'danger' : 'default'}
           badge={
-            backupStale ? (
+            overall ? <Badge tone={overall === '正常' ? 'success' : overall === '失败' ? 'danger' : 'warning'}>{overall}</Badge> : backupStale ? (
               <Badge tone="danger" dot>备份已过期</Badge>
             ) : pendingBackups > 0 ? (
               <Badge tone="warning" dot>{pendingBackups} 个待确认</Badge>
@@ -331,7 +339,7 @@ export function Dashboard() {
           footer={
             <>
               {backupStale ? (
-                <span className="stat-note text-danger">最近拉取已超过 48 小时，请检查 Windows 备份计划任务。</span>
+                <span className="stat-note text-danger">最近拉取已超过配置阈值，请检查 Windows 备份计划任务。</span>
               ) : null}
               {backupError ? <span className="stat-note text-danger">最近错误：{backupError}</span> : null}
               <div className="stat-footer-row">

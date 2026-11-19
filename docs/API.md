@@ -40,7 +40,7 @@ Workbench 与前端共同遵守本文前半部分。Minecraft Bot 的本机 HTTP
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "1.2.5", "schemaVersion": 22, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
+{ "ok": true, "version": "1.2.6", "schemaVersion": 22, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
 ```
 
 - `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
@@ -495,7 +495,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "1.2.5", "schemaVersion": 22, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
+- `GET /api/version`（需要会话）：`{ "version": "1.2.6", "schemaVersion": 22, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
   - `schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。字段缺失时前端按关闭/未配置/null 降级。
   - `mcbotEnabled`/`mcbotControlEnabled`：mcbot 集成是否启用、控制接口是否可用（`MCBOT_ENABLED=true` 且 `MCBOT_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 mcbot 标签与控制操作。两者都不含 mcbot 地址/Token。
   - schema **17**；`audit.persisted` 表示诊断是否来自 DB 持久化行（DB 不可用时 false，回退内存计数）。
@@ -696,7 +696,7 @@ Workbench 不提供 QQ 管理、Webhook、发布或 OpenCode Chat。这些路径
 
 ## 15. mcbot Bot 对接
 
-mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）。应用轮询只读接口，并代理管理员对话、在线模式、停止和急停。浏览器不直连 mcbot，服务端不下发 Token 或 URL。目标上游为 mcbot **v1.2.5**，只接受契约 v2。非 v2 的读取拒绝。这些端点都要会话，写操作还要 CSRF。凭据与响应边界见 `docs/SECURITY.md`。
+mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）。应用轮询只读接口，并代理管理员对话、在线模式、停止和急停。浏览器不直连 mcbot，服务端不下发 Token 或 URL。目标上游为 mcbot **v1.2.6**，只接受契约 v2。非 v2 的读取拒绝。这些端点都要会话，写操作还要 CSRF。凭据与响应边界见 `docs/SECURITY.md`。
 
 ### 通用语义
 
@@ -721,13 +721,13 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
   "sayEnabled": true,
   "alertsEnabled": true,
   "eventsSupported": true,
-  "version": "1.2.5",
+  "version": "1.2.6",
   "contractVersion": 2,
   "lastPollAt": "2026-10-27T09:00:00.000Z",
   "lastSuccessAt": "2026-10-27T09:00:00.000Z",
   "error": null,
   "eventGap": null,
-  "status": { "version": "1.2.5", "contractVersion": 2, "uptimeSec": 123, "state": "connected", "minecraft": { "connected": true, "username": "lofii" }, "player": { "health": 20, "food": 20 }, "server": { "reachable": true, "online": 1, "max": 6 }, "task": { "enabled": true, "active": false, "name": null, "state": "idle", "pendingResume": null, "queue": [] }, "admin": { "rcon": true, "tps": { "one": 19.9, "five": 19.8, "fifteen": 19.7 } } },
+  "status": { "version": "1.2.6", "contractVersion": 2, "uptimeSec": 123, "state": "connected", "minecraft": { "connected": true, "username": "lofii" }, "player": { "health": 20, "food": 20 }, "server": { "reachable": true, "online": 1, "max": 6 }, "task": { "enabled": true, "active": false, "name": null, "state": "idle", "pendingResume": null, "queue": [] }, "admin": { "rcon": true, "tps": { "one": 19.9, "five": 19.8, "fifteen": 19.7 } } },
   "events": [ { "id": "036e732d-10", "type": "presence", "ts": "2026-10-27T08:59:58.000Z", "data": {} } ]
 }
 ```
@@ -821,7 +821,7 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
 ```json
 {
   "status": "ok",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "contractVersion": 2,
   "uptimeSec": 123,
   "state": "connected",
@@ -839,7 +839,7 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
 
 ```json
 {
-  "version": "1.2.5",
+  "version": "1.2.6",
   "contractVersion": 2,
   "uptimeSec": 123,
   "state": "connected",
@@ -999,7 +999,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 
 ```json
 {
-  "version": "1.2.5",
+  "version": "1.2.6",
   "bootId": "036e732d",
   "lastEventId": "036e732d-10",
   "resync": false,
@@ -1401,3 +1401,9 @@ SSE `/events` 与 `/events/recent` 包含 `type:"autonomy"`，data 形如 `{acti
 - `/admin/status`、`/history` 使用读 Token；不可写。
 - 告警建议后端按 `type` 去重/展示，并自行决定是否通知；本机契约不提供 webhook。
 - 本机契约不提供 `/metrics`、webhook、审计查询接口、跨维度/多 Bot/语音/桥接。
+
+## 工作台检索与备份证据
+
+已认证的 `GET /api/search?q=关键词` 接受 1–160 字符，返回 files、notes、bookmarks 三组，每组含 items 与 more，最多五项。条目含 id、title、detail。
+
+已认证的 `GET /api/storage/inventory` 返回 snapshot 与 lastComplete；首次盘点前均为空。snapshot.rows 仅含类别、字节、相对上次完整采样的变化、可回收估计与保留说明。dashboard.backup.health 返回按严重程度排序的告警证据，各项含 key、state、reason、location、lastSuccessAt、recoveryPoint。

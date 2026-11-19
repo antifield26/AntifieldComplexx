@@ -6,7 +6,7 @@ import { URL } from 'node:url'
 
 test('DSH 安装清单包含各运行时入口及本地依赖', () => {
   const directory = new URL('../../deploy/dsh/', import.meta.url)
-  const stage = readFileSync(new URL('stage.sh', directory), 'utf8')
+  const stage = readFileSync(new URL('assemble.sh', directory), 'utf8')
   const assetBlock = stage.match(/^assets=\(\s*([\s\S]*?)^\)/m)
   assert.ok(assetBlock, '缺少 DSH 安装清单')
   const assets = new Set(assetBlock[1].trim().split(/\s+/))

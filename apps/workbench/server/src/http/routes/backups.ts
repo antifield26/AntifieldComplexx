@@ -4,6 +4,8 @@
  * 安全边界：全部端点需要登录；写操作额外校验 CSRF；危险操作（prepare/import/restore-plan/execute）
  * 还要求 TOTP 再认证 + 限流 + 明确确认词；不暴露归档下载、TOTP 或服务器路径。
  */
+import type { AlertService } from '../../alerts/service.ts'
+import { backupHealth } from '../../backups/health.ts'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { BackupService } from '../../backups/service.ts'
@@ -31,6 +33,7 @@ export function registerBackupRoutes(
   config: Config,
   backups: BackupService,
   db?: DatabaseSync,
+  alerts?: AlertService,
 ): void {
   const csrf = csrfGuard(config)
   const prepareLimiter = new SlidingWindowLimiter(60 * 60_000, 3)
@@ -79,7 +82,7 @@ export function registerBackupRoutes(
   // ---------- 清单 ----------
 
   app.get('/api/backups', { preHandler: [requireAuth] }, async () => {
-    return backups.list()
+    return { ...backups.list(), ...(alerts ? { health: backupHealth(alerts.backupConditions()) } : {}) }
   })
 
   // ---------- 生成归档（仅 pending，不 ack） ----------

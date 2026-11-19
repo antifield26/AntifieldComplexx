@@ -6,14 +6,16 @@ import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/pr
 import { createServer, request } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { DeepSeekHarness } from '@deepseek-ai/dsh-sdk-client'
 import { WebSocketServer } from 'ws'
 import { buildToolDefinitions } from '../../apps/mcbot/src/autonomy/tools.ts'
-import { QqMemory, qqScope } from './qq-memory.mjs'
-import { apply as registerWorkspace } from './web-workspace.mjs'
 
-const root = fileURLToPath(new URL('.', import.meta.url))
+
+
+const root = process.env.DSH_STAGED_ROOT || fileURLToPath(new URL('.', import.meta.url))
+const { QqMemory, qqScope } = await import(pathToFileURL(join(root, 'qq-memory.mjs')).href)
+const { apply: registerWorkspace } = await import(pathToFileURL(join(root, 'web-workspace.mjs')).href)
 const bin = join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js')
 const patch = join(root, 'mcbot-minimal.yml')
 const temp = await mkdtemp(join(tmpdir(), 'antifield-dsh-test-'))
@@ -44,6 +46,34 @@ ws.on('connection', (socket) => {
 })
 let child
 let harness
+
+/** 用临时 Home 检查安装后的 QQ 绑定服务与 Minecraft Agent 入口。 */
+async function verifyInstalledAgents() {
+  const credentials = join(temp, 'role-credentials')
+  await mkdir(credentials)
+  await writeFile(join(credentials, 'deepseek-key'), 'fixture-key', { mode: 0o600 })
+  for (const role of ['qq', 'mcbot']) {
+    const home = join(temp, role + '-role')
+    await mkdir(home)
+    const statusPath = join(home, 'status.json')
+    const binding = join(home, 'binding.json')
+    await writeFile(binding, JSON.stringify({ version: 1, binding: null }), { mode: 0o600 })
+    const proc = spawn(process.execPath, [join(root, role + '-agent.mjs')], { cwd: home, stdio: 'ignore',
+      env: { ...env, DSH_HOME: home, CREDENTIALS_DIRECTORY: credentials, DSH_STATUS_PATH: statusPath,
+        DSH_QQ_BINDING: binding, DSH_QQ_MEMORY_DB: join(home, 'memory.sqlite'), DSH_QQ_SOCKET: join(home, 'qq.sock'),
+        DSH_AGENT_SOCKET: join(home, 'agent.sock'), DSH_MCBOT_TOOL_SOCKET: join(home, 'tools.sock') } })
+    const exit = once(proc, 'exit')
+    try {
+      const deadline = Date.now() + 20000
+      for (;;) {
+        const status = await readFile(statusPath, 'utf8').then(JSON.parse).catch(() => null)
+        if (role === 'qq' ? status?.bindingPhase === 'unbound' : status?.ready) break
+        if (proc.exitCode !== null || Date.now() > deadline) throw new Error(role + ' 安装入口未就绪')
+        await new Promise(resolve => setTimeout(resolve, 75))
+      }
+    } finally { proc.kill(); await exit }
+  }
+}
 
 /** 实际固定 QQ 插件面对本地假平台负路径，不得发布 ready 或触及真实平台。 */
 async function verifyQqFailures() {
@@ -151,7 +181,7 @@ async function verifyWebBroker() {
   await mkdir(join(modules, '@antifield'), { recursive: true })
   await symlink(join(root, 'node_modules', '@deepseek-ai'), join(modules, '@deepseek-ai'), 'dir')
   for (const plugin of ['qq', 'mcbot']) {
-    await cp(join(root, 'plugins', plugin), join(modules, '@antifield', `dsh-${plugin}-plugin`), { recursive: true })
+    await cp(process.env.DSH_STAGED_ROOT ? join(root, 'node_modules/@antifield', `dsh-${plugin}-plugin`) : join(root, 'plugins', plugin), join(modules, '@antifield', `dsh-${plugin}-plugin`), { recursive: true })
   }
   await mkdir(directory, { mode: 0o700 })
   await writeFile(join(directory, 'deepseek-key'), 'dsh-fixture-key', { mode: 0o600 })
@@ -242,6 +272,7 @@ async function verifyWebBroker() {
 }
 
 try {
+  if (process.env.DSH_STAGED_ROOT) await verifyInstalledAgents()
   await verifyQqFailures()
   const binding = join(temp, 'tool-binding.json')
   const autonomy = join(temp, 'autonomy.yml')

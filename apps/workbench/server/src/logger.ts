@@ -18,6 +18,7 @@ const DSH_TOKEN_PATTERN = /([?&](?:t|%74)(?:o|%6f)(?:k|%6b)(?:e|%65)(?:n|%6e)=)[
 /** 把 URL 路径中的分享 token / Chatbot Webhook chatbotId / AI SSO ticket 替换为 [REDACTED]，其余部分保持不变。 */
 export function redactSensitiveRequestUrl(rawUrl: string): string {
   if (typeof rawUrl !== 'string' || rawUrl.length === 0) return ''
+  if (/^\/api\/(?:search|files\/search|notes|bookmarks)\?/.test(rawUrl)) return rawUrl.split('?')[0]!
   return rawUrl
     .replace(SHARE_PAGE_PATTERN, `/s/${CENSOR}`)
     .replace(PUBLIC_SHARE_API_PATTERN, `/api/public/shares/${CENSOR}`)

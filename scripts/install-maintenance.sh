@@ -32,4 +32,10 @@ install -o root -g root -m 0755 "$root/scripts/backup-secrets.sh" /usr/local/lib
 install -o root -g root -m 0755 "$root/deploy/host/antifield-maint" /usr/local/sbin/antifield-maint
 mv -T -- "$candidate" /etc/sudoers.d/020-antifield-maint
 visudo -c
+install -o root -g root -m 0644 "$root/scripts/storage-inventory.mjs" /usr/local/libexec/antifield-storage-inventory.mjs
+for unit in antifieldcloud-inventory.service antifieldcloud-inventory.timer; do
+  install -o root -g root -m 0644 "$root/deploy/$unit" "/etc/systemd/system/$unit"
+done
+systemctl daemon-reload
+systemctl enable --now antifieldcloud-inventory.timer
 echo '固定维护入口已安装；旧权限尚未变更。'

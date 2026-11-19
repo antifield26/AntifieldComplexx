@@ -61,6 +61,7 @@ export interface Config {
   /** age 公钥文件（仅公钥；私钥离线保存，Pi 不可读）。 */
   backupAgeRecipientFile: string
   /** PC 异地副本状态文件（由 PC 脚本写入，应用只读）。 */
+  backupOffsiteExpected: boolean
   backupOffsiteStatusFile: string
   chunkedUploadEnabled: boolean
   chunkSizeBytes: number
@@ -241,6 +242,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     backupPrepareTimeoutSec: int(merged, 'BACKUP_PREPARE_TIMEOUT_SEC', 3300, 60, 7200),
     backupArchiveEncryption: bool(merged, 'BACKUP_ARCHIVE_ENCRYPTION', false),
     backupAgeRecipientFile: str(merged, 'BACKUP_AGE_RECIPIENT_FILE', '/etc/antifieldcloud/backup-age.pub'),
+    backupOffsiteExpected: bool(merged, 'BACKUP_OFFSITE_EXPECTED', false),
     backupOffsiteStatusFile: str(
       merged,
       'BACKUP_OFFSITE_STATUS_FILE',

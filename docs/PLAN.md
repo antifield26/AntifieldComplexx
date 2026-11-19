@@ -4,7 +4,7 @@
 
 ## 平台
 
-当前产品 v1.2.5，schema 22，mcbot 契约 v2；DSH 0.2.2-rc.3，QQ 插件 0.5.5。版本期望以 `deploy/tool-versions.json` 为准。
+当前产品 v1.2.6，schema 22，mcbot 契约 v2；DSH 0.2.2-rc.3，QQ 插件 0.5.5。版本期望以 `deploy/tool-versions.json` 为准。
 
 - Windows、Android 与 Web 共用账号与业务接口，原生请求使用设备签名。文件、知识库、分享、主机指标、告警及灾备能力按 API/UI-SPEC 提供。
 - Minecraft Bot 面板由状态、管理员会话和事件组成。会话显示内存中的文本、工具名/成败、目标或待办的动作和短标题；正文与步骤不写应用 DB，不显示工具参数、凭据、提示词或世界记忆正文。
@@ -24,3 +24,5 @@ QQ 与 Minecraft 条目只显示独立服务，不允许禁用/卸载；Web 进�
 ## 回滚与验收
 
 同 schema 回滚恢复 release 指针与配置，保留现行 DB/WAL。回滚目标若只支持 schema 21，必须先保全现行 schema 22 数据并使用匹配的一致性快照，不能只切指针。当前可用指针、快照和操作见 [DEPLOY](DEPLOY.md)；当前验证结果与缺口见 [ACCEPTANCE](ACCEPTANCE.md)。
+
+工作台提供跨文件、笔记、书签检索、备份证据与磁盘分类预览。Google Drive 恢复由 Windows 使用离线私钥手动验证。

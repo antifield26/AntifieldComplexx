@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 
 const BASE = '/var/lib/antifieldcloud'
 const MAX_STATUS = 64 * 1024
-const STATE_NAMES = { pull: 'backup-pull.json', world: 'world-pull-status.json', drill: 'drill-status.json', offsite: 'backup-offsite-status.json' }
+const STATE_NAMES = { pull: 'backup-pull.json', world: 'world-pull-status.json', drill: 'drill-status.json', 'cloud-drill': 'cloud-drill-status.json', offsite: 'backup-offsite-status.json' }
 const READ_STATES = new Set([...Object.values(STATE_NAMES), 'world-backup-status.json'].map(name => `${BASE}/${name}`))
 const PUBLIC_KEYS = new Set(['BACKUP_ARCHIVE_ENCRYPTION', 'BACKUP_AGE_RECIPIENT_FILE', 'BACKUP_OFFSITE_STATUS_FILE', 'ALERT_OFFSITE_MAX_AGE_HOURS'])
 const HASH_PATHS = new Set([
@@ -85,6 +85,9 @@ export function preserveSuccessfulStatus(value, prior, kind) {
   } else {
     value.lastSuccessAt = stamp(value.ok === true && (value.lastPullAt ?? value.lastRunAt ?? value.lastPushAt),
       prior?.lastSuccessAt, prior?.ok === true && (prior.lastPullAt ?? prior.lastRunAt ?? prior.lastPushAt))
+  }
+  if (kind === 'drill' || kind === 'cloud-drill') {
+    value.recoveryPoint = stamp(value.ok === true && value.recoveryPoint, prior?.recoveryPoint)
   }
   return value
 }

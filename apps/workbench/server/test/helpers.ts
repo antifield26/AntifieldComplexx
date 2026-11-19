@@ -61,6 +61,7 @@ export function testConfig(dataDir: string, overrides: Partial<Config> = {}): Co
     backupPrepareTimeoutSec: 3300,
     backupArchiveEncryption: false,
     backupAgeRecipientFile: join(dataDir, 'backup-age.pub'),
+    backupOffsiteExpected: false,
     backupOffsiteStatusFile: join(dataDir, 'backup-offsite-status.json'),
     chunkedUploadEnabled: true,
     chunkSizeBytes: 8 * 1024 * 1024,

@@ -15,8 +15,8 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(1100px 540px at 18% -12%, rgba(34, 211, 238, 0.06), transparent 62%),
-    radial-gradient(900px 480px at 100% 0%, rgba(59, 130, 246, 0.045), transparent 58%),
+    radial-gradient(1100px 540px at 18% -12%, rgba(238, 116, 34, 0.06), transparent 62%),
+    radial-gradient(900px 480px at 100% 0%, rgba(241, 135, 64, 0.045), transparent 58%),
     var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -76,7 +76,7 @@ svg {
 }
 
 ::selection {
-  background: rgba(34, 211, 238, 0.28);
+  background: rgba(238, 116, 34, 0.28);
   color: #fff;
 }
 
@@ -90,13 +90,13 @@ svg {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #243244;
+  background: #363432;
   border: 2px solid var(--bg);
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #32465e;
+  background: #4b4745;
 }
 
 /* ---------- 通用工具类 ---------- */
@@ -241,9 +241,9 @@ svg {
 }
 
 .notice-info {
-  color: #9adcf0;
+  color: #f0bd9a;
   background: var(--info-soft);
-  border-color: rgba(34, 211, 238, 0.2);
+  border-color: rgba(238, 116, 34, 0.2);
 }
 
 .notice-warning {

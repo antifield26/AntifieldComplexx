@@ -1,7 +1,7 @@
 /**
  * 按部署用途构建发布包，校验包类型、版本、文件清单和逐项 SHA-256。
  */
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { copyFileSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -76,7 +76,7 @@ export function stageRelease(kind, root, directory, version) {
     copyFileSync(source, target)
     files[path] = sha256(target)
   }
-  writeFileSync(join(directory, MANIFEST), JSON.stringify({ version, kind, files }) + '\n')
+  writeFileSync(join(directory, MANIFEST), JSON.stringify({ version, kind, files, sourceCommit: spawnSync('git', ['-C', root, 'rev-parse', '--verify', 'HEAD'], { encoding: 'utf8' }).stdout?.trim() || null }) + '\n')
   verifyRelease(kind, directory, version)
 }
 

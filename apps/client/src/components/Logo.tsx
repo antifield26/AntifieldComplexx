@@ -6,7 +6,7 @@ export interface LogoProps {
   className?: string
 }
 
-/** 方形渐变 Logo（cyan → blue）+ AC 字母；登录页与侧栏共用。 */
+/** 石墨底暖橙 AC 标识；登录页与侧栏共用。 */
 export function Logo({ size = 36, withText = false, className }: LogoProps) {
   return (
     <span className={cx('logo', className)}>
@@ -15,7 +15,7 @@ export function Logo({ size = 36, withText = false, className }: LogoProps) {
         style={{ width: `${size}px`, height: `${size}px`, fontSize: `${Math.round(size * 0.36)}px` }}
         aria-hidden="true"
       >
-        AC
+        <img src="/favicon.svg" width={size} height={size} alt="" />
       </span>
       {withText ? (
         <span className="logo-text">

@@ -2,7 +2,7 @@
 
 操作文档只描述现行行为。版本边界见 [ROADMAP](ROADMAP.md)，交付记录见仓库根 [CHANGELOG](../CHANGELOG.md)。
 
-当前版本 v1.2.5，schema 22，mcbot 契约 v2。DeepSeek Harness 0.2.2-rc.3，QQ 插件 0.5.5。生产指针见 [DEPLOY](DEPLOY.md)。
+当前版本 v1.2.6，schema 22，mcbot 契约 v2。DeepSeek Harness 0.2.2-rc.3，QQ 插件 0.5.5。生产指针见 [DEPLOY](DEPLOY.md)。
 
 | 文档 | 内容 |
 |---|---|

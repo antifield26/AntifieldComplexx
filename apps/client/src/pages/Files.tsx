@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { takeSearch } from '../lib/search-handoff'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import {
   Camera,
   CheckSquare,
@@ -145,6 +146,19 @@ export function Files() {
   const [moveTarget, setMoveTarget] = useState<FileItem | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<FileItem | null>(null)
   const [previewTarget, setPreviewTarget] = useState<FileItem | null>(null)
+  const location = useLocation()
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.get('source') !== 'files') return
+    const controller = new AbortController()
+    const id = params.get('item')
+    if (id) {
+      void api.files.get(id, controller.signal).then(item => {
+        if (!controller.signal.aborted) setPreviewTarget(item)
+      }).catch(failure => { if (!controller.signal.aborted) toast.error(toErrorMessage(failure, '文件已移除或不可用')) })
+    } else setSearchInput(takeSearch(location.state?.searchToken))
+    return () => controller.abort()
+  }, [location.key, location.search, location.state, toast])
   const [shareFiles, setShareFiles] = useState<FileItem[] | null>(null)
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState<string[]>([])

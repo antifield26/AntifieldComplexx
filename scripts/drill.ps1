@@ -1,6 +1,9 @@
 ﻿param(
   [string]$BackupRoot = (Join-Path $env:USERPROFILE "AntifieldCloudBackups"),
   [string]$ReportRoot = "",
+  [string]$CloudRemote = "",
+  [string]$CloudPath = "",
+  [string]$RcloneConfig = "",
   [switch]$IncludeWorld,
   [switch]$RequireWorld,
   [int]$KeepDays = 180,
@@ -48,6 +51,10 @@ $script:restoreOutput = $null
 $base = Join-Path $env:LOCALAPPDATA "AntifieldCloud"
 $logPath = Join-Path $base "drill.log"
 if ([string]::IsNullOrWhiteSpace($ReportRoot)) { $ReportRoot = Join-Path $BackupRoot "drills" }
+if ($CloudRemote) {
+  if ($IncludeWorld -or $RequireWorld) { throw "云端归档仅含应用数据" }
+  $ReportRoot = Join-Path $ReportRoot "cloud"
+}
 $worldRoot = Join-Path $BackupRoot "world"
 $drillVerifyPath = Join-Path $PSScriptRoot "drill-verify.mjs"
 $target = "$PiUser@$PiHost"
@@ -143,7 +150,7 @@ function Get-ExceptionCode {
 function ConvertTo-ArgumentString {
   param([string[]]$Arguments)
   $quoted = foreach ($argument in $Arguments) {
-    if ($argument -match '[\s"]') { '"' + ($argument -replace '"', '\"') + '"' } else { $argument }
+    if ([string]::IsNullOrEmpty($argument)) { '""' } elseif ($argument -match '[\s"]') { '"' + ($argument -replace '"', '\"') + '"' } else { $argument }
   }
   return ($quoted -join " ")
 }
@@ -671,6 +678,7 @@ function Write-RemoteDrillStatus {
     lastRunAt     = (Get-Date).ToUniversalTime().ToString("o")
     ok            = $Report.ok
     report        = $Report.report.name
+    recoveryPoint = $Report.recoveryPoint
     fullArchive   = $Report.full.archive
     incCount      = @($Report.increments).Count
     latestDb      = $Report.database.name
@@ -691,7 +699,8 @@ function Write-RemoteDrillStatus {
     if ($upload.ExitCode -ne 0) {
       throw (New-DrillException -Code "remote_status_write_failed" -Message "演练状态上传失败（exit=$($upload.ExitCode)）")
     }
-    $install = Invoke-NativeWithTimeout -FilePath "ssh.exe" -Arguments @("-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", $target, "sudo -n /usr/local/sbin/antifield-maint write-status drill '$remoteTemp'") -TimeoutSeconds 60 -Label "ssh install: drill-status"
+    $statusKind = if ($CloudRemote) { "cloud-drill" } else { "drill" }
+    $install = Invoke-NativeWithTimeout -FilePath "ssh.exe" -Arguments @("-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", $target, "sudo -n /usr/local/sbin/antifield-maint write-status $statusKind '$remoteTemp'") -TimeoutSeconds 60 -Label "ssh install: drill-status"
     if ($install.ExitCode -ne 0) {
       throw (New-DrillException -Code "remote_status_write_failed" -Message "演练状态安装失败（exit=$($install.ExitCode)）：$($install.StdErr)")
     }
@@ -853,7 +862,7 @@ try {
   if (-not (Test-Path -LiteralPath $drillVerifyPath)) {
     throw (New-DrillException -Code "drill_verify_missing" -Message "缺少 drill-verify.mjs：$drillVerifyPath")
   }
-  if (-not (Test-Path -LiteralPath $BackupRoot)) {
+  if (-not $CloudRemote -and -not (Test-Path -LiteralPath $BackupRoot)) {
     throw (New-DrillException -Code "backup_root_missing" -Message "备份目录不存在：$BackupRoot")
   }
   if (-not [string]::IsNullOrWhiteSpace($RestoreOutputDir)) {
@@ -874,6 +883,15 @@ try {
   $script:tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("antifieldcloud-drill-" + (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ") + "-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
   New-Item -ItemType Directory -Force -Path $script:tempDir | Out-Null
 
+  if ($CloudRemote) {
+    $BackupRoot = $script:tempDir
+    $download = Invoke-NativeWithTimeout -FilePath $script:nodeBin -Arguments @((Join-Path $PSScriptRoot "cloud-drill.mjs"), $CloudRemote, $CloudPath, (Join-Path $BackupRoot "daily"), $RcloneConfig) -TimeoutSeconds 3600 -Label "下载云端应用归档"
+    if ($download.ExitCode -ne 0) {
+      $stage = $download.StdErr.Trim()
+      if ($stage -notmatch '^cloud_[a-z_]+$') { $stage = 'cloud_download_failed' }
+      throw (New-DrillException -Code $stage -Message "云端应用归档取回失败")
+    }
+  }
   $archives = @(Get-ChainArchives)
   if ($archives.Count -eq 0) {
     Add-DrillError -Code "chain_missing" -Message "备份目录中没有 snapshot-*-full/inc.tar.gz"
@@ -992,7 +1010,7 @@ try {
     }
   }
 
-  $worldResult = Test-WorldArchive
+  if (-not $CloudRemote) { $worldResult = Test-WorldArchive }
   Publish-RestoreDirectory
   $removedReports = Invoke-DrillReportRetention
   if ($removedReports -gt 0) { Write-Log "清理过期演练报告 $removedReports 个" }
@@ -1036,6 +1054,7 @@ try {
     durationMs    = [long]((Get-Date) - $script:startedAt).TotalMilliseconds
     backupRoot    = $BackupRoot
     includeWorld  = [bool]$IncludeWorld
+    recoveryPoint = if ($chainVerified -and $script:errors.Count -eq 0) { $previousCreatedAt } else { $null }
     chainVerified = [bool]$chainVerified
     full          = $fullReport
     increments    = @($incrementResults)

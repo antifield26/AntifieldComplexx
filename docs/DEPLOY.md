@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.5）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.6）
 
 操作按本文件执行。涉及系统状态时先核对任务授权、备份和回滚条件，在已有授权内逐项执行并记录结果。公开仓库里的域名、地址和网段都是占位值，安装前按 `.local/DEPLOYMENT.md` 替换。该文件不提交。
 
@@ -6,7 +6,7 @@
 
 ## 当前运行与回滚
 
-当前 schema **v22**，应用 v1.2.5，mcbot 契约 v2。以下资源按 2026-11-19 生产检查记录，实际操作前重新验证。包 SHA 与待验项见 [ACCEPTANCE](ACCEPTANCE.md)。
+当前 schema **v22**，已部署应用 v1.2.5，mcbot 契约 v2。以下资源按 2026-11-19 生产检查记录，实际操作前重新验证。包 SHA 与待验项见 [ACCEPTANCE](ACCEPTANCE.md)。
 
 | 组件/用途 | 当前资源 |
 |---|---|
@@ -163,11 +163,11 @@ npm run check
 
 ### 3.0 当前部署步骤
 
-1. PC 执行 `npm run check`、`npm run build`、`node scripts/check-version.mjs` 与 `node scripts/check-prod-deps.mjs`；期望版本从 tool-versions 读取，当前应用/mcbot 1.2.5、schema 22、契约 2、DSH 0.2.2-rc.3、QQ 插件 0.5.5。
+1. PC 执行 `npm run check`、`npm run build`、`node scripts/check-version.mjs` 与 `node scripts/check-prod-deps.mjs`；期望版本从 tool-versions 读取，当前应用/mcbot 1.2.6、schema 22、契约 2、DSH 0.2.2-rc.3、QQ 插件 0.5.5。
 2. 核对 pending、磁盘、配置与运行指针，保存当前 schema 22 的一致性快照。用于 v1.2.3 回退的 schema 21 快照另行保留，不能用当前快照覆盖。
 3. 执行 `.\scripts\deploy.ps1 -PiHost <直连IP>`；核对包清单/SHA、目标依赖、快照、版本/schema/运行时就绪。跨 schema 失败转人工维护，同 schema 回滚保留现行库。
 4. Bot 空闲后切换 mcbot，核对 healthz 与契约 v2；Minecraft 保持运行。DSH 各服务分别验收。
-5. 完整 smoke 使用 `-ExpectedVersion 1.2.5 -ExpectedSchemaVersion 22 -ExpectedMcbotVersion 1.2.5 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.3 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`，Access 参数来自受限文件；未启用 mcbot 时用 `-SkipMcbot`。
+5. 完整 smoke 使用 `-ExpectedVersion 1.2.6 -ExpectedSchemaVersion 22 -ExpectedMcbotVersion 1.2.6 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.3 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`，Access 参数来自受限文件；未启用 mcbot 时用 `-SkipMcbot`。
 6. 更新 Windows 固定任务副本，实际拉取并隔离恢复。恢复状态回写后用 `-RequireRecoveryDrill -ExpectedSchemaVersion 22` 完成最终 smoke，验证当前 schema 和世界解包证据。记录失败和待验项。
 
 ## 3.2 OpenCode 离线回滚运行时
@@ -267,8 +267,8 @@ Smoke 使用受限 `.local/cf-access.env` 中的服务令牌，凭据不进入�
 
 ```powershell
 .\scripts\smoke.ps1 -PiHost 192.0.2.10 -PiUser antifield -BackupRoot '<本机备份根>' `
-  -ExpectedVersion 1.2.5 -ExpectedSchemaVersion 22 `
-  -ExpectedMcbotVersion 1.2.5 -ExpectedMcbotContractVersion 2 -RequireMcbotState `
+  -ExpectedVersion 1.2.6 -ExpectedSchemaVersion 22 `
+  -ExpectedMcbotVersion 1.2.6 -ExpectedMcbotContractVersion 2 -RequireMcbotState `
   -ExpectedDshVersion 0.2.2-rc.3 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped
 ```
 
@@ -794,3 +794,11 @@ schema 期望默认从 tool-versions 读取，隔离目录按链最终 manifest 
 ### 15.11 当前限制
 
 Web 不解密、私钥丢失无法恢复、预部署快照受限明文、崩溃临时明文和密文孤儿均属于当前边界。应用云端链不含世界/独立密钥包，需分别保存和演练。备份成功不等于恢复通过，缺口在 ACCEPTANCE/AUDIT 明确维护。
+
+## 磁盘盘点与云端取回
+
+管理员运行 `bash scripts/install-maintenance.sh` 安装每日 04:20（北京时间，含十分钟随机延迟）定时器。可手动启动 `antifieldcloud-inventory.service` 生成首次快照。卸载盘点时先停止并禁用该 timer。应用只读取固定状态文件。
+
+已配置异地归档的实例设置 `BACKUP_OFFSITE_EXPECTED=true`，首次上报前也显示缺少证据。
+
+Windows 手动运行 `scripts/drill.ps1 -CloudRemote <别名> -CloudPath <应用目录> -AgeIdentityPath <离线私钥路径> -PiHost <主机>`。工作目录仅暂存本轮下载；本地报告位于 drills/cloud，远端由固定维护入口写入 cloud-drill-status.json。世界与密钥包继续使用原有恢复源。演练前可用空间须容纳密文、解密归档与隔离解包。

@@ -20,6 +20,7 @@ import { useAuth } from '../auth/AuthContext'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useAppMeta } from '../meta/MetaContext'
 import { useToast } from './Toast'
+import { WorkspaceSearch } from './WorkspaceSearch'
 import { Avatar } from './Avatar'
 import { Logo } from './Logo'
 import { cx } from '../lib/classnames'
@@ -168,15 +169,16 @@ export function Layout() {
       if (!id) {
         return
       }
-      let timer = 0
       const scroll = (): void => {
         const target = document.getElementById(id)
         if (target) target.scrollIntoView({ block: 'start', behavior: 'auto' })
       }
-      scroll()
-      // 设置页卡片/告警可能异步渲染，补一次滚动；路由切换时清理。
-      timer = window.setTimeout(scroll, 250)
-      return () => window.clearTimeout(timer)
+      if (document.getElementById(id)) { scroll(); return }
+      const observer = new MutationObserver(() => {
+        if (document.getElementById(id)) { scroll(); observer.disconnect() }
+      })
+      observer.observe(document.body, { childList: true, subtree: true })
+      return () => observer.disconnect()
     }
   }, [location.pathname, location.hash])
 
@@ -260,6 +262,7 @@ export function Layout() {
 
       <main className="app-main">
         <div className="app-content">
+          <WorkspaceSearch home={location.pathname === '/'} />
           <Suspense fallback={<div className="page-loading" role="status"><LoaderCircle size={22} className="spin" aria-hidden="true" /><span>正在加载页面…</span></div>}>
             <Outlet />
           </Suspense>

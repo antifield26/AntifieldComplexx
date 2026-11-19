@@ -1,0 +1,16 @@
+[Unit]
+Description=AntifieldComplexx 磁盘占用快照
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/node /usr/local/libexec/antifield-storage-inventory.mjs
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=30min
+StateDirectory=antifield-inventory
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+RestrictAddressFamilies=AF_UNIX

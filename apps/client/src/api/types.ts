@@ -248,7 +248,17 @@ export interface OffsiteStatus {
   message?: string | null
 }
 
+export interface BackupEvidence {
+  key: string
+  title: string
+  reason: string
+  state: string
+  location: string
+  lastSuccessAt: string | null
+  recoveryPoint: string | null
+}
 export interface BackupStatus {
+  health?: BackupEvidence[]
   lastPullAt: string | null
   lastArchiveSuccessAt?: string | null
   appArchiveOk?: boolean | null
@@ -888,6 +898,7 @@ export interface BackupState {
 }
 
 export interface BackupListResult {
+  health?: BackupEvidence[]
   items: BackupArchive[]
   inbox: BackupInboxItem[]
   orphans: BackupInboxItem[]

@@ -275,6 +275,7 @@ export function BackupManager({ backupStatus = null }: BackupManagerProps) {
       </div>
 
       <BackupStatusCard
+        health={data?.health}
         backup={backupStatus}
         state={state}
         world={data?.world ?? null}

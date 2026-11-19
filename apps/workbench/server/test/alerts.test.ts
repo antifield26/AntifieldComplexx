@@ -100,6 +100,7 @@ test('磁盘阈值：首次 firing、冷却内去重、冷却后重复通知与�
       readFile: (path) => {
         if (path.endsWith('backup-pull.json')) {
           return JSON.stringify({
+            ok: true,
             lastPullAt: T0,
             secretsAttempted: true,
             secretsOk: true,
@@ -119,7 +120,7 @@ test('磁盘阈值：首次 firing、冷却内去重、冷却后重复通知与�
     fx.db.prepare('UPDATE backup_state SET last_backup_at = ? WHERE id = 1').run(T0)
     const first = await fx.alerts.evaluateOnce()
     assert.equal(first.skipped, false)
-    assert.equal(first.checked, 13, '13 个告警条件（v0.7.0 新增异地副本超期）')
+    assert.equal(first.checked, 15, '含应用拉取与独立云端演练')
     assert.equal(first.firing, 1)
     assert.match(eventNames(events(fx))[0] ?? '', /^disk_low:firing$/)
     assert.equal(events(fx)[0]?.severity, 'critical', '剩余 5% 低于阈值一半应为 critical')
@@ -538,7 +539,7 @@ test('offsite_overdue：状态文件存在才参与评估，超期/失败告警�
   try {
     // 未配置 offsite（文件不存在）：条件列表不增加，checked 保持 12。
     const absent = await fx.alerts.evaluateOnce()
-    assert.equal(absent.checked, 12)
+    assert.equal(absent.checked, 13)
 
     const path = fx.config.backupOffsiteStatusFile
     mkdirSync(join(path, '..'), { recursive: true })
@@ -547,7 +548,7 @@ test('offsite_overdue：状态文件存在才参与评估，超期/失败告警�
       JSON.stringify({ ok: true, lastRunAt: '2026-05-28T00:00:00.000Z', remoteLabel: 'remote:backup' }),
     )
     const stale = await fx.alerts.evaluateOnce()
-    assert.equal(stale.checked, 13)
+    assert.equal(stale.checked, 15)
     const staleRow = fx.db
       .prepare("SELECT status, severity, details_json FROM alert_events WHERE event = 'offsite_overdue' ORDER BY id DESC LIMIT 1")
       .get() as { status: string; severity: string; details_json: string } | undefined
@@ -560,7 +561,7 @@ test('offsite_overdue：状态文件存在才参与评估，超期/失败告警�
       JSON.stringify({ ok: true, lastRunAt: fx.clock.now().toISOString(), remoteLabel: 'remote:backup' }),
     )
     const fresh = await fx.alerts.evaluateOnce()
-    assert.equal(fresh.checked, 13)
+    assert.equal(fresh.checked, 15)
     const freshRow = fx.db
       .prepare("SELECT status FROM alert_events WHERE event = 'offsite_overdue' ORDER BY id DESC LIMIT 1")
       .get() as { status: string } | undefined
@@ -582,7 +583,7 @@ test('offsite_overdue：阈值 0 时关闭条件，即使状态文件存在也�
       JSON.stringify({ ok: false, lastRunAt: '2026-01-01T00:00:00.000Z' }),
     )
     const result = await fx.alerts.evaluateOnce()
-    assert.equal(result.checked, 12)
+    assert.equal(result.checked, 13)
   } finally {
     fx.close()
   }

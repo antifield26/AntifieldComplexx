@@ -18,6 +18,8 @@ import { createHmac } from 'node:crypto'
 import { statfsSync } from 'node:fs'
 import type { DatabaseSync } from 'node:sqlite'
 import os from 'node:os'
+import { join } from 'node:path'
+import { SUPPORTED_SCHEMA_VERSION } from '../db.ts'
 import { promisify } from 'node:util'
 import type { Config } from '../config.ts'
 import { transaction } from '../db.ts'
@@ -419,22 +421,38 @@ export class AlertService {
 
   private async collectConditions(): Promise<AlertCondition[]> {
     const health = this.readPiHealth()
-    const offsite = this.offsiteCondition()
     const conditions: AlertCondition[] = [
       this.diskCondition(),
       this.tempCondition(health),
       this.memoryCondition(),
       await this.servicesCondition(),
-      this.backupOverdueCondition(),
-      this.backupPendingCondition(),
-      this.backupSecretsCondition(),
-      this.worldBackupCondition(),
-      this.worldPullCondition(),
-      this.drillCondition(),
-      ...(offsite ? [offsite] : []),
+      ...this.backupConditions(),
       await this.minecraftCondition(),
       this.underVoltageCondition(health),
     ]
+    return conditions
+  }
+
+  /** 面板和周期评估从同一组只读证据产生状态。 */
+  backupConditions(): AlertCondition[] {
+    const offsite = this.offsiteCondition()
+    const cloudPath = join(this.config.dataDir, 'cloud-drill-status.json')
+    const conditions = [this.backupOverdueCondition(), this.backupPendingCondition(), this.backupSecretsCondition(),
+      this.worldBackupCondition(), this.worldPullCondition(), this.drillCondition()]
+    const pull = this.readStatusRecord(this.config.backupPullFile)
+    const failure = pull?.appArchiveOk === false || (pull?.ok === false && pull.appArchiveOk !== true && pull.secretsOk !== false)
+    const appTime = pull?.lastArchiveSuccessAt ?? (pull?.ok === true ? pull.lastPullAt : null)
+    const stamp = typeof appTime === 'string' ? Date.parse(appTime) : NaN
+    const stale = this.deps.now().getTime() - stamp > this.config.alertBackupMaxAgeHours * 3600000
+    conditions.push({ event: 'app_pull', title: '应用归档拉取', severity: 'warning',
+      status: failure || stale ? 'firing' : Number.isFinite(stamp) ? 'ok' : 'unknown',
+      message: failure ? 'Windows 应用归档拉取失败' : stale ? 'Windows 应用归档拉取超期' : Number.isFinite(stamp) ? '已拉取应用归档' : '尚无应用归档拉取证据',
+      details: { lastSuccessAt: appTime, ok: !failure } })
+    if (offsite) conditions.push(offsite)
+    if (offsite || this.readStatusRecord(cloudPath)) conditions.push(this.statusFileCondition({
+      event: 'cloud_drill', title: '云端应用恢复演练', path: cloudPath,
+      thresholdMs: this.config.alertDrillMaxAgeDays * 86400000, timeKeys: ['lastRunAt'],
+    }))
     return conditions
   }
 
@@ -707,6 +725,14 @@ export class AlertService {
   }
 
   private worldPullCondition(): AlertCondition {
+    const world = this.readStatusRecord(this.config.worldBackupStatusFile)
+    const pull = this.readStatusRecord(this.config.worldPullStatusFile)
+    const age = this.deps.now().getTime() - Date.parse(String(world?.lastRunAt))
+    if (world?.ok === true && world.archiveName && world.archiveName !== pull?.archiveName &&
+      age >= 0 && age < 3600000 && (!pull || Date.parse(String(pull.lastPullAt)) < Date.parse(String(world.lastRunAt)))) {
+      return { event: 'world_pull_stale', title: '世界拉取', severity: 'info', status: 'ok', message: '世界已在树莓派生成，等待 Windows 拉取',
+        details: { waiting: true, lastSuccessAt: pull?.lastSuccessAt ?? (pull?.ok ? pull.lastPullAt : null) } }
+    }
     return this.statusFileCondition({
       event: 'world_pull_stale',
       title: '世界备份未拉取',
@@ -733,7 +759,7 @@ export class AlertService {
   private offsiteCondition(): AlertCondition | null {
     if (this.config.alertOffsiteMaxAgeHours <= 0) return null
     const record = this.readStatusRecord(this.config.backupOffsiteStatusFile)
-    if (!record) return null
+    if ((!record && !this.config.backupOffsiteExpected) || record?.enabled === false) return null
     return this.statusFileCondition({
       event: 'offsite_overdue',
       title: '异地副本超期',
@@ -766,8 +792,11 @@ export class AlertService {
     const ageMs = Math.max(0, this.deps.now().getTime() - lastMs)
     const ageHours = round1(ageMs / 3_600_000)
     const thresholdHours = round1(options.thresholdMs / 3_600_000)
-    const firing = ok === false || ageMs > options.thresholdMs
-    const reason = ok === false ? `最近一次执行失败${error ? `：${error}` : ''}` : `最近一次成功在 ${ageHours} 小时前（阈值 ${thresholdHours} 小时）`
+    if (ok === null) return this.unknown(options.event, options.title, '缺少执行结果')
+    const incompatible = ['drill_stale', 'cloud_drill'].includes(options.event) &&
+      typeof record.schemaVersion === 'number' && record.schemaVersion !== SUPPORTED_SCHEMA_VERSION
+    const firing = incompatible || ok === false || ageMs > options.thresholdMs
+    const reason = incompatible ? '演练 schema 与应用不一致' : ok === false ? `最近一次执行失败${error ? `：${error}` : ''}` : `最近一次成功在 ${ageHours} 小时前（阈值 ${thresholdHours} 小时）`
     return {
       event: options.event,
       severity: ok === false ? 'critical' : 'warning',
@@ -776,6 +805,8 @@ export class AlertService {
       message: firing ? reason : `${options.title}正常`,
       details: {
         lastRunAt: lastAt,
+        lastSuccessAt: record.lastSuccessAt ?? (ok ? lastAt : null),
+        recoveryPoint: record.recoveryPoint ?? null,
         ageHours,
         thresholdHours,
         ok,

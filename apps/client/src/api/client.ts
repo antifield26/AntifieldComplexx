@@ -1142,7 +1142,13 @@ function normalizeExecuteResult(body: unknown): RestoreExecuteResult {
   throw new ApiError(0, 'invalid_response', '服务端返回的恢复结果无法解析')
 }
 
+export type SearchKind = 'files' | 'notes' | 'bookmarks'
+export type SearchGroups = Record<SearchKind, { items: { id: string; title: string; detail: string }[]; more: boolean }>
 export const api = {
+  storageInventory: () => get<import('../components/StorageInventory').InventoryResult>('/api/storage/inventory'),
+  search(q: string, signal: AbortSignal) {
+    return get<SearchGroups>(`/api/search${buildQuery({ q })}`, { signal })
+  },
   auth: {
     password(username: string, password: string): Promise<PasswordChallenge> {
       return post<PasswordChallenge>('/api/auth/password', { username, password }, { skipAuthRedirect: true })

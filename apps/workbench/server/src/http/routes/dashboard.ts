@@ -1,4 +1,7 @@
 /** 仪表盘、审计、版本信息路由。 */
+import { readStatusFile } from '../../util/status.ts'
+import type { AlertService } from '../../alerts/service.ts'
+import { backupHealth } from '../../backups/health.ts'
 import { existsSync } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
 import type { Config } from '../../config.ts'
@@ -23,8 +26,18 @@ export function registerDashboardRoutes(
   config: Config,
   dashboard: DashboardService,
   db: DatabaseSync,
+  alerts?: AlertService,
 ): void {
-  app.get('/api/dashboard', { preHandler: [requireAuth] }, async () => dashboard.get())
+  app.get('/api/dashboard', { preHandler: [requireAuth] }, async () => {
+    const data = await dashboard.get()
+    if (!data.backup || !alerts) return data
+    return { ...data, backup: { ...data.backup, health: backupHealth(alerts.backupConditions()) } }
+  })
+
+  app.get('/api/storage/inventory', { preHandler: [requireAuth] }, async () => {
+    const data = readStatusFile('/var/lib/antifield-inventory/status.json')
+    return data?.snapshot ? data : { snapshot: null, lastComplete: null }
+  })
 
   // 轻量存储用量：Files/Trash 页面轮询使用，语义与 dashboard.storage 完全一致。
   app.get('/api/storage', { preHandler: [requireAuth] }, async () => dashboard.storage())

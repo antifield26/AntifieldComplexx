@@ -1,18 +1,18 @@
 /* 设计令牌：颜色、圆角、字体与布局尺寸。所有页面样式只引用这里的变量。 */
 
 :root {
-  --bg: #0a0e14;
-  --bg-elevated: #0f151d;
-  --surface: #121a24;
-  --surface-hover: #17212d;
-  --border: #1f2b3a;
-  --border-strong: #2b3b4f;
-  --text: #e6edf3;
-  --text-muted: #93a4b8;
-  --text-dim: #6b7d92;
-  --accent: #22d3ee;
-  --accent-strong: #06b6d4;
-  --accent-soft: rgba(34, 211, 238, 0.12);
+  --bg: #100f0e;
+  --bg-elevated: #171615;
+  --surface: #1c1b1a;
+  --surface-hover: #232221;
+  --border: #2e2c2b;
+  --border-strong: #3f3d3b;
+  --text: #edecec;
+  --text-muted: #a8a5a3;
+  --text-dim: #817e7c;
+  --accent: #ee7422;
+  --accent-strong: #cb5b0f;
+  --accent-soft: rgba(238, 116, 34, 0.12);
   --success: #34d399;
   --warning: #fbbf24;
   --danger: #f87171;
@@ -28,10 +28,10 @@
   --topbar-height: 56px;
   --transition: 160ms ease;
   --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.28);
-  --overlay-bg: rgba(4, 7, 11, 0.72);
+  --overlay-bg: rgba(8, 7, 7, 0.72);
   --success-soft: rgba(52, 211, 153, 0.12);
   --warning-soft: rgba(251, 191, 36, 0.12);
   --danger-soft: rgba(248, 113, 113, 0.12);
-  --info-soft: rgba(34, 211, 238, 0.08);
+  --info-soft: rgba(238, 116, 34, 0.08);
   color-scheme: dark;
 }

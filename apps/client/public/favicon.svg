@@ -1,11 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AntifieldComplexx">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#67e8f9" />
-      <stop offset="0.5" stop-color="#22d3ee" />
-      <stop offset="1" stop-color="#3b82f6" />
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="15" fill="url(#g)" />
-  <text x="32" y="42" text-anchor="middle" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="25" font-weight="700" letter-spacing="1" fill="#04222b">AC</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"><rect width="256" height="256" rx="48" fill="#24211f"/><g fill="none" stroke="#ff9d59" stroke-width="18" stroke-linecap="square" stroke-linejoin="bevel"><path d="m43 164 39-81 38 81M65 140h33"/><path d="M201 93h-40l-24 33 12 33h45"/></g></svg>

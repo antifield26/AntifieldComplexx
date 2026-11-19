@@ -1,6 +1,6 @@
 {
   "name": "@antifield/dsh-mcbot-plugin",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "private": true,
   "description": "由 antifield-dsh-mcbot-agent 运行。这里只显示这项，Web 进程不会装入 Minecraft Bot 工具。",
   "type": "module",

@@ -10,8 +10,6 @@ import { readStatusFile, type StatusFileRecord } from '../util/status.ts'
 import { HostMonitor, ServiceMonitor, type HostMetrics } from './system.ts'
 import { agentServiceUnits, dshReadiness, withDshReadiness } from './dsh.ts'
 
-/** 备份拉取超期阈值（小时）；与告警阈值独立，面板固定展示 48h。 */
-const BACKUP_OVERDUE_HOURS = 48
 
 export interface BackupStatus {
   /** PC 拉取脚本写入的状态；缺失记录时为 null（字段保留，前端按无记录展示）。 */
@@ -263,7 +261,7 @@ export class DashboardService {
       sizeBytes: typeof raw.sizeBytes === 'number' ? raw.sizeBytes : null,
       ok: typeof raw.ok === 'boolean' ? raw.ok : null,
       overdue:
-        ageHours !== null && Number.isFinite(ageHours) ? ageHours > BACKUP_OVERDUE_HOURS : null,
+        ageHours !== null && Number.isFinite(ageHours) ? ageHours > this.config.alertBackupMaxAgeHours : null,
       secretsOk: typeof raw.secretsOk === 'boolean' ? raw.secretsOk : null,
       lastSecretsAt: raw.lastSecretsAt ?? null,
       secretsLastError: raw.secretsLastError ?? null,

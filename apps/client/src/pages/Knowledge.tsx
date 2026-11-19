@@ -12,11 +12,14 @@ import {
   Trash,
   X,
 } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
+import { takeSearch } from '../lib/search-handoff'
 import { api, isAbortError, toErrorMessage } from '../api/client'
 import type { Bookmark, Note, TagCount } from '../api/types'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { PageHeader } from '../components/PageHeader'
+import { Modal } from '../components/Modal'
 import { Button } from '../components/Button'
 import { Badge } from '../components/Badge'
 import { EmptyState } from '../components/EmptyState'
@@ -75,6 +78,27 @@ export function Knowledge() {
   const [deleteBusy, setDeleteBusy] = useState(false)
   const requestIdRef = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
+
+  const [foundBookmark, setFoundBookmark] = useState<Bookmark | null>(null)
+  const location = useLocation()
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const kind = params.get('source')
+    if (kind !== 'notes' && kind !== 'bookmarks') return
+    let active = true
+    setTab(kind)
+    setPinnedOnly(false)
+    setTag('')
+    setPage(1)
+    const id = params.get('item')
+    if (id) {
+      const open = kind === 'notes'
+        ? api.notes.get(id).then(note => { if (active) { setEditingNote(note); setNoteEditorOpen(true) } })
+        : api.bookmarks.get(id).then(item => { if (active) setFoundBookmark(item) })
+      void open.catch(failure => { if (active) toast.error(toErrorMessage(failure, '内容已移除或不可用')) })
+    } else setQuery(takeSearch(location.state?.searchToken))
+    return () => { active = false }
+  }, [location.key, location.search, location.state, toast])
 
   const load = useCallback(async (): Promise<void> => {
     abortRef.current?.abort()
@@ -508,6 +532,9 @@ export function Knowledge() {
         }}
       />
 
+      <Modal title={foundBookmark?.title ?? '书签'} open={Boolean(foundBookmark)} onClose={() => setFoundBookmark(null)}>
+        {foundBookmark && <><p>{foundBookmark.description}</p><a href={foundBookmark.url} target="_blank" rel="noopener noreferrer">打开链接 · {foundBookmark.url}</a></>}
+      </Modal>
       <BookmarkEditor
         open={bookmarkEditorOpen}
         bookmark={editingBookmark}
