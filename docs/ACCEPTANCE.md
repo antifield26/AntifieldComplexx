@@ -8,6 +8,7 @@ v1.2.5 已于 2026-11-18 切换到个人生产环境。真实 QQ 扫码、换绑
 
 | 项目 | 2026-11-18 至 2026-11-19 实际证据 |
 |---|---|
+| 正式发布 | `v1.2.5` Tag 指向 `7b8fa703bc190fea2072e85b69c82bc2ee389c31`。2026-11-19 10:43（北京时间）发布，远端附件哈希匹配本地清单。[GitHub Release](https://github.com/antifield26/AntifieldComplexx/releases/tag/v1.2.5) |
 | Workbench | `/opt/antifieldcloud/releases/20261118T150139Z`，基于 `e0978d6` 的工作区包，1,004,012 字节，SHA-256 `8680065b8bdcf5836506b49c00257412d79cf771aab10408912518851571f60b` |
 | mcbot | `/opt/mcbot/releases/20261118T150139Z`，v1.2.5 / 契约 v2。工作区包 SHA-256 `488e460c9e33904df2aeb7960d1981556638484574cfa9d98715b60954701543` |
 | DSH | 当前 `/opt/antifield-dsh/releases/20261119T020617Z`，基于 `/opt/antifield-dsh/releases/20261118T150321Z`，比对 37 个基包文件 SHA-256，并独立校验补入的 `session-steps.mjs`，SHA-256 `6eb6e451beddab255d5479e2128ff1fbb3b46773aee973ea0c8acf9cb69c084c`。锁文件 SHA-256 `ff49912803db7f17b2cf966fa20c95dccdd86a35045741bc41a4cfdb4d5704b0`，QQ 设置客户端 SHA-256 `186ac70ec8178d3e983100ffd8d4719c4de64508f3e5187c63a56ceb6d37510d` |
@@ -18,9 +19,10 @@ v1.2.5 已于 2026-11-18 切换到个人生产环境。真实 QQ 扫码、换绑
 
 | 范围 | 状态 | 证据与边界 |
 |---|---|---|
-| Windows 工作区 | 通过 | 离线门禁、Web 构建、版本检查、23 项 Rust 测试通过。已生成 x64 NSIS |
-| Android ARM64 | 已组装未签名 APK | Tauri 编译 ARM64 库，Windows 符号链接受限，本机 Gradle 离线组装。两端实际安装仍待验 |
-| 树莓派直连与 Windows 本机严格 smoke | 33 通过、0 失败、0 警告 | 2026-11-19 生产直连。Workbench v1.2.5、schema 22、`db=ok`、`pendingBackups=0`。三个 DSH 服务就绪，systemd 无失败单元，7 个单元和 3 个固定维护脚本一致。含 Windows 任务副本、最新本地归档及当前 schema 恢复状态。公网探测未运行 |
+| 发布 CI | 通过 | 两套工作流均使用 Tag 指向的提交，覆盖 DSH 固定运行时、测试与覆盖率、生产依赖边界、依赖审计、密钥扫描、PowerShell 以及两端原生构建。[常规 CI](https://github.com/antifield26/AntifieldComplexx/actions/runs/44445084700) · [原生构建](https://github.com/antifield26/AntifieldComplexx/actions/runs/44445084599) |
+| Windows x64 | 本机原位升级并启动 | 正式附件 SHA-256 `44ef9a42ab582c61b124186dc6ba9be819fac333b3fd169b4a11050b917be4aa`。2026-11-19，本机下载核验后由 v1.2.4 原位升级，NSIS 临时文件错误经同一账号管理员授权重试解决。安装记录及二进制均为 v1.2.5，普通权限启动主窗口并显示登录界面。本轮真机验证覆盖安装和启动 |
+| Android ARM64 | 签名兼容校验通过 | `versionCode=1002005`，目标 SDK 36，沿用 v1.2.4 证书。正式附件 SHA-256 `60f959039dd073468e2ebfe673f4cd544de80d04341896a67447341c740d94e9`。手机真机安装待验 |
+| 公网、树莓派直连与 Windows 本机严格 smoke | 40 通过、0 失败、0 警告 | 2026-11-19。公网应用 HTTP 200，Access 后应用鉴权 HTTP 401，AI 入口 HTTP 401。Workbench v1.2.5、schema 22、`db=ok`、`pendingBackups=0`。三个 DSH 服务就绪，systemd 无失败单元，7 个单元和 3 个固定维护脚本一致。含 Windows 任务副本、最新本地归档及当前 schema 恢复状态 |
 | DSH QQ 设置入口 | 生产运行时通过 | 本机 SSO 后启动页注册 QQ 客户端模块，状态接口 200，主站链接匹配，现有 QQ 网关就绪。Workbench 服务账号可读取私有绑定状态 |
 | 真实 QQ 绑定、换绑、解绑 | 跳过 | 用户决定跳过候选，生产只核对当前绑定及入口 |
 | 新版备份拉取 | 通过 | Windows 复核应用增量、密钥包与当周世界的 SHA-256 均一致，Pi 待确认归档为 0 |
@@ -33,4 +35,4 @@ v1.2.5 已于 2026-11-18 切换到个人生产环境。真实 QQ 扫码、换绑
 
 首选同 schema 回滚至 v1.2.4，保留 DB/WAL。部署前的 schema 22 快照 `db-predeploy-20261118T145935414Z.sqlite` 已通过哈希与 SQLite 完整性校验，SHA-256 为 `a13eacc5c17bac577030e5e17b803a082154833d904aa68fd973884c50fe1608`。配置和旧指针的保护目录为 `/var/backups/antifieldcloud/update-125-20261118T150139Z`。更早的 schema 21 回退资源见 [DEPLOY](DEPLOY.md)。
 
-工作区包基于上述提交并带未提交更改。包哈希、DSH 运行时文件和仓库 Tag 分别识别。
+生产工作区包按构建时的基包提交与哈希识别。正式 Tag 标识客户端构建源码，DSH 现场文件另核对各自哈希。

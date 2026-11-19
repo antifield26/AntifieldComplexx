@@ -19,6 +19,7 @@
 - 发布验收核对 Pi 固定维护入口、DSH 实际文件和 Windows 任务的脚本副本，schema 保持 22。
 - 个人生产完成 Workbench、DSH 和 mcbot 切换，保留同 schema 回滚源。按用户决定跳过 QQ 真实绑定候选。mcbot 首次探针误用健康字段，自动回滚后按实际契约重新切换并验收通过。
 - Windows 恢复演练改用二进制重定向接收 age 解密输出，schema 22 加密归档链与 Minecraft 世界均通过真实隔离恢复。DSH 安装清单补齐 `session-steps.mjs`，生产独立 Minecraft 代理使用校验过的新发布目录恢复启动。
+- 2026-11-19 发布 annotated Tag `v1.2.5` 和 GitHub Release，附 Windows x64 安装包、沿用兼容签名的 Android ARM64 APK 与 SHA-256 清单。正式包和 CI 证据见 [验收状态](docs/ACCEPTANCE.md)。
 
 ## [v1.2.4] - 2026-11-16
 
