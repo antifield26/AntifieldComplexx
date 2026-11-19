@@ -1,6 +1,6 @@
 /** 固定包的进程级验证。QQ Gateway 使用本地夹具，模型凭据为占位值。 */
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { createServer, request } from 'node:http'
@@ -141,10 +141,13 @@ async function verifyWebBroker() {
   await new Promise((done) => reservation.close(done))
   const directory = join(temp, 'credentials')
   const socketPath = join(temp, 'sso.sock')
-  const profile = join(temp, 'web', 'profiles', 'web')
+  const webHome = join(temp, 'web')
   const modules = join(temp, 'runtime', 'node_modules')
-  await mkdir(profile, { recursive: true })
-  await writeFile(join(profile, 'package.json'), JSON.stringify({ name: 'fixture-web', private: true }))
+  const webEnv = { PATH: process.env.PATH, HOME: temp, DSH_HOME: webHome, DSH_TELEMETRY_DISABLED: '1' }
+  // 先由固定版本初始化原生 Web profile；换票器在此基础上登记两个显示插件。
+  execFileSync(process.execPath, [bin, '--profile', 'web', '--dump-default-config'], {
+    cwd: temp, env: webEnv, stdio: ['ignore', 'ignore', 'pipe'], timeout: 10_000,
+  })
   await mkdir(join(modules, '@antifield'), { recursive: true })
   await symlink(join(root, 'node_modules', '@deepseek-ai'), join(modules, '@deepseek-ai'), 'dir')
   for (const plugin of ['qq', 'mcbot']) {
@@ -157,12 +160,14 @@ async function verifyWebBroker() {
   const broker = spawn(process.execPath, [entry], {
     cwd: temp,
     env: {
-      PATH: process.env.PATH, HOME: temp, DSH_HOME: join(temp, 'web'), CREDENTIALS_DIRECTORY: directory,
+      ...webEnv, CREDENTIALS_DIRECTORY: directory,
       DSH_BIN: join(modules, '@deepseek-ai/dsh/lib/bin.js'), DSH_WEB_ORIGIN: 'https://ai.example.test',
       DSH_APP_ORIGIN: 'https://app.example.test', DSH_WEB_PORT: String(port), DSH_WEB_SSO_SOCKET: socketPath,
     },
-    stdio: 'ignore',
+    stdio: ['ignore', 'ignore', 'pipe'],
   })
+  let brokerErrors = ''
+  broker.stderr.setEncoding('utf8').on('data', (chunk) => { brokerErrors = (brokerErrors + chunk).slice(-2048) })
   try {
     const deadline = Date.now() + 15_000
     for (;;) {
@@ -223,7 +228,9 @@ async function verifyWebBroker() {
         console.log('固定 DSH Web 已通过 Unix socket 换票、设置 API 和 QQ 客户端模块加载')
         return
       }
-      if (Date.now() >= deadline || broker.exitCode !== null) throw new Error('DSH Web 换票器未就绪')
+      if (Date.now() >= deadline || broker.exitCode !== null) {
+        throw new Error(`DSH Web 换票器未就绪（退出码 ${broker.exitCode ?? '无'}）：${brokerErrors.trim()}`)
+      }
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
   } finally {
