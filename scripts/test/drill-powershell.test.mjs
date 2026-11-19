@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -107,6 +107,15 @@ using System;
 using System.IO;
 public static class FakeAge {
   public static int Main(string[] args) {
+    var remote = Environment.GetEnvironmentVariable("DRILL_FIXTURE_REMOTE");
+    if (args.Length == 5 && args[0] == "lsf" && args[4] == "fixture:") {
+      foreach (var path in Directory.GetFiles(remote)) Console.WriteLine(Path.GetFileName(path));
+      return 0;
+    }
+    if (args.Length == 3 && args[0] == "copyto" && args[1].StartsWith("fixture:snapshot-")) {
+      File.Copy(Path.Combine(remote, Path.GetFileName(args[1].Substring(8))), args[2]);
+      return 0;
+    }
     if (args.Length != 6 || args[0] != "-d" || args[1] != "-i" || args[3] != "-o" || args[4] != "-") return 2;
     using (var archive = File.OpenRead(args[5])) archive.CopyTo(Console.OpenStandardOutput());
     if (File.ReadAllText(args[2]) != "reject") return 0;
@@ -139,20 +148,24 @@ public static class FakeAge {
     unlinkSync(plain)
     unlinkSync(`${plain}.sha256`)
 
-    for (const identityMode of ['accept', 'reject']) {
+    copyFileSync(age, join(root, 'rclone.exe'))
+    for (const identityMode of ['accept', 'reject', 'cloud']) {
       const identity = join(root, `${identityMode}-fixture-identity.txt`)
       const reports = join(root, `${identityMode}-reports`)
       writeFileSync(identity, identityMode)
       const result = spawnSync('powershell.exe', [
-        ...launch, '-File', drill, '-BackupRoot', root, '-ReportRoot', reports,
+        ...launch, '-File', drill, '-BackupRoot', identityMode === 'cloud' ? join(root, 'empty-local') : root, '-ReportRoot', reports,
+        ...(identityMode === 'cloud' ? ['-CloudRemote', 'fixture'] : []),
         '-AgeExe', age, '-AgeIdentityPath', identity, '-SkipRemoteStatus',
-      ], { encoding: 'utf8', env, timeout: 30_000 })
+      ], { encoding: 'utf8', env: { ...env, PATH: root + ';' + process.env.PATH, DRILL_FIXTURE_REMOTE: daily }, timeout: 30_000 })
       assert.ifError(result.error)
-      const accepted = identityMode === 'accept'
+      const accepted = identityMode !== 'reject'
       assert.equal(result.status, accepted ? 0 : 1, result.stdout + result.stderr)
-      const reportText = readFileSync(join(reports, readdirSync(reports)[0], 'report.json'), 'utf8')
+      const reportRoot = identityMode === 'cloud' ? join(reports, 'cloud') : reports
+      const reportText = readFileSync(join(reportRoot, readdirSync(reportRoot)[0], 'report.json'), 'utf8')
       const report = JSON.parse(reportText)
       assert.equal(report.chainVerified, accepted)
+      if (accepted) assert.equal(Date.parse(report.recoveryPoint), Date.parse('2026-06-01T00:00:00Z'))
       if (!accepted) {
         assert.ok(report.errors.some(({ code, message }) => code === 'encrypted_decrypt_failed' && message.includes('exit=7')))
         assert.ok(!reportText.includes('reject-fixture-identity.txt'))

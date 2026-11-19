@@ -1,7 +1,7 @@
 // 异地副本只读状态卡（v0.7.0）：状态由 PC 端 backup-offsite 脚本写入只读 JSON，应用只读展示。
 // 不展示远端真实路径/URL/凭据；目标只显示别名，保留份数兼容 kept 数组 + keptCount。
 
-import type { OffsiteStatus } from '../../api/types'
+import type { BackupEvidence, OffsiteStatus } from '../../api/types'
 import { Badge } from '../Badge'
 import { Card } from '../Card'
 import { RelativeTime } from '../RelativeTime'
@@ -9,18 +9,20 @@ import { formatBytes } from '../../lib/format'
 import { keptCountOf, offsiteView } from '../../lib/backup-status'
 
 export interface BackupOffsiteCardProps {
+  evidence?: BackupEvidence
   offsite?: OffsiteStatus | null
 }
 
-export function BackupOffsiteCard({ offsite = null }: BackupOffsiteCardProps) {
+export function BackupOffsiteCard({ offsite = null, evidence }: BackupOffsiteCardProps) {
   const view = offsiteView(offsite)
   const kept = offsite?.keptRemote ?? keptCountOf(offsite ?? {})
-  const tone = view.tone === 'success' ? 'success' : view.tone === 'danger' ? 'danger' : view.tone === 'warning' ? 'warning' : 'muted'
+  const legacyTone = view.tone === 'success' ? 'success' : view.tone === 'danger' ? 'danger' : view.tone === 'warning' ? 'warning' : 'muted'
+  const tone = evidence ? (evidence.state === '正常' ? 'success' : evidence.state === '失败' ? 'danger' : evidence.state === '未启用' ? 'muted' : 'warning') : legacyTone
   return (
     <Card
       title="异地副本"
       description="PC 端 rclone 异地副本（默认关闭）；只上传 age 加密归档，状态文件由 PC 写入、Pi 只读。"
-      actions={<Badge tone={tone}>{view.value}</Badge>}
+      actions={<Badge tone={tone}>{evidence?.state ?? view.value}</Badge>}
     >
       <dl className="settings-list">
         <div className="settings-list-row">
@@ -56,7 +58,7 @@ export function BackupOffsiteCard({ offsite = null }: BackupOffsiteCardProps) {
         ) : null}
       </dl>
       <p className="field-hint">
-        {view.detail ?? '状态文件缺失时不当作成功；超期或失败会在备份健康卡与告警中提示。'}
+        {evidence?.reason ?? view.detail ?? '状态文件缺失时不当作成功；超期或失败会在备份健康卡与告警中提示。'}
       </p>
     </Card>
   )

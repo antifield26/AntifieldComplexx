@@ -614,14 +614,14 @@ export class AlertService {
 
   private backupPendingCondition(): AlertCondition {
     const threshold = this.config.alertBackupMaxAgeHours
-    let rows: { name: string; created_at: string }[]
+    let rows: { name: string; created_at: string; last_error: string | null }[]
     try {
       // 只统计 Pi 生成的 pending 归档：Web 导入的 origin='import' 行永远不会 ack，不能计入待拉取。
       rows = this.db
         .prepare(
-          "SELECT name, created_at FROM backup_archives WHERE acked_at IS NULL AND deleted_at IS NULL AND origin = 'pi' ORDER BY created_at ASC",
+          "SELECT name, created_at, last_error FROM backup_archives WHERE acked_at IS NULL AND deleted_at IS NULL AND origin = 'pi' ORDER BY created_at ASC",
         )
-        .all() as unknown as { name: string; created_at: string }[]
+        .all() as unknown as { name: string; created_at: string; last_error: string | null }[]
     } catch {
       return this.unknown('backup_pending', '备份待拉取', '无法读取备份归档')
     }
@@ -630,16 +630,18 @@ export class AlertService {
       const created = Date.parse(row.created_at)
       return !Number.isFinite(created) || now - created > threshold * 3_600_000
     })
-    const firing = overdue.length > 0
+    const failed = rows.some(row => Boolean(row.last_error))
+    const firing = failed || overdue.length > 0
     return {
       event: 'backup_pending',
       severity: 'warning',
       status: firing ? 'firing' : 'ok',
       title: '备份归档待拉取',
-      message: firing
+      message: failed ? '树莓派待确认归档有错误，请查看备份详情' : firing
         ? `有 ${overdue.length} 个归档超过 ${threshold} 小时未确认拉取`
         : `待拉取归档 ${rows.length} 个，均未超期`,
       details: {
+        ok: !failed,
         pending: rows.length,
         overdue: overdue.length,
         thresholdHours: threshold,
@@ -671,10 +673,10 @@ export class AlertService {
         status: 'firing',
         title: '密钥包备份失败',
         message: `最近一次密钥包拉取失败${raw.secretsLastError ? `：${raw.secretsLastError}` : ''}`,
-        details: { lastSecretsAt: raw.lastSecretsAt ?? null, error: raw.secretsLastError ?? null },
+        details: { ok: false, lastSecretsAt: raw.lastSecretsAt ?? null, error: raw.secretsLastError ?? null },
       }
     }
-    if (!raw.lastSecretsAt) {
+    if (raw.secretsOk !== true || !raw.lastSecretsAt) {
       return this.unknown('backup_secrets', '密钥包备份', '密钥包成功状态缺少时间')
     }
     const ageHours = (this.deps.now().getTime() - Date.parse(raw.lastSecretsAt)) / 3_600_000
@@ -728,10 +730,12 @@ export class AlertService {
     const world = this.readStatusRecord(this.config.worldBackupStatusFile)
     const pull = this.readStatusRecord(this.config.worldPullStatusFile)
     const age = this.deps.now().getTime() - Date.parse(String(world?.lastRunAt))
-    if (world?.ok === true && world.archiveName && world.archiveName !== pull?.archiveName &&
-      age >= 0 && age < 3600000 && (!pull || Date.parse(String(pull.lastPullAt)) < Date.parse(String(world.lastRunAt)))) {
-      return { event: 'world_pull_stale', title: '世界拉取', severity: 'info', status: 'ok', message: '世界已在树莓派生成，等待 Windows 拉取',
-        details: { waiting: true, lastSuccessAt: pull?.lastSuccessAt ?? (pull?.ok ? pull.lastPullAt : null) } }
+    if (pull?.ok !== false && world?.ok === true && world.archiveName && world.archiveName !== pull?.archiveName &&
+      age >= 0 && (!pull || Date.parse(String(pull.lastPullAt)) < Date.parse(String(world.lastRunAt)))) {
+      const waiting = age < 3600000
+      return { event: 'world_pull_stale', title: '世界拉取', severity: waiting ? 'info' : 'warning', status: waiting ? 'ok' : 'firing',
+        message: waiting ? '世界已在树莓派生成，等待 Windows 拉取' : '新世界归档生成超过一小时，Windows 尚未确认拉取',
+        details: { waiting, lastSuccessAt: pull?.lastSuccessAt ?? (pull?.ok ? pull.lastPullAt : null) } }
     }
     return this.statusFileCondition({
       event: 'world_pull_stale',
@@ -784,33 +788,38 @@ export class AlertService {
     const record = this.readStatusRecord(options.path)
     if (!record) return this.unknown(options.event, options.title, '无法读取状态文件')
     const lastAt = this.statusTime(record, options.timeKeys)
+    const ok = typeof record.ok === 'boolean' ? record.ok : null
+    const error = typeof record.error === 'string' && record.error.trim() ? record.error.trim().slice(0, 200) : null
+    if (ok === false) {
+      return { event: options.event, title: options.title, status: 'firing', severity: 'critical',
+        message: `最近一次执行失败${error ? `：${error}` : ''}`,
+        details: { ok, lastRunAt: lastAt, lastSuccessAt: record.lastSuccessAt ?? null, recoveryPoint: record.recoveryPoint ?? null, error } }
+    }
     if (!lastAt) return this.unknown(options.event, options.title, '状态文件缺少时间字段')
     const lastMs = Date.parse(lastAt)
     if (!Number.isFinite(lastMs)) return this.unknown(options.event, options.title, '状态时间不可解析')
-    const ok = typeof record.ok === 'boolean' ? record.ok : null
-    const error = typeof record.error === 'string' && record.error.trim() ? record.error.trim().slice(0, 200) : null
     const ageMs = Math.max(0, this.deps.now().getTime() - lastMs)
     const ageHours = round1(ageMs / 3_600_000)
     const thresholdHours = round1(options.thresholdMs / 3_600_000)
     if (ok === null) return this.unknown(options.event, options.title, '缺少执行结果')
     const incompatible = ['drill_stale', 'cloud_drill'].includes(options.event) &&
       typeof record.schemaVersion === 'number' && record.schemaVersion !== SUPPORTED_SCHEMA_VERSION
-    const firing = incompatible || ok === false || ageMs > options.thresholdMs
-    const reason = incompatible ? '演练 schema 与应用不一致' : ok === false ? `最近一次执行失败${error ? `：${error}` : ''}` : `最近一次成功在 ${ageHours} 小时前（阈值 ${thresholdHours} 小时）`
+    const firing = incompatible || ageMs > options.thresholdMs
+    const reason = incompatible ? '演练 schema 与应用不一致' : `最近一次成功在 ${ageHours} 小时前（阈值 ${thresholdHours} 小时）`
     return {
       event: options.event,
-      severity: ok === false ? 'critical' : 'warning',
+      severity: 'warning',
       status: firing ? 'firing' : 'ok',
       title: options.title,
       message: firing ? reason : `${options.title}正常`,
       details: {
+        incompatible,
         lastRunAt: lastAt,
         lastSuccessAt: record.lastSuccessAt ?? (ok ? lastAt : null),
         recoveryPoint: record.recoveryPoint ?? null,
         ageHours,
         thresholdHours,
         ok,
-        ...(error ? { error } : {}),
       },
     }
   }

@@ -6,6 +6,7 @@ import {
   Activity,
   AlertTriangle,
   CheckCircle2,
+  BookOpen,
   ChevronRight,
   Cloud,
   CloudUpload,
@@ -235,7 +236,7 @@ export function Dashboard() {
             <div className="launch-card launch-card-ai launch-card-disabled" aria-disabled="true"><span className="launch-icon"><Sparkles size={24} aria-hidden="true" /></span><span className="launch-text"><strong>AI 工作区</strong><span>AI 地址尚未配置</span></span></div>
           )}
           <Link className="launch-card" to="/files"><span className="launch-icon"><FolderOpen size={24} aria-hidden="true" /></span><span className="launch-text"><strong>我的文件</strong><span>{storage.fileCount} 个文件，随时取用</span></span><ChevronRight size={17} aria-hidden="true" /></Link>
-          <Link className="launch-card" to="/knowledge"><span className="launch-icon"><FolderOpen size={24} /></span><span className="launch-text"><strong>知识库</strong><span>笔记与书签</span></span><ChevronRight size={17} /></Link>
+          <Link className="launch-card" to="/knowledge"><span className="launch-icon"><BookOpen size={24} /></span><span className="launch-text"><strong>知识库</strong><span>笔记与书签</span></span><ChevronRight size={17} /></Link>
           <Link className="launch-card" to="/minecraft"><span className="launch-icon"><Gamepad2 size={24} aria-hidden="true" /></span><span className="launch-text"><strong>Minecraft</strong><span>{minecraft.online ? `${minecraft.players.online} 位玩家在线 · 查看 mcbot` : '服务器与 mcbot 控制中心'}</span></span><ChevronRight size={17} aria-hidden="true" /></Link>
         </div>
       </section>

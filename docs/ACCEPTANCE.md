@@ -4,6 +4,14 @@
 
 v1.2.5 已于 2026-11-18 切换到个人生产环境。真实 QQ 扫码、换绑和解绑候选验收按用户决定跳过。变更经过见 [CHANGELOG](../CHANGELOG.md)。
 
+## 开发候选验证
+
+| 环境 | 2026-11-20 候选证据 |
+|---|---|
+| GitHub Actions | 候选分支 `codex/v1.2.6-workspace` 的基线 `fe47399` 通过 [常规 CI](https://github.com/antifield26/AntifieldComplexx/actions/runs/44532645959) 和 [Windows、Android 原生构建](https://github.com/antifield26/AntifieldComplexx/actions/runs/44532645918)。后续提交按各自工作流结果验收。 |
+| Windows 本地夹具 | 临时目录内用模拟 rclone 和 age 验证云端恢复链、数据库与文件。Edge 连接本机夹具，在 390 像素视口复核首页关注项、全屏检索及跳转到具体备份异常。 |
+| 现场验收 | 本次交付限候选包。真实 Drive 恢复、Pi 磁盘采样、Windows 原位升级、Android 真机安装保留为现场验证项。 |
+
 ## 当前运行资产
 
 | 项目 | 2026-11-18 至 2026-11-19 实际证据 |

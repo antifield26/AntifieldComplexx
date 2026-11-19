@@ -272,3 +272,15 @@ body { background: var(--bg); }
 .inventory-row p { color: var(--text-muted); margin: 5px 0 0; }
 #storage-inventory { margin-block: 16px; padding: 16px; }
 #storage-inventory summary { cursor: pointer; }
+
+.backup-status-item[id] { scroll-margin-top: calc(var(--topbar-height) + 18px); }
+.workspace-search-modal input[type=search] { padding: 0 12px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font: inherit; }
+@media (max-width: 600px) {
+  .dashboard-launchpad-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+  .dashboard-launchpad-grid .launch-card { grid-column: auto; display: flex; flex-direction: row; align-items: center; min-height: 60px; padding: 10px; gap: 8px; }
+  .launch-card .launch-icon { width: 30px; height: 30px; border: 0; background: none; }
+  .launch-card .launch-text strong { font-size: 15px; }
+  .launch-card .launch-text > span, .dashboard-launchpad-grid .launch-card > svg { display: none; }
+  .modal-overlay:has(.workspace-search-modal) { padding: 0; }
+  .modal-panel.workspace-search-modal { width: 100vw; max-width: none; height: 100dvh; max-height: 100dvh; border: 0; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+}

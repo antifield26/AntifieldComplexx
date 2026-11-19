@@ -26,6 +26,7 @@ export function StorageInventory() {
         {Date.now() - Date.parse(current.at) > 48 * 3600000 && ' · 快照已过期'}</p>
       {typeof current.total === 'number' && typeof current.used === 'number' && <p>主机已用 {formatBytes(current.used)} / {formatBytes(current.total)}</p>}
       {!current.complete && data?.lastComplete && <p>上次完整采样 {formatDateTime(data.lastComplete.at)} · 已用 {formatBytes(data.lastComplete.used ?? 0)}</p>}
+      {!current.complete && data?.lastComplete?.rows.map(row => <p key={row.label}>上次完整 · {row.label} {formatBytes(row.bytes)}</p>)}
       {current.rows.map(row => <div className="inventory-row" key={row.label}><strong>{row.label}</strong> {formatBytes(row.bytes)}
         {row.delta != null && <span> · 较上次 {row.delta < 0 ? '−' : '+'}{formatBytes(Math.abs(row.delta))}</span>}
         <p>{row.complete ? '' : '数据不完整 · '}预计可回收 {formatBytes(row.reclaimable)} · {row.reason}</p></div>)}

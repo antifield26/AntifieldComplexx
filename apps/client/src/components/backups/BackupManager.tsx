@@ -292,7 +292,7 @@ export function BackupManager({ backupStatus = null }: BackupManagerProps) {
 
       <div className="backup-detail-grid">
         <BackupEncryptionCard encryption={encryptionStatus} />
-        <BackupOffsiteCard offsite={offsiteStatus} />
+        <BackupOffsiteCard offsite={offsiteStatus} evidence={(data?.health ?? backupStatus?.health)?.find(item => item.key === 'offsite_overdue')} />
       </div>
 
       {notReady ? (

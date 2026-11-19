@@ -73,11 +73,7 @@ if ($ExpectedSchemaVersion -le 0) {
   }
 }
 $script:ageCommand = $null
-if (-not [string]::IsNullOrWhiteSpace($AgeIdentityPath)) {
-  if (-not (Test-Path -LiteralPath $AgeIdentityPath -PathType Leaf)) { throw "age 私钥文件不存在" }
-  $script:ageCommand = Get-Command $AgeExe -ErrorAction SilentlyContinue
-  if (-not $script:ageCommand) { throw "找不到 age（-AgeIdentityPath 需要 $AgeExe 在 PATH 中）" }
-}
+
 
 New-Item -ItemType Directory -Force -Path $base, $reportRoot | Out-Null
 
@@ -852,6 +848,11 @@ $reportDir = $null
 $chainVerified = $false
 
 try {
+  if (-not [string]::IsNullOrWhiteSpace($AgeIdentityPath)) {
+    if (-not (Test-Path -LiteralPath $AgeIdentityPath -PathType Leaf)) { throw (New-DrillException -Code "identity_missing" -Message "age 私钥文件不存在") }
+    $script:ageCommand = Get-Command $AgeExe -ErrorAction SilentlyContinue
+    if (-not $script:ageCommand) { throw (New-DrillException -Code "age_missing" -Message "找不到 age 解密工具") }
+  }
   # 运行环境检查：node / tar / drill-verify.mjs。
   $nodeCommand = Get-Command $NodeExe -ErrorAction SilentlyContinue
   if (-not $nodeCommand) { throw (New-DrillException -Code "node_missing" -Message "找不到 Node（$NodeExe）；需要 Node >= 26 运行 drill-verify.mjs") }
@@ -1018,6 +1019,14 @@ try {
   Add-DrillError -Code (Get-ExceptionCode -ErrorRecord $_) -Message $_.Exception.Message
   Write-Log ("调用栈：" + $_.ScriptStackTrace)
 } finally {
+  if ($script:tempDir -and (Test-Path -LiteralPath $script:tempDir)) {
+    try {
+      $ownedTemp = [IO.Path]::GetFullPath($script:tempDir)
+      $tempParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar)
+      if ((Split-Path -Parent $ownedTemp) -ne $tempParent -or ([IO.Path]::GetFileName($ownedTemp) -notmatch '^antifieldcloud-drill-\d{8}T\d{6}Z-[0-9a-f]{8}$')) { throw "临时目录归属异常" }
+      Remove-Item -Recurse -Force -LiteralPath $ownedTemp -ErrorAction Stop
+    } catch { Add-DrillError -Code "cleanup_failed" -Message "演练临时目录清理失败，请在 Windows 核查" }
+  }
   $now = Get-Date
   $reportDirName = $script:startedAt.ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
   $reportDir = Join-Path $reportRoot $reportDirName
@@ -1068,9 +1077,7 @@ try {
   }
   Write-DrillReport -Report $script:report -ReportDir $reportDir
   Write-RemoteDrillStatus -Report $script:report
-  if ($script:tempDir -and (Test-Path -LiteralPath $script:tempDir)) {
-    Remove-Item -Recurse -Force -LiteralPath $script:tempDir -ErrorAction SilentlyContinue
-  }
+
 }
 
 if ($script:errors.Count -gt 0) {

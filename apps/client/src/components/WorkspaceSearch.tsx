@@ -53,8 +53,8 @@ export function WorkspaceSearch({ home = false }: { home?: boolean }) {
     {home ? <label className="workspace-search-trigger home-search"><Search size={20} aria-hidden="true" />
       <input aria-label="搜索个人工作台" type="search" placeholder="搜索文件、笔记和书签" maxLength={160} value={query}
         onClick={() => setOpen(true)} onChange={e => { setQuery(e.target.value); setOpen(true) }} />
-      <kbd>Ctrl K</kbd></label> : <button type="button" className={'workspace-search-trigger' + (home ? ' home-search' : '')} onClick={() => setOpen(true)}>
-      <Search size={19} aria-hidden="true" /><span>{home ? '搜索文件、笔记和书签' : '搜索工作台'}</span><kbd>Ctrl K</kbd>
+      <kbd>Ctrl K</kbd></label> : <button type="button" className="workspace-search-trigger" onClick={() => setOpen(true)}>
+      <Search size={19} aria-hidden="true" /><span>搜索工作台</span><kbd>Ctrl K</kbd>
     </button>}
     <Modal open={open} title="搜索工作台" onClose={close} initialFocus="input" className="workspace-search-modal">
       <div ref={body} onKeyDown={e => {
@@ -63,7 +63,9 @@ export function WorkspaceSearch({ home = false }: { home?: boolean }) {
         const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
           e.preventDefault()
-          buttons[index < 0 && e.key === 'ArrowUp' ? buttons.length - 1 : (index + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus()
+          const offset = e.key === 'ArrowDown' ? 1 : -1
+          const start = index < 0 && offset < 0 ? 0 : index
+          buttons[(start + offset + buttons.length) % buttons.length]?.focus()
         } else if (e.key === 'Enter' && index < 0) buttons[0]?.click()
       }}>
         <input type="search" aria-label="搜索文件、笔记和书签" maxLength={160} placeholder="输入文件名、笔记内容或书签…" value={query} onChange={e => { setResult(null); setQuery(e.target.value) }} />

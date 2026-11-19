@@ -17,6 +17,7 @@ import type { BadgeTone } from '../Badge'
 import { InlineError } from '../InlineError'
 import { RelativeTime } from '../RelativeTime'
 import { SkeletonText } from '../Skeleton'
+import { formatDateTime } from '../../lib/format'
 import { cx } from '../../lib/classnames'
 import {
   backupHealthLabel,
@@ -90,8 +91,10 @@ export function BackupStatusCard({
     key: item.key, label: item.title, value: item.state,
     tone: (item.state === '失败' ? 'danger' : ['超期','尚无证据'].includes(item.state) ? 'warning' :
       item.state === '正常' ? 'success' : 'muted') as BackupHealthTone,
-    timestamp: item.lastSuccessAt, detail: [item.location, item.reason,
-      ...(item.key === 'drill_stale' || item.key === 'cloud_drill' ? ['已验证可恢复到 ' + (item.recoveryPoint ? new Date(item.recoveryPoint).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '暂无数据')] : [])
+    timestamp: null, detail: [item.location, item.reason,
+      ...(item.lastRunAt ? ['最近执行 ' + formatDateTime(item.lastRunAt)] : []),
+      ...(item.lastSuccessAt ? ['最近成功 ' + formatDateTime(item.lastSuccessAt)] : []),
+      ...(item.key === 'drill_stale' || item.key === 'cloud_drill' ? ['已验证可恢复到 ' + (item.recoveryPoint ? formatDateTime(item.recoveryPoint) : '暂无数据')] : [])
     ].join(' · '), alert: ['失败','超期','尚无证据'].includes(item.state),
   })), ...legacy.filter(item => ['encryption','acked','orphan'].includes(item.key))] : legacy
   const hasAnyData =
@@ -153,7 +156,7 @@ export function BackupStatusCard({
                 <RelativeTime ts={entry.timestamp} className="backup-status-time" />
               ) : (
                 <span className="backup-status-time">
-                  {entry.tone === 'muted' ? '未运行' : '—'}
+                  {facts?.some(item => item.key === entry.key) ? '' : entry.tone === 'muted' ? '未运行' : '—'}
                 </span>
               )}
               {entry.detail ? (

@@ -25,39 +25,14 @@ Minecraft Bot 页只有三块：Bot 状态、会话、事件记录。任务、�
 
 ## 2. 视觉系统
 
-CSS 变量（`web/src/styles/tokens.css`）：
-
-```css
-:root {
-  --bg: #0a0e14;
-  --bg-elevated: #0f151d;
-  --surface: #121a24;
-  --surface-hover: #17212d;
-  --border: #1f2b3a;
-  --border-strong: #2b3b4f;
-  --text: #e6edf3;
-  --text-muted: #93a4b8;
-  --text-dim: #6b7d92;
-  --accent: #ff9d59;
-  --accent-strong: #ef8944;
-  --accent-soft: rgba(34, 211, 238, 0.12);
-  --success: #34d399;
-  --warning: #fbbf24;
-  --danger: #f87171;
-  --radius: 14px;
-  --radius-sm: 9px;
-  --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-  --font: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --mono: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
-}
-```
+颜色与尺寸由客户端样式令牌维护。工作台背景为石墨黑 `#171615`，内容面板为 `#23211f`，正文为暖白 `#f6f2ec`，主操作和焦点为暖橙 `#ff9d59`。
 
 - 背景 `--bg`；卡片 `--surface` + 1px `--border`；强调色 暖橙仅用于主按钮、选中态、进度、关键数字。
 - 圆角 14/9；卡片内边距 20；桌面内容最大宽度 1320；栅格间距 16/20。
 - 字号：正文 14；辅助 12.5；标题 20/16；大数字 28–34（等宽数字）。
 - 图标：`lucide-react`，18–20 px，颜色随文本；不使用彩色 emoji。
 - 动效：150–200 ms ease；只做 opacity/transform；尊重 `prefers-reduced-motion`。
-- Logo：方形渐变（石墨底暖橙）+ `AC` 字母；登录页与侧栏使用。
+- Logo：石墨底暖橙 AC 几何标识；登录页与侧栏使用。
 
 ## 3. 布局
 

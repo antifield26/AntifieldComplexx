@@ -1,11 +1,11 @@
 /** 只读恢复链、状态证据和磁盘快照的离线成功与失败夹具。 */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { cloudChain, downloadChain } from '../cloud-drill.mjs'
-import { saveInventory } from '../storage-inventory.mjs'
+import { inventory, saveInventory } from '../storage-inventory.mjs'
 import { backupHealth } from '../../apps/workbench/server/src/backups/health.ts'
 import { preserveSuccessfulStatus } from '../antifield-maint.mjs'
 
@@ -53,4 +53,21 @@ test('失败保留恢复水位，未知证据优先于已成功项目', () => {
   const base = { severity: 'warning', title: '演练', message: '演练结果', details: {} }
   const items = backupHealth([{ ...base, event: 'world_backup_stale', status: 'ok' }, { ...base, event: 'drill_stale', status: 'unknown' }])
   assert.deepEqual(items.map(item => item.state), ['尚无证据', '正常', '未启用'])
+})
+
+test('盘点按目录归类，保留当前归档并跳过链接', { skip: process.platform !== 'linux' }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'scan-fixture-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const backups = join(root, 'backups')
+  await mkdir(backups)
+  const old = join(backups, full.replace('.age', '.plain.tmp'))
+  await writeFile(old, 'expired')
+  await utimes(old, 0, 0)
+  await writeFile(join(backups, full), 'protected')
+  await symlink(backups, join(root, 'link'))
+  const result = await inventory([['数据', [root], '活动文件'], ['归档', [backups], '保护恢复链']], root)
+  assert.equal(result.complete, true)
+  assert.ok(result.rows[1].reclaimable > 0 && result.rows[1].reclaimable < result.rows[1].bytes)
+  assert.equal(result.rows[0].reclaimable, 0)
+  assert.equal(await readFile(join(backups, full), 'utf8'), 'protected')
 })

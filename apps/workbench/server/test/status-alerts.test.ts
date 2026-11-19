@@ -367,3 +367,22 @@ test('审计筛选：q 转义 LIKE（action/target/ip）、action 精确、from/
     fx.close()
   }
 })
+
+test('新世界归档窗口内等待，超时未拉取触发告警，已配置的异地副本缺少上报时为未知', () => {
+  const fx = alertFixture({ config: { backupOffsiteExpected: true } })
+  try {
+    fx.files.set(fx.config.worldBackupStatusFile, JSON.stringify({ ok: true, archiveName: 'world-new', lastRunAt: T0 }))
+    const status = () => fx.alerts.backupConditions().find(item => item.event === 'world_pull_stale')
+    assert.equal(status()?.details.waiting, true)
+    fx.files.set(fx.config.worldPullStatusFile, JSON.stringify({ ok: false, archiveName: 'world-old', lastPullAt: '2026-05-31T23:00:00Z' }))
+    assert.equal(status()?.severity, 'critical')
+    fx.files.set(fx.config.worldPullStatusFile, JSON.stringify({ ok: false }))
+    assert.equal(status()?.status, 'firing')
+    fx.files.delete(fx.config.worldPullStatusFile)
+    fx.clock.set('2026-06-01T01:05:00Z')
+    assert.equal(status()?.status, 'firing')
+    fx.files.set(fx.config.worldPullStatusFile, JSON.stringify({ ok: true, archiveName: 'world-new', lastPullAt: '2026-06-01T01:02:00Z' }))
+    assert.equal(status()?.status, 'ok')
+    assert.equal(fx.alerts.backupConditions().find(item => item.event === 'offsite_overdue')?.status, 'unknown')
+  } finally { fx.close() }
+})

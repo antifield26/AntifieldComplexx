@@ -249,6 +249,7 @@ export interface OffsiteStatus {
 }
 
 export interface BackupEvidence {
+  lastRunAt?: string | null
   key: string
   title: string
   reason: string
