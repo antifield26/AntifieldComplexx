@@ -15,9 +15,9 @@ mkdir -m 0755 -- "$release"
 trap 'echo "DSH 候选安装失败，检查受限 release 与安装日志" >&2' ERR
 assets=(
   package.json package-lock.json patch-qq.mjs qq-policy.mjs qq-memory.mjs qq-memory-cli.mjs
-  qq-agent.mjs qq-watchdog.mjs web-broker.mjs runtime-status.mjs web-policy.yml web-account.yml web-account.conf web-scope.yml web-workspace.mjs install-pnpm.sh
+  qq-agent.mjs qq-watchdog.mjs qq-binding.mjs qq-migrate-binding.mjs qq-scan.mjs web-broker.mjs runtime-status.mjs web-policy.yml web-account.yml web-account.conf web-scope.yml web-workspace.mjs install-pnpm.sh
   pnpm-dsh.mjs external-plugins.mjs plugin-page-guard.mjs plugin-page-hook.mjs
-  mcbot-agent.mjs mcbot-minimal.yml dsh-mcbot.mjs
+  mcbot-agent.mjs mcbot-minimal.yml dsh-mcbot.mjs session-steps.mjs
 )
 for asset in "${assets[@]}"; do
   install -m 0644 -- "$source_dir/$asset" "$release/$asset"
@@ -36,9 +36,10 @@ done
 # 专用 socket 组和无登录系统账号。
 getent passwd antifieldcloud >/dev/null
 getent passwd mcbot >/dev/null
-for group in dsh-web-link dsh-mcbot-link; do
+for group in dsh-web-link dsh-mcbot-link dsh-qq-link; do
   getent group "$group" >/dev/null || groupadd --system "$group"
 done
+usermod -aG dsh-qq-link antifieldcloud
 for entry in web:web qq:qq mcbot-agent:agent; do
   kind=${entry%:*}
   user="antifield-dsh-${entry#*:}"
@@ -46,9 +47,12 @@ for entry in web:web qq:qq mcbot-agent:agent; do
   getent group "$user" >/dev/null || groupadd --system "$user"
   getent passwd "$user" >/dev/null || useradd --system --gid "$user" --home-dir "$home" --shell /usr/sbin/nologin "$user"
   install -d -o "$user" -g "$user" -m 0700 "$home" "$home/profile" "$home/workspace"
-  install -m 0644 -- "$source_dir/antifield-dsh-$kind.service" /etc/systemd/system/
 done
 install -d -m 0700 /etc/antifieldcloud/dsh
+/usr/local/bin/node "$release/qq-migrate-binding.mjs"
+for kind in web qq mcbot-agent; do
+  install -m 0644 -- "$source_dir/antifield-dsh-$kind.service" /etc/systemd/system/
+done
 install -m 0644 -- "$source_dir/antifield-dsh-tmpfiles.conf" /etc/tmpfiles.d/
 systemd-tmpfiles --create /etc/tmpfiles.d/antifield-dsh-tmpfiles.conf
 systemctl daemon-reload

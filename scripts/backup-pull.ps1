@@ -314,12 +314,14 @@ function Copy-ToPi {
 # 写状态 JSON：ok 仅在文件归档成功且密钥包明确成功/跳过时为 true；失败路径写 error 字段。
 # 由调用方在拉取结束后一次性调用并包裹 try/catch：写失败只记错误，不触发整轮重试（OP-11）。
 function Write-PiStatus {
-  param([int]$PendingRemaining, [bool]$Ok = $true, [string]$ErrorMessage = $null, [string]$ErrorDetail = $null)
+  param([int]$PendingRemaining, [bool]$Ok = $true, [bool]$ArchiveOk = $true, [string]$ErrorMessage = $null, [string]$ErrorDetail = $null)
   $secretsFailed = ($script:secretsState.attempted -and ($script:secretsState.ok -eq $false))
   $status = @{
     lastPullAt          = (Get-Date).ToUniversalTime().ToString("o")
     sizeBytes           = [long]$script:lastArchiveBytes
     ok                  = ($Ok -and (-not $secretsFailed))
+    appArchiveOk        = $ArchiveOk
+    appArchiveError     = $(if ($ArchiveOk) { $null } else { $ErrorMessage })
     archiveName         = $script:lastArchiveName
     mode                = $script:lastArchiveMode
     encrypted           = [bool]$script:lastArchiveEncrypted
@@ -651,7 +653,7 @@ if ($script:sidecarMissing.Count -gt 0) {
   if (-not $pullErrorDetail) { $pullErrorDetail = "加密归档 sidecar 缺失/损坏 $($script:sidecarMissing.Count) 个（未 ack，留待下次/人工）" }
 }
 try {
-  Write-PiStatus -PendingRemaining $pendingRemaining -Ok $statusOk -ErrorMessage $pullError -ErrorDetail $pullErrorDetail
+  Write-PiStatus -PendingRemaining $pendingRemaining -Ok $statusOk -ArchiveOk ($pullOk -and $script:sidecarMissing.Count -eq 0) -ErrorMessage $pullError -ErrorDetail $pullErrorDetail
 } catch {
   Write-Log "错误：状态 JSON 写入失败（不重试拉取）：$($_.Exception.Message)"
   $statusOk = $false

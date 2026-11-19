@@ -40,7 +40,7 @@ Workbench 与前端共同遵守本文前半部分。Minecraft Bot 的本机 HTTP
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "1.2.4", "schemaVersion": 22, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
+{ "ok": true, "version": "1.2.5", "schemaVersion": 22, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
 ```
 
 - `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
@@ -208,6 +208,14 @@ Workbench 与前端共同遵守本文前半部分。Minecraft Bot 的本机 HTTP
 ### POST /api/account/logout-all
 
 成功 `200 { "ok": true }`，注销全部会话（含当前）。
+
+### /api/qq-binding
+
+仅主站浏览器管理员会话可访问，响应禁止缓存。GET 返回 `bound`、`ready`、`phase`、AppID 尾号和本会话的操作进度。POST 要求同源和 CSRF。
+
+- `action: "start"` 接受 `kind: "qr" | "manual" | "unbind"`、`password`、`totpCode`。手动绑定还传 `appId`、`appSecret`。操作 ID 对应当前会话，五分钟有效。
+- `action: "refresh" | "cancel" | "confirm"` 传 `id`。新 AppID 确认时须传 `direct` 和 `groups` 白名单数组，轮换同一 AppID 使用原白名单。扫码返回 PNG 数据 URL，凭据通过私有 socket 转发，禁止回显或记录。
+- 并行操作返回 409，失效或跨会话操作返回 410，私有服务不可达返回 503。确认后轮询 GET 查看网关切换和回退结果。
 
 ## 3. 仪表盘与审计
 
@@ -487,7 +495,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "1.2.4", "schemaVersion": 22, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
+- `GET /api/version`（需要会话）：`{ "version": "1.2.5", "schemaVersion": 22, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "mcbotEnabled": false, "mcbotControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
   - `schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。字段缺失时前端按关闭/未配置/null 降级。
   - `mcbotEnabled`/`mcbotControlEnabled`：mcbot 集成是否启用、控制接口是否可用（`MCBOT_ENABLED=true` 且 `MCBOT_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 mcbot 标签与控制操作。两者都不含 mcbot 地址/Token。
   - schema **17**；`audit.persisted` 表示诊断是否来自 DB 持久化行（DB 不可用时 false，回退内存计数）。
@@ -688,7 +696,7 @@ Workbench 不提供 QQ 管理、Webhook、发布或 OpenCode Chat。这些路径
 
 ## 15. mcbot Bot 对接
 
-mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）。应用轮询只读接口，并代理管理员对话、在线模式、停止和急停。浏览器不直连 mcbot，服务端不下发 Token 或 URL。目标上游为 mcbot **v1.2.4**，只接受契约 v2。非 v2 的读取拒绝。这些端点都要会话，写操作还要 CSRF。凭据与响应边界见 `docs/SECURITY.md`。
+mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）。应用轮询只读接口，并代理管理员对话、在线模式、停止和急停。浏览器不直连 mcbot，服务端不下发 Token 或 URL。目标上游为 mcbot **v1.2.5**，只接受契约 v2。非 v2 的读取拒绝。这些端点都要会话，写操作还要 CSRF。凭据与响应边界见 `docs/SECURITY.md`。
 
 ### 通用语义
 
@@ -713,13 +721,13 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
   "sayEnabled": true,
   "alertsEnabled": true,
   "eventsSupported": true,
-  "version": "1.2.4",
+  "version": "1.2.5",
   "contractVersion": 2,
   "lastPollAt": "2026-10-27T09:00:00.000Z",
   "lastSuccessAt": "2026-10-27T09:00:00.000Z",
   "error": null,
   "eventGap": null,
-  "status": { "version": "1.2.4", "contractVersion": 2, "uptimeSec": 123, "state": "connected", "minecraft": { "connected": true, "username": "lofii" }, "player": { "health": 20, "food": 20 }, "server": { "reachable": true, "online": 1, "max": 6 }, "task": { "enabled": true, "active": false, "name": null, "state": "idle", "pendingResume": null, "queue": [] }, "admin": { "rcon": true, "tps": { "one": 19.9, "five": 19.8, "fifteen": 19.7 } } },
+  "status": { "version": "1.2.5", "contractVersion": 2, "uptimeSec": 123, "state": "connected", "minecraft": { "connected": true, "username": "lofii" }, "player": { "health": 20, "food": 20 }, "server": { "reachable": true, "online": 1, "max": 6 }, "task": { "enabled": true, "active": false, "name": null, "state": "idle", "pendingResume": null, "queue": [] }, "admin": { "rcon": true, "tps": { "one": 19.9, "five": 19.8, "fifteen": 19.7 } } },
   "events": [ { "id": "036e732d-10", "type": "presence", "ts": "2026-10-27T08:59:58.000Z", "data": {} } ]
 }
 ```
@@ -813,7 +821,7 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
 ```json
 {
   "status": "ok",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "contractVersion": 2,
   "uptimeSec": 123,
   "state": "connected",
@@ -831,7 +839,7 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
 
 ```json
 {
-  "version": "1.2.4",
+  "version": "1.2.5",
   "contractVersion": 2,
   "uptimeSec": 123,
   "state": "connected",
@@ -991,7 +999,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 
 ```json
 {
-  "version": "1.2.4",
+  "version": "1.2.5",
   "bootId": "036e732d",
   "lastEventId": "036e732d-10",
   "resync": false,
@@ -1272,7 +1280,7 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 
 ## 12. 自主会话
 
-自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产进程为 v1.2.4（`/opt/mcbot/releases/20261116T135658Z`），`AUTONOMY_ENABLED=true`。主人通过游戏聊天，或在 Minecraft Bot 页对话后由模型决定是否启动。应用面板不直接启动自主会话。生产由 DSH 插件经私有 Unix socket 调用受控工具，mcbot 策略层校验并执行。配置该 socket 后 `/autonomy/mcp` 返回 404。在线自主工具不通过 OpenCode 或公开 MCP。**不要为普通面板/第三方开放 `/autonomy/mcp` 或该 socket**。
+自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；当前 mcbot 进程启用 `AUTONOMY_ENABLED=true`，生产指针见 [DEPLOY](DEPLOY.md)。主人通过游戏聊天，或在 Minecraft Bot 页对话后由模型决定是否启动。应用面板不直接启动自主会话。生产由 DSH 插件经私有 Unix socket 调用受控工具，mcbot 策略层校验并执行。配置该 socket 后 `/autonomy/mcp` 返回 404。在线自主工具不通过 OpenCode 或公开 MCP。**不要为普通面板/第三方开放 `/autonomy/mcp` 或该 socket**。
 
 自主工具提供有界环境观察、只读容器、进食/装备与事件驱动重决策；可选字段缺失按契约安全降级。
 

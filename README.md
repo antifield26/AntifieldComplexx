@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台，以统一账号和单一入口整合个人数据、Minecraft、AI 工作区、QQ Bot、主机监控及备份灾备。
 
-> 状态：v1.2.4。schema **v22**，mcbot 契约 v2。Web、QQ 与 mcbot Agent 使用 DeepSeek Harness 0.2.2-rc.3，QQ 插件 0.5.5。OpenCode **v2.2.5** 仅用于离线回滚。
+> 状态：v1.2.5。schema **v22**，mcbot 契约 v2。Web、QQ 与 mcbot Agent 使用 DeepSeek Harness 0.2.2-rc.3，QQ 插件 0.5.5。OpenCode **v2.2.5** 仅用于离线回滚。
 >
 > 当前部署与验收缺口见 [ACCEPTANCE](docs/ACCEPTANCE.md)，操作与回滚见 [DEPLOY](docs/DEPLOY.md)，版本变更仅在 [CHANGELOG](CHANGELOG.md) 与 [ROADMAP](docs/ROADMAP.md) 维护。
 

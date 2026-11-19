@@ -1,8 +1,9 @@
 /** 使用临时 SQLite 与 tar 夹具运行 Windows PowerShell 演练；无主机或真实归档依赖。 */
 import assert from 'node:assert/strict'
+import { Buffer } from 'node:buffer'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -85,6 +86,78 @@ test('Windows 演练端到端校验增量覆盖、物理文件和世界解包', 
         const error = { gap: 'chain_discontinuity', missing: 'restored_file_missing', corrupt: 'restored_file_sha256_mismatch' }[scenario]
         assert.ok(report.errors.some(({ code }) => code === error), result.stdout)
       }
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('Windows 演练流式接收 age 二进制输出并拒绝失败进程', { skip: process.platform !== 'win32', timeout: 90_000 }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'antifield-drill-age-'))
+  const daily = join(root, 'daily')
+  const archive = 'snapshot-20260601T000000Z-full.tar.gz'
+  const age = join(root, 'fake-age.exe')
+  const env = { ...process.env, LOCALAPPDATA: root, TEMP: root, TMP: root }
+  const launch = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass']
+  try {
+    const fixture = `
+      $ErrorActionPreference = 'Stop'
+      Add-Type -OutputAssembly '${age.replaceAll("'", "''")}' -OutputType ConsoleApplication -TypeDefinition @'
+using System;
+using System.IO;
+public static class FakeAge {
+  public static int Main(string[] args) {
+    if (args.Length != 6 || args[0] != "-d" || args[1] != "-i" || args[3] != "-o" || args[4] != "-") return 2;
+    using (var archive = File.OpenRead(args[5])) archive.CopyTo(Console.OpenStandardOutput());
+    if (File.ReadAllText(args[2]) != "reject") return 0;
+    Console.Error.WriteLine(args[2]);
+    return 7;
+  }
+}
+'@
+    `
+    const compiled = spawnSync('powershell.exe', [...launch, '-EncodedCommand', Buffer.from(fixture, 'utf16le').toString('base64')],
+      { encoding: 'utf8', env, timeout: 15_000 })
+    assert.ifError(compiled.error)
+    assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout)
+
+    mkdirSync(daily)
+    makeSnapshot(root, daily, {
+      stamp: '20260601T000000Z', createdAt: '2026-06-01T00:00:00.000Z', since: null, files: [], archived: [],
+    })
+    const plain = join(daily, archive)
+    const ciphertext = `${plain}.age`
+    const payload = readFileSync(plain)
+    const hash = sha256(payload)
+    writeFileSync(ciphertext, payload)
+    writeFileSync(`${ciphertext}.sha256`, `${hash}  ${archive}.age\n`)
+    writeFileSync(`${ciphertext}.meta.json`, JSON.stringify({
+      schema: 2, name: `${archive}.age`, archiveFormat: 'tar.gz.age', encrypted: true, encryptedWith: 'age',
+      recipient: `age1${'a'.repeat(32)}`, plainSha256: hash, plainSize: payload.length,
+      cipherSha256: hash, cipherSize: payload.length,
+    }))
+    unlinkSync(plain)
+    unlinkSync(`${plain}.sha256`)
+
+    for (const identityMode of ['accept', 'reject']) {
+      const identity = join(root, `${identityMode}-fixture-identity.txt`)
+      const reports = join(root, `${identityMode}-reports`)
+      writeFileSync(identity, identityMode)
+      const result = spawnSync('powershell.exe', [
+        ...launch, '-File', drill, '-BackupRoot', root, '-ReportRoot', reports,
+        '-AgeExe', age, '-AgeIdentityPath', identity, '-SkipRemoteStatus',
+      ], { encoding: 'utf8', env, timeout: 30_000 })
+      assert.ifError(result.error)
+      const accepted = identityMode === 'accept'
+      assert.equal(result.status, accepted ? 0 : 1, result.stdout + result.stderr)
+      const reportText = readFileSync(join(reports, readdirSync(reports)[0], 'report.json'), 'utf8')
+      const report = JSON.parse(reportText)
+      assert.equal(report.chainVerified, accepted)
+      if (!accepted) {
+        assert.ok(report.errors.some(({ code, message }) => code === 'encrypted_decrypt_failed' && message.includes('exit=7')))
+        assert.ok(!reportText.includes('reject-fixture-identity.txt'))
+      }
+      assert.ok(!readdirSync(root).some((name) => /^antifieldcloud-drill-/.test(name)))
     }
   } finally {
     rmSync(root, { recursive: true, force: true })

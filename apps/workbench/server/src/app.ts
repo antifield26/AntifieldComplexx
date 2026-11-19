@@ -33,6 +33,7 @@ import { DeviceAuthenticator } from './auth/device-auth.ts'
 import { DEVICE_BODY_LIMIT } from './auth/device-sign.ts'
 import { registerErrorHandler } from './http/errors.ts'
 import { registerAuthRoutes } from './http/routes/auth.ts'
+import { registerQqBindingRoutes } from './http/routes/qq-binding.ts'
 import { registerDeviceRoutes } from './http/routes/devices.ts'
 import { registerFileRoutes } from './http/routes/files.ts'
 import { registerMcRoutes } from './http/routes/mc.ts'
@@ -368,6 +369,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   })
 
   registerAuthRoutes(app, config, auth)
+  registerQqBindingRoutes(app, config, auth, db)
   registerDeviceRoutes(app, config, db)
   registerFileRoutes(app, config, files, (id) => shares.revokeForFileTree(id))
   registerMcRoutes(app, config, mc)

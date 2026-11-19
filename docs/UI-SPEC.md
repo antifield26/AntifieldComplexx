@@ -153,6 +153,10 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 关于：版本、部署环境（Pi 5 / Debian 13）、链接到文档（仓库内路径不可点则显示文本）。
 - 安全说明：TOTP、备份含敏感数据、Cloudflare 可见明文。
 
+### QQ 机器人设置
+
+DSH Web 的设置侧栏提供独立「QQ 机器人」分页，显示独立服务状态并链接主站 `/settings/qq-robot`。原生隔离 AI 容器把该固定地址交给系统浏览器。主站提供扫码、手动绑定和解绑，再认证后显示确认状态。换号需填写新白名单，操作中显示当前阶段并防止重复提交。
+
 ## 5. 组件与状态
 
 - `Button`（primary/secondary/ghost/danger，loading/disabled）

@@ -42,6 +42,7 @@ import { clearTimeout, setTimeout as startTimer } from 'node:timers'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
+import { boundedFile, preserveSuccessfulStatus } from './antifield-maint.mjs'
 import { createGunzip } from 'node:zlib'
 
 const execFileAsync = promisify(execFile)
@@ -916,7 +917,9 @@ export async function runBackup(options = {}) {
     }
     if (config) {
       try {
-        writeStatusFile(config.statusFile, status)
+        let previous = null
+        try { previous = JSON.parse(boundedFile(config.statusFile)) } catch { /* 尚无可用历史状态。 */ }
+        writeStatusFile(config.statusFile, preserveSuccessfulStatus(status, previous, 'world'))
       } catch (error) {
         const message = `failed to write status file ${config.statusFile}: ${errorMessage(error)}`
         recordError(result, 'status_write_failed', message)

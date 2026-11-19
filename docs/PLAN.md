@@ -4,7 +4,7 @@
 
 ## 平台
 
-当前产品 v1.2.4，schema 22，mcbot 契约 v2；DSH 0.2.2-rc.3，QQ 插件 0.5.5。版本期望以 `deploy/tool-versions.json` 为准。
+当前产品 v1.2.5，schema 22，mcbot 契约 v2；DSH 0.2.2-rc.3，QQ 插件 0.5.5。版本期望以 `deploy/tool-versions.json` 为准。
 
 - Windows、Android 与 Web 共用账号与业务接口，原生请求使用设备签名。文件、知识库、分享、主机指标、告警及灾备能力按 API/UI-SPEC 提供。
 - Minecraft Bot 面板由状态、管理员会话和事件组成。会话显示内存中的文本、工具名/成败、目标或待办的动作和短标题；正文与步骤不写应用 DB，不显示工具参数、凭据、提示词或世界记忆正文。
@@ -18,6 +18,8 @@
 已登录管理员可在 Web 插件页经受控代理查看、安装和卸载插件。允许 `/api/pluginManager/`、`/api/pluginInventory/`、`/api/remote.mux` 与 `/api/plugin-manager/detail-file`；会话上传、设置写入和凭据写入拒绝，描述接口按代理允许列表处理，原始路径中的 `%` 拒绝。
 
 QQ 与 Minecraft 条目只显示独立服务，不允许禁用/卸载；Web 进程不启动第二条 QQ 入站，也不装入 Minecraft 动作工具。查询使用 `/usr/local/bin/pnpm-dsh`。模型侧 `tool-plugin-manager` 和 goal-round-driver 不启用，Minecraft Agent 保持最小策略。
+
+「设置 → QQ 机器人」展示独立服务的状态和主站入口。绑定、换号与解绑通过主站再认证和 QQ 私有 socket 执行。
 
 ## 回滚与验收
 

@@ -56,6 +56,28 @@ fn allowed_navigation(url: &Url, ai: &Url, access: Option<&Url>) -> bool {
             || access.is_some_and(|allowed| url.origin() == allowed.origin()))
 }
 
+#[cfg(any(target_os = "windows", test))]
+fn is_qq_management(url: &Url, app: &Url) -> bool {
+    url.scheme() == "https"
+        && url.origin() == app.origin()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.path() == "/settings/qq-robot"
+        && url.query().is_none()
+        && url.fragment().is_none()
+}
+
+#[cfg(target_os = "windows")]
+fn open_qq_management(url: &Url) {
+    use std::ptr::null;
+    use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+    let path: Vec<u16> = url.as_str().encode_utf16().chain(Some(0)).collect();
+    // 仅由宿主对精确编译期来源和路径校验后调用，远端页面没有命令权限。
+    unsafe {
+        ShellExecuteW(std::ptr::null_mut(), null(), path.as_ptr(), null(), null(), SW_SHOWNORMAL);
+    }
+}
+
 #[cfg(any(not(target_os = "android"), test))]
 fn refresh_after_access(url: &Url, ai: &Url, access: Option<&Url>, visited: &AtomicBool) -> bool {
     if access.is_some_and(|origin| url.origin() == origin.origin()) {
@@ -100,12 +122,19 @@ pub(crate) fn open_ai_workspace(
         let main = app.get_webview_window("main");
         let event_main = main.clone();
         let access_visited = AtomicBool::new(false);
+        #[cfg(target_os = "windows")]
+        let management_origin = policy::api_origin()?;
         let window =
             tauri::WebviewWindowBuilder::new(app, AI_WINDOW, tauri::WebviewUrl::External(parsed))
                 .title("AI 工作区")
                 .user_agent(user_agent)
                 .incognito(true)
                 .on_navigation(move |url| {
+                    #[cfg(target_os = "windows")]
+                    if is_qq_management(url, &management_origin) {
+                        open_qq_management(url);
+                        return false;
+                    }
                     if !allowed_navigation(url, &expected, access.as_ref()) {
                         return false;
                     }
@@ -222,6 +251,23 @@ mod tests {
             &ai
         )
         .is_err());
+    }
+
+    #[test]
+    fn qq_management_only_opens_fixed_https_path() {
+        let origin = Url::parse("https://app.example.com").unwrap();
+        let url = origin.join("/settings/qq-robot").unwrap();
+        assert!(is_qq_management(&url, &origin));
+        for raw in [
+            "http://app.example.com/settings/qq-robot",
+            "https://app.example.com:444/settings/qq-robot",
+            "https://app.example.com/settings/qq-robot?target=elsewhere",
+            "https://app.example.com/settings/qq-robot#fragment",
+            "https://app.example.com/settings",
+            "https://example.net/settings/qq-robot",
+        ] {
+            assert!(!is_qq_management(&Url::parse(raw).unwrap(), &origin));
+        }
     }
 
     #[test]

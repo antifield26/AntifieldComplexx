@@ -143,6 +143,7 @@ export interface OpencodeStatus {
  * 字段以 scripts/backup-world.mjs 实际写出的 JSON 为准：`kept` 是归档名数组，份数看 `keptCount`。
  */
 export interface WorldBackupStatus {
+  lastSuccessAt?: string | null
   lastRunAt?: string | null
   ok?: boolean | null
   archiveName?: string | null
@@ -162,6 +163,7 @@ export interface WorldBackupStatus {
  * `kept` 是本地保留的归档名数组，份数看 `keptCount`。
  */
 export interface WorldPullStatus {
+  lastSuccessAt?: string | null
   /** 契约字段为 lastPullAt；兼容脚本可能写入 lastRunAt */
   lastPullAt?: string | null
   lastRunAt?: string | null
@@ -188,6 +190,7 @@ export interface WorldPullStatus {
  * `reportPath`/`dbIntegrity` 仅用于兼容旧状态文件，当前脚本不再写入。
  */
 export interface DrillStatus {
+  lastSuccessAt?: string | null
   lastRunAt?: string | null
   ok?: boolean | null
   /** 报告目录名（脚本写入的 `report`），不包含本地路径。 */
@@ -198,6 +201,7 @@ export interface DrillStatus {
   schemaVersion?: number | null
   worldArchive?: string | null
   worldChecked?: boolean | null
+  worldExtracted?: boolean | null
   error?: string | null
   message?: string | null
   /** 旧状态文件兼容字段：仅当真实字段缺失时回退展示。 */
@@ -215,6 +219,7 @@ export interface BackupEncryptionStatus {
 
 /** PC 端异地副本状态（只读状态文件，由 backup-offsite 脚本写入；不含远端路径/凭据）。 */
 export interface OffsiteStatus {
+  lastSuccessAt?: string | null
   /** 异地副本是否启用（默认关闭；状态文件存在即视为脚本已配置）。 */
   enabled?: boolean | null
   lastRunAt?: string | null
@@ -245,6 +250,9 @@ export interface OffsiteStatus {
 
 export interface BackupStatus {
   lastPullAt: string | null
+  lastArchiveSuccessAt?: string | null
+  appArchiveOk?: boolean | null
+  appArchiveError?: string | null
   ageHours: number | null
   sizeBytes: number | null
   ok: boolean | null

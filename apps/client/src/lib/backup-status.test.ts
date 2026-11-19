@@ -114,6 +114,7 @@ describe('世界备份 / 拉取 / 演练状态', () => {
         latestDb: 'db-20261019T120000Z.sqlite',
         schemaVersion: 14,
         worldChecked: true,
+        worldExtracted: true,
       },
       now,
     )
@@ -121,7 +122,10 @@ describe('世界备份 / 拉取 / 演练状态', () => {
     expect(drill.detail).toContain('数据库 db-20261019T120000Z.sqlite')
     expect(drill.detail).toContain('schema v14')
     expect(drill.detail).toContain('报告 20261020T120000Z')
-    expect(drill.detail).toContain('世界归档已校验')
+    expect(drill.detail).toContain('已解包并验证 level.dat')
+    expect(drillView({ ok: true, lastRunAt: isoDaysAgo(2), worldChecked: true }, now)).toMatchObject({
+      value: '世界解包待验', tone: 'warning', alert: true,
+    })
   })
 
   it('真实脚本形状的 kept 数组不会被渲染成归档名串', () => {

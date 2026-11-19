@@ -13,7 +13,9 @@ android {
         minSdk = 26
         consumerProguardFiles("consumer-rules.pro")
         val fixedAiOrigin = System.getenv("VITE_AI_ORIGIN") ?: "https://ai.example.com"
+        val fixedAppOrigin = System.getenv("VITE_API_ORIGIN") ?: "https://app.example.com"
         buildConfigField("String", "AI_ORIGIN", "\"" + fixedAiOrigin.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
+        buildConfigField("String", "APP_ORIGIN", "\"" + fixedAppOrigin.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
         val fixedAccessOrigin = System.getenv("VITE_ACCESS_ORIGIN") ?: ""
         buildConfigField("String", "ACCESS_ORIGIN", "\"" + fixedAccessOrigin.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
     }

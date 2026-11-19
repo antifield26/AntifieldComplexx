@@ -22,6 +22,10 @@ export const OFFSITE_STALE_HOURS = 48
 
 export type BackupHealthTone = 'success' | 'warning' | 'danger' | 'muted'
 
+function failureDetail(message: string, lastSuccessAt?: string | null): string {
+  return lastSuccessAt ? `${message} · 最近成功 ${formatDateTime(lastSuccessAt)}` : message
+}
+
 export interface BackupStatusEntry {
   key: string
   label: string
@@ -130,7 +134,7 @@ export function worldBackupView(
       value: '失败',
       tone: 'danger',
       timestamp: world.lastRunAt ?? null,
-      detail: world.error || '上次世界备份失败，请检查备份脚本日志',
+      detail: failureDetail(world.error || '上次世界备份失败，请检查备份脚本日志', world.lastSuccessAt),
       alert: true,
     }
   }
@@ -173,7 +177,7 @@ export function worldPullView(
       value: '失败',
       tone: 'danger',
       timestamp,
-      detail: worldPull.error || '上次拉取失败，远端归档不会被确认删除',
+      detail: failureDetail(worldPull.error || '上次拉取失败，远端归档不会被确认删除', worldPull.lastSuccessAt),
       alert: true,
     }
   }
@@ -216,7 +220,7 @@ export function drillView(
       value: '失败',
       tone: 'danger',
       timestamp: drill.lastRunAt ?? null,
-      detail: drill.error || '上次恢复演练失败，请检查演练报告',
+      detail: failureDetail(drill.error || '上次恢复演练失败，请检查演练报告', drill.lastSuccessAt),
       alert: true,
     }
   }
@@ -241,8 +245,9 @@ export function drillView(
     : dbParts.length > 0
       ? dbParts.join(' · ')
       : null
-  const worldDetail =
-    drill.worldChecked === true ? '世界归档已校验' : drill.worldChecked === false ? '世界归档校验失败' : null
+  const worldDetail = drill.worldExtracted === true ? '已解包并验证 level.dat'
+    : drill.worldChecked === true ? '世界归档已校验，解包待验'
+      : drill.worldChecked === false ? '世界归档校验失败' : null
   const detailParts = [dbDetail, drillReportLabel(drill), worldDetail].filter(
     (part): part is string => Boolean(part),
   )
@@ -260,6 +265,9 @@ export function drillView(
       detail: `演练 schema v${drillSchema} 与当前部署 v${currentSchemaVersion} 不一致，建议重跑 drill.ps1 -ExpectedSchemaVersion ${currentSchemaVersion}`,
       alert: true,
     }
+  }
+  if (drill.worldChecked === true && drill.worldExtracted !== true) {
+    return { value: '世界解包待验', tone: 'warning', timestamp: drill.lastRunAt ?? null, detail: detailParts.join(' · '), alert: true }
   }
   return {
     value: '成功',
@@ -331,7 +339,7 @@ export function offsiteView(offsite: OffsiteStatus | null | undefined, now = Dat
       value: '失败',
       tone: 'danger',
       timestamp,
-      detail: offsite.lastError || offsite.error || '上次异地副本同步失败，请检查 PC 端脚本日志',
+      detail: failureDetail(offsite.lastError || offsite.error || '上次异地副本同步失败，请检查 PC 端脚本日志', offsite.lastSuccessAt),
       alert: true,
     }
   }
@@ -386,6 +394,8 @@ export function buildBackupStatusEntries(input: BackupStatusInput): BackupStatus
   const ackedCount = state?.ackedCount ?? null
   const encryptedPendingCount = backup?.encryptedPendingCount ?? state?.encryptedPendingCount ?? null
   const encryptedAckedCount = backup?.encryptedAckedCount ?? state?.encryptedAckedCount ?? null
+  const archiveFailed = backup?.appArchiveOk === false || (latest && normalizedArchiveStatus(latest.status) === 'missing')
+  const archiveSuccess = backup?.lastArchiveSuccessAt ?? null
 
   const entries: BackupStatusEntry[] = []
 
@@ -393,13 +403,13 @@ export function buildBackupStatusEntries(input: BackupStatusInput): BackupStatus
   entries.push({
     key: 'archive',
     label: '应用归档',
-    value: latest ? `${backupModeLabel(latest.mode)}归档` : '暂无归档',
-    tone: latest ? (normalizedArchiveStatus(latest.status) === 'missing' ? 'danger' : 'success') : 'muted',
-    timestamp: latest?.createdAt ?? null,
-    detail: latest
+    value: archiveFailed ? '失败' : latest ? `${backupModeLabel(latest.mode)}归档` : archiveSuccess ? '已拉取' : '暂无归档',
+    tone: archiveFailed ? 'danger' : latest || archiveSuccess ? 'success' : 'muted',
+    timestamp: archiveFailed ? backup?.lastPullAt ?? latest?.createdAt ?? null : archiveSuccess ?? latest?.createdAt ?? null,
+    detail: archiveFailed ? failureDetail(backup?.appArchiveError || '应用归档缺失或未完成拉取', archiveSuccess) : latest
       ? `${archiveStatusLabel(latest)} · ${formatBytes(latest.sizeBytes)} · ${latest.name}`
-      : '尚未收到 Pi 备份或导入归档',
-    alert: latest ? normalizedArchiveStatus(latest.status) === 'missing' : false,
+      : archiveSuccess ? null : '尚未收到 Pi 备份或导入归档',
+    alert: Boolean(archiveFailed),
   })
 
   // 密钥包（secrets）：dashboard.backup 的扩展字段
@@ -411,7 +421,7 @@ export function buildBackupStatusEntries(input: BackupStatusInput): BackupStatus
     value: secretsOk === true ? '正常' : secretsOk === false ? '异常' : '未知',
     tone: secretsOk === true ? 'success' : secretsOk === false ? 'danger' : 'muted',
     timestamp: backup?.lastSecretsAt ?? null,
-    detail: secretsOk === false ? secretsError || '上次密钥包备份失败' : secretsOk === null ? '服务端未上报密钥包状态' : null,
+    detail: secretsOk === false ? failureDetail(secretsError || '上次密钥包备份失败', backup?.lastSecretsAt) : secretsOk === null ? '服务端未上报密钥包状态' : null,
     alert: secretsOk === false,
   })
 

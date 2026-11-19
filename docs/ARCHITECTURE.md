@@ -57,7 +57,7 @@ SQLite 使用 WAL 与 `synchronous=NORMAL`，迁移集中追加在 `db.ts`；程
 | 备份 | backup_state、backup_archives、restore_plans 与 manifest/sidecar |
 | mcbot 游标/缺口 | meta.mcbot.event_cursor / meta.mcbot.event_gap；不包含聊天或步骤正文 |
 | mcbot 目标、任务、世界记忆 | mcbot dataDir；目标库、待恢复任务和按维度记忆由 Bot 自己管理 |
-| QQ 凭据/角色/记忆/会话 | 独立 DSH QQ profile；Workbench schema 不包含 QQ 业务表 |
+| QQ 凭据/角色/记忆/会话 | 独立 DSH QQ 绑定记录和 profile。主站再认证后经固定私有 socket 转发绑定操作，Workbench schema 不包含 QQ 业务表 |
 | 世界/拉取/演练/异地状态 | root/PC 写固定 JSON，应用只读、普通文件检查、64 KiB 上限、失败降级 null |
 
 文件内容不可变，重命名/移动只改元数据。配额统计全部 kind=file，包含回收站与笔记附件，上限 10 GiB；fileCount 只计 origin=user。附件不进入用户文件列表/搜索/回收站，分享只接受活动普通文件。

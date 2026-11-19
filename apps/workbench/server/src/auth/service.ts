@@ -316,6 +316,10 @@ export class AuthService {
     return row
   }
 
+  async confirmQqBinding(context: AuthContext, input: ReauthInput): Promise<void> {
+    await this.requireReauth(context, input, 'qq_binding_reauth_failed')
+  }
+
   private async delayReauthFailure(): Promise<void> {
     if (this.reauthDelayMs <= 0) return
     await new Promise<void>((resolve) => {

@@ -361,6 +361,7 @@ export class OpenCodeProxy {
   private dshRouteRestricted(url: string | undefined): boolean {
     const raw = new URL(url ?? '/', this.config.aiOrigin).pathname
     const decoded = decodeURIComponent(raw).replace(/\\/g, '/').replace(/\/{2,}/g, '/').toLowerCase()
+    if (decoded.startsWith('/qqbot/')) return true
     if (!decoded.startsWith('/api/')) return false
     if (raw.includes('%')) return true
     // rc.3 插件页用 /api/pluginManager/ 与 /api/pluginInventory/ 读取、安装和卸载。

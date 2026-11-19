@@ -32,6 +32,7 @@ GROUP=${SECRETS_GROUP:-antifield}
 NODE_BIN=${NODE_BIN:-/usr/local/bin/node}
 DSH_CONFIG=/etc/antifieldcloud/dsh
 DSH_QQ_DB=/var/lib/antifield-dsh-qq/qq-memory.sqlite
+DSH_QQ_BINDING=/var/lib/antifield-dsh-qq/binding.json
 OPENCODE_HOME=${OPENCODE_HOME:-/var/lib/opencode}
 OPENCODE_DB=${OPENCODE_DB:-$OPENCODE_HOME/.local/share/opencode/opencode.db}
 OPENCODE_CONFIG_DIR=${OPENCODE_CONFIG_DIR:-$OPENCODE_HOME/.config/opencode}
@@ -193,7 +194,17 @@ if [[ "$agent_runtime" == "opencode" ]]; then
     if [[ -f "$candidate" ]]; then root_files+=("${candidate#/}"); fi
   done
 else
-  dsh_files=(web.env qq-deepseek-key mcbot-agent-deepseek-key qq-app-id qq-app-secret qq-access.json)
+  dsh_files=(web.env qq-deepseek-key mcbot-agent-deepseek-key)
+  if [[ -e "$DSH_QQ_BINDING" || -L "$DSH_QQ_BINDING" ]]; then
+    [[ -f "$DSH_QQ_BINDING" && ! -L "$DSH_QQ_BINDING" && -s "$DSH_QQ_BINDING" ]] || json_error "QQ 绑定文件无效"
+    [[ "$(stat -c '%U:%a' -- "$DSH_QQ_BINDING")" == antifield-dsh-qq:600 ]] || json_error "QQ 绑定文件权限无效"
+    root_files+=("${DSH_QQ_BINDING#/}")
+  else
+    if grep -q '^Environment=DSH_QQ_BINDING=' /etc/systemd/system/antifield-dsh-qq.service 2>/dev/null; then
+      json_error "QQ 绑定文件缺失"
+    fi
+    dsh_files+=(qq-app-id qq-app-secret qq-access.json)
+  fi
   web_auth=$(sed -nE 's/^[[:space:]]*DSH_WEB_AUTH[[:space:]]*=//p' "$DSH_CONFIG/web.env" | tail -n 1 | tr -d "'\"[:space:]")
   case "$web_auth" in
     account) ;;

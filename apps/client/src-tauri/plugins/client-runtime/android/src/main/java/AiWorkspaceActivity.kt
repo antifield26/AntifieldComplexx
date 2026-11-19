@@ -46,6 +46,13 @@ internal object AiPolicy {
         fun port(uri: Uri) = if (uri.port == -1) 443 else uri.port
         return supplied.host == fixed.host && port(supplied) == port(fixed)
     }
+    fun isQqManagement(raw: String): Boolean {
+        val expected = secureOrigin(BuildConfig.APP_ORIGIN) ?: return false
+        val url = Uri.parse(raw)
+        fun port(uri: Uri) = if (uri.port == -1) 443 else uri.port
+        return url.scheme == "https" && url.host == expected.host && port(url) == port(expected) &&
+            url.userInfo == null && url.encodedPath == "/settings/qq-robot" && url.query == null && url.fragment == null
+    }
     fun allowedNavigation(raw: String, expected: String, accessOrigin: String): Boolean {
         if (sameOrigin(raw, expected)) return true
         if (accessOrigin.isEmpty() || !validAccessOrigin(accessOrigin)) return false
@@ -141,7 +148,15 @@ class AiWorkspaceActivity : AppCompatActivity() {
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, false)
         view.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = request.isForMainFrame && blockNavigation(request.url.toString())
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                if (!request.isForMainFrame) return false
+                val raw = request.url.toString()
+                if (request.hasGesture() && AiPolicy.isQqManagement(raw)) {
+                    runCatching { startActivity(Intent(Intent.ACTION_VIEW, request.url)) }
+                    return true
+                }
+                return blockNavigation(raw)
+            }
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                 if (request.isForMainFrame && blockNavigation(request.url.toString())) {
                     return WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", mapOf("Cache-Control" to "no-store"), ByteArrayInputStream("该地址不属于工作区".toByteArray()))

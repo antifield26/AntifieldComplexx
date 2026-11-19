@@ -2,6 +2,10 @@
 
 版本边界按日期从新到旧排列。每条注明模块。现行行为见同目录操作文档，交付细节见仓库根 CHANGELOG。
 
+## 2026-11-18
+
+- **v1.2.5** · workbench、client、dsh、ops：DSH 注册 QQ 设置分页，主站管理独立绑定。核对实际发布副本，修复世界拉取时序并记录真实解包证据。个人生产验收状态见 [ACCEPTANCE](ACCEPTANCE.md)。
+
 ## 2026-11-16
 
 - **v1.2.4** · workbench、mcbot、client、dsh、ops：删除 Workbench 旧 QQ 管线与表（schema 22）、OpenCode HTML 兼容层、契约 v1、固定 409 写入口、目标草案和 PWA。Minecraft Bot 页收成状态、会话、事件记录，会话展示内存中的 DSH 步骤。插件页列出 QQ 与 Minecraft Bot 的只显示条目，安装查询经 `pnpm-dsh`。2026-11-16 已部署，2026-11-17 只重启了 DSH Web，用户已验收插件页并完成一次安装和卸载。恢复 v1.2.3 必须使用 schema 21 快照。

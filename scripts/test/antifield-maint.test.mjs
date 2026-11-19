@@ -7,7 +7,20 @@ import test from 'node:test'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { boundedFile, maintenanceCommand, validateState } from '../antifield-maint.mjs'
+import { boundedFile, maintenanceCommand, preserveSuccessfulStatus, validateState } from '../antifield-maint.mjs'
+
+test('当前故障保留各链路最近的成功证据', () => {
+  const first = '2026-11-14T04:00:00.000Z'
+  const latest = '2026-11-15T04:00:00.000Z'
+  const pull = preserveSuccessfulStatus({
+    ok: false, appArchiveOk: true, secretsOk: false, lastPullAt: latest, lastSecretsAt: null,
+  }, { ok: true, lastPullAt: first, lastSecretsAt: first }, 'pull')
+  assert.equal(pull.lastArchiveSuccessAt, latest)
+  assert.equal(pull.lastSecretsAt, first)
+  const world = preserveSuccessfulStatus({ ok: false, lastRunAt: latest }, { ok: true, lastRunAt: first }, 'world')
+  assert.equal(world.lastSuccessAt, first)
+  assert.equal(preserveSuccessfulStatus({ ok: false, lastRunAt: latest }, null, 'drill').lastSuccessAt, null)
+})
 
 test('维护参数只映射固定可执行文件与参数，不提供 shell、配置或部署能力', () => {
   assert.equal(maintenanceCommand(['backup', '--prepare', '--full'])[0], '/usr/sbin/runuser')

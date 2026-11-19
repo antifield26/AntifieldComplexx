@@ -1,6 +1,6 @@
 [package]
 name = "antifieldcomplexx-client"
-version = "1.2.4"
+version = "1.2.5"
 description = "AntifieldComplexx Windows 与 Android 客户端"
 edition = "2021"
 license = "MIT"
@@ -35,6 +35,9 @@ rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "t
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-keyring = { version = "0.2", features = ["ndk-context"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [features]
 # 发行构建必须打开。否则壳把主页指到开发服务器，手机上无法进入主页。

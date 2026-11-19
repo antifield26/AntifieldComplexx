@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.4）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.5）
 
 操作按本文件执行。涉及系统状态时先核对任务授权、备份和回滚条件，在已有授权内逐项执行并记录结果。公开仓库里的域名、地址和网段都是占位值，安装前按 `.local/DEPLOYMENT.md` 替换。该文件不提交。
 
@@ -6,16 +6,16 @@
 
 ## 当前运行与回滚
 
-当前 schema **v22**，应用 v1.2.4，mcbot 契约 v2。以下是当前运行和可用回滚资源，实际操作前重新验证；检查时间、包 SHA 与待验项见 [ACCEPTANCE](ACCEPTANCE.md)。
+当前 schema **v22**，应用 v1.2.5，mcbot 契约 v2。以下资源按 2026-11-19 生产检查记录，实际操作前重新验证。包 SHA 与待验项见 [ACCEPTANCE](ACCEPTANCE.md)。
 
 | 组件/用途 | 当前资源 |
 |---|---|
-| Workbench | `/opt/antifieldcloud/releases/20261116T135139Z`，current 指向该目录 |
-| Workbench 回滚目标 | v1.2.3：`/opt/antifieldcloud/releases/20261114T082631Z`，要求 schema 21 |
-| 匹配快照 | `/var/lib/antifieldcloud/backups/db-predeploy-20261116T135240676Z.sqlite`，SHA 见 ACCEPTANCE；恢复前保全现行 schema 22 数据 |
-| mcbot | `/opt/mcbot/releases/20261116T135658Z`；同契约回滚指针 `/opt/mcbot/releases/20261114T043045Z` |
-| DSH | `/opt/antifield-dsh/releases/20261114T051442Z`，DSH/SDK 0.2.2-rc.3，QQ 插件 0.5.5 |
-| DSH Web 回滚副本 | `/var/backups/antifieldcloud/dsh-plugin-page-20261117T015458Z`；使用前核对文件清单与 SHA |
+| Workbench | `/opt/antifieldcloud/releases/20261118T150139Z` |
+| Workbench 同 schema 回滚目标 | v1.2.4，`/opt/antifieldcloud/releases/20261116T135139Z` |
+| Workbench 跨 schema 回滚目标 | v1.2.3，`/opt/antifieldcloud/releases/20261114T082631Z`；要求 schema 21 快照 `db-predeploy-20261116T135240676Z.sqlite`（SHA-256 `ca3f4565626f288013db296dd88dfabc5a55a6355da904e2e1836b9f208bced2`） |
+| mcbot | `/opt/mcbot/releases/20261118T150139Z`；同契约回滚指针 `/opt/mcbot/releases/20261116T135658Z` |
+| DSH | 当前 `/opt/antifield-dsh/releases/20261119T020617Z`，基包 `/opt/antifield-dsh/releases/20261118T150321Z`。基包缺少 Minecraft Agent 所需模块。上一版回滚资源为 `/opt/antifield-dsh/releases/20261114T051442Z`，恢复前按本手册核对配置和三个服务。 |
+| 生产回滚配置 | `/var/backups/antifieldcloud/update-125-20261118T150139Z`，包含旧指针、环境和 DSH 单元。固定维护入口另有安装备份 |
 
 同 schema 回滚只恢复指针和配置，保留现行 DB/WAL。目标程序不支持现行 schema 时进入人工维护，先加密保全新写入，再使用匹配快照，不能只切 release。其他版本的变更记录仅见 CHANGELOG/ROADMAP，不能凭版本名称直接推断可恢复性。
 
@@ -29,7 +29,7 @@
 | Minecraft | Paper 26.1.2；RCON 25575 的凭据仅来自受限配置，不输出；接口暴露由防火墙限制，中文输出剥离 `§` 颜色码 |
 | Minecraft 插件 | Chunky 1.5.66、CoreProtect CE 24.1、EssentialsX 2.22.0、LuckPerms 5.5.91、PlaceholderAPI 2.12.3、VaultUnlocked 2.20.3、ViaVersion 5.12.2、Vote2Sleep 1.3.0 |
 | 健康与存储 | memory cgroup、60 秒健康探针、age/rclone 与 unattended-upgrades；核对状态文件的新鲜度和实际磁盘空间 |
-| 调度 | 世界备份/PC 拉取周日 12:00，异地副本每日 13:00，演练手动/季度；系统维护 timer 保持其默认策略 |
+| 调度 | 世界备份周日 12:00，PC 拉取周日 12:30，异地副本每日 13:00，演练手动/季度；系统维护 timer 保持其默认策略 |
 | 管理边界 | Cloudflare/QQ 后台、交互初始化、私钥和 Windows 管理员任务按根 AGENTS；PiForge 残留不在本项目维护范围 |
 
 当前世界约 4.1 GiB，世界备份按实际目录体积的 1.5× 预留。任何本机路径、版本或资源估算在执行前重新核对。配置清理用 `bootstrap-env.sh --force --prune-unknown`，先备份环境文件；应用不读取 `CHATBOT_*`、`DSH_QQ_MANAGED`、`OPENCODE_HTML_MODE`。
@@ -42,7 +42,7 @@
 
 无限免密 sudo 已撤销。Pi 使用全局 sudo 票据。管理员先在交互终端执行 `sudo -v`，再在票据有效期内运行部署脚本。密码不写入脚本或环境文件。无人值守备份只走固定入口。
 
-部署、安装依赖、切换 release 和改配置继续使用管理员密码。不要把 bash、node、npm、install、tee 或通配路径放进免密规则。更新维护脚本后要由管理员重新安装并核对 SHA。
+部署、安装依赖、切换 release 和改配置继续使用管理员密码。不要把 bash、node、npm、install、tee 或通配路径放进免密规则。由管理员运行 `scripts/install-maintenance.sh` 安装固定副本，脚本先保全现有入口和 sudoers。保存回滚目录标识并用 smoke 核对实际调用文件的 SHA。
 
 QQ 监督器随独立 DSH release 切换，只替换包装器和监督模块，保留锁定依赖、账号、配置和会话数据。失败时恢复旧 runtime 指针并只重启 QQ。
 
@@ -53,6 +53,10 @@ QQ 监督器随独立 DSH release 切换，只替换包装器和监督模块，�
 Windows 构建 NSIS。Android 的正式路径使用仓库脚本、SDK 36 和既有兼容签名。本机若绕过该脚本直接组装 Android，必须传入同样的三个源，并关闭 Gradle configuration cache。私钥不进源码或发布附件。
 
 ## DeepSeek Harness
+
+DSH Web 的 `web.env` 设置 `DSH_APP_ORIGIN=https://app.example.com`，用于设置分页中的主站固定入口。上线前确认目标等于 Workbench 的 `APP_ORIGIN`。独立 QQ 管理 socket 只有 QQ 服务及 Workbench 服务组可访问。
+
+候选先验证分页、绑定与失败回滚，再在维护窗口加密保全 QQ 现状和旧服务文件。stage 从旧 root 配置一次性导入绑定到 QQ 服务账号目录，旧配置用于核验与回滚。装好新固定维护副本后再切 Workbench 和 DSH 指针。回滚前若已有换绑或解绑，先保全新状态，再按现行绑定恢复旧单元所需配置，解绑状态不得启动旧网关。
 
 DSH 与 SDK 固定为 0.2.2-rc.3，QQ 插件固定为 0.5.5，依赖由 `deploy/dsh/package-lock.json` 和 integrity 校验。`sudo bash deploy/dsh/stage.sh` 安装三个隔离服务、账号、socket 目录及系统包管理入口；运行前核对当前任务授权。
 
@@ -159,12 +163,12 @@ npm run check
 
 ### 3.0 当前部署步骤
 
-1. PC 执行 `npm run check`、`npm run build`、`node scripts/check-version.mjs` 与 `node scripts/check-prod-deps.mjs`；期望版本从 tool-versions 读取，当前应用/mcbot 1.2.4、schema 22、契约 2、DSH 0.2.2-rc.3、QQ 插件 0.5.5。
+1. PC 执行 `npm run check`、`npm run build`、`node scripts/check-version.mjs` 与 `node scripts/check-prod-deps.mjs`；期望版本从 tool-versions 读取，当前应用/mcbot 1.2.5、schema 22、契约 2、DSH 0.2.2-rc.3、QQ 插件 0.5.5。
 2. 核对 pending、磁盘、配置与运行指针，保存当前 schema 22 的一致性快照。用于 v1.2.3 回退的 schema 21 快照另行保留，不能用当前快照覆盖。
 3. 执行 `.\scripts\deploy.ps1 -PiHost <直连IP>`；核对包清单/SHA、目标依赖、快照、版本/schema/运行时就绪。跨 schema 失败转人工维护，同 schema 回滚保留现行库。
 4. Bot 空闲后切换 mcbot，核对 healthz 与契约 v2；Minecraft 保持运行。DSH 各服务分别验收。
-5. 完整 smoke 使用 `-ExpectedVersion 1.2.4 -ExpectedSchemaVersion 22 -ExpectedMcbotVersion 1.2.4 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.3 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`，Access 参数来自受限文件；未启用 mcbot 时用 `-SkipMcbot`。
-6. 按需更新 Windows 固定任务副本，实际拉取并隔离恢复；记录失败/待验项。发布门禁通过后才发布 Tag/Release。
+5. 完整 smoke 使用 `-ExpectedVersion 1.2.5 -ExpectedSchemaVersion 22 -ExpectedMcbotVersion 1.2.5 -RequireMcbotState -ExpectedMcbotContractVersion 2 -ExpectedDshVersion 0.2.2-rc.3 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped`，Access 参数来自受限文件；未启用 mcbot 时用 `-SkipMcbot`。
+6. 更新 Windows 固定任务副本，实际拉取并隔离恢复。恢复状态回写后用 `-RequireRecoveryDrill -ExpectedSchemaVersion 22` 完成最终 smoke，验证当前 schema 和世界解包证据。记录失败和待验项。
 
 ## 3.2 OpenCode 离线回滚运行时
 
@@ -263,8 +267,8 @@ Smoke 使用受限 `.local/cf-access.env` 中的服务令牌，凭据不进入�
 
 ```powershell
 .\scripts\smoke.ps1 -PiHost 192.0.2.10 -PiUser antifield -BackupRoot '<本机备份根>' `
-  -ExpectedVersion 1.2.4 -ExpectedSchemaVersion 22 `
-  -ExpectedMcbotVersion 1.2.4 -ExpectedMcbotContractVersion 2 -RequireMcbotState `
+  -ExpectedVersion 1.2.5 -ExpectedSchemaVersion 22 `
+  -ExpectedMcbotVersion 1.2.5 -ExpectedMcbotContractVersion 2 -RequireMcbotState `
   -ExpectedDshVersion 0.2.2-rc.3 -ExpectedDshQqVersion 0.5.5 -RequireOpenCodeStopped
 ```
 
@@ -383,6 +387,8 @@ ls -lh /var/lib/antifieldcloud/world-backups/
 
 ### 9.4 世界拉取（Windows 周任务）
 
+PC 以最近已到期的周日 12:00（Asia/Shanghai）为目标周期，每分钟检查且最多等待 30 分钟。已生成且通过目标归档 SHA-256 后才记成功，等待失败保留最近一次成功时间。Windows 任务需由管理员重新安装。
+
 ```powershell
 # 手动跑一次仍用仓库脚本（直连网线可达；占位地址与默认备份根）
 cd "$env:USERPROFILE\projects\AntifieldComplexx"
@@ -398,7 +404,7 @@ Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Tr
 - 两阶段：scp `.part` → 远端 `.sha256` 比对 → 原子改名 → 删除远端归档/旁文件（ack）；**失败不 ack、不动远端**，退出码 1。
 - 本地保留最新 4 份；日志 `%LOCALAPPDATA%\AntifieldCloud\world-pull.log`；远端状态写 `world-pull-status.json`。
 - 回滚/停用：`Unregister-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Confirm:$false`；已拉取归档保留。已安装的脚本副本可留在 `%LOCALAPPDATA%\AntifieldCloud\`。
-- `install-backup-task.ps1` 安装每日应用归档任务时，同时安装世界拉取：把 `scripts\world-pull.ps1` 复制到 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`，注册 `AntifieldCloud-World-Pull`（周日 12:00，时限 3 小时）。`-PiHost`/`-PiUser`/`-BackupRoot` 与每日任务相同。本机备份根见 `.local`，世界归档在该根下的 `world\`。缺源文件时安装脚本在复制和注册之前失败，DryRun 也不写任务。恢复演练仍按 §9.5 手动/季度执行。重装需要管理员 PowerShell，且不要为了改路径再拉一份世界归档。
+- `install-backup-task.ps1` 安装每日应用归档任务时，同时安装世界拉取：把 `scripts\world-pull.ps1` 复制到 `%LOCALAPPDATA%\AntifieldCloud\world-pull.ps1`，注册 `AntifieldCloud-World-Pull`（周日 12:30，时限 3 小时）。`-PiHost`/`-PiUser`/`-BackupRoot` 与每日任务相同。本机备份根见 `.local`，世界归档在该根下的 `world\`。缺源文件时安装脚本在复制和注册之前失败，DryRun 也不写任务。恢复演练仍按 §9.5 手动/季度执行。重装需要管理员 PowerShell。
 
 ### 9.5 恢复演练（drill.ps1，季度/部署验收）
 
@@ -728,7 +734,7 @@ World-Pull 与应用拉取由同一安装器登记，File 指向固定副本；B
 
 ### 15.7 隔离恢复演练
 
-只读使用 PC 上的归档链；不修改/删除原归档。私钥由用户离线保管，只传路径，不把内容放入日志。命令示例：
+只读使用 PC 上的归档链；不修改/删除原归档。私钥由用户离线保管，只传路径。演练将 age 的二进制输出直接写入演练临时目录，校验明文哈希和大小，结束时清理临时明文。解密失败报告记录归档名、错误码和退出码。命令示例：
 
 ```powershell
 .\scripts\drill.ps1 -BackupRoot '<备份根>' -AgeIdentityPath '<离线私钥文件>' -IncludeWorld -RequireWorld -SkipRemoteStatus

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Bell, Download, KeyRound, LockKeyhole, LogOut, ShieldCheck, Webhook } from 'lucide-react'
 import { api, toErrorMessage } from '../api/client'
 import type { AlertsConfig, BackupStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { useAppMeta } from '../meta/MetaContext'
+import { isNativeRuntime } from '../lib/native'
 import { PageHeader } from '../components/PageHeader'
 import { Card } from '../components/Card'
 import { Button } from '../components/Button'
@@ -229,6 +230,7 @@ export function Settings() {
   return (
     <div className="settings-page">
       <PageHeader title="设置" description="账号安全、会话、告警与部署信息" />
+      {!isNativeRuntime() ? <Link to="/settings/qq-robot">QQ 机器人</Link> : null}
 
       <div className="settings-grid">
         <DeviceList />

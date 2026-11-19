@@ -1,5 +1,5 @@
 /** 仪表盘聚合：主机、存储、Minecraft、opencode、服务、备份、最近活动。 */
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
@@ -16,6 +16,9 @@ const BACKUP_OVERDUE_HOURS = 48
 export interface BackupStatus {
   /** PC 拉取脚本写入的状态；缺失记录时为 null（字段保留，前端按无记录展示）。 */
   lastPullAt: string | null
+  lastArchiveSuccessAt: string | null
+  appArchiveOk: boolean | null
+  appArchiveError: string | null
   ageHours: number | null
   sizeBytes: number | null
   ok: boolean | null
@@ -235,25 +238,27 @@ export class DashboardService {
    * 任一来源缺失都不抛错（对应字段为 null），由前端展示降级态。
    */
   private backupStatus(): BackupStatus {
-    let raw: {
+    const raw = (readStatusFile(this.config.backupPullFile) ?? {}) as {
       lastPullAt?: string
+      lastArchiveSuccessAt?: string | null
+      appArchiveOk?: boolean | null
+      appArchiveError?: string | null
       sizeBytes?: number
       ok?: boolean
       secretsOk?: boolean
       lastSecretsAt?: string | null
       secretsLastError?: string | null
       lastError?: string | null
-    } = {}
-    try {
-      raw = JSON.parse(readFileSync(this.config.backupPullFile, 'utf8')) as typeof raw
-    } catch {
-      raw = {}
     }
-    const hasPull = typeof raw.lastPullAt === 'string' && raw.lastPullAt.length > 0
-    const ageHours = hasPull ? (Date.now() - Date.parse(raw.lastPullAt!)) / 3_600_000 : null
+    const lastPullAt = typeof raw.lastPullAt === 'string' ? raw.lastPullAt : null
+    const timestamp = typeof raw.lastArchiveSuccessAt === 'string' ? raw.lastArchiveSuccessAt : raw.ok === true ? lastPullAt : null
+    const ageHours = timestamp ? (Date.now() - Date.parse(timestamp)) / 3_600_000 : null
     const counts = this.archiveCounts()
     return {
-      lastPullAt: hasPull ? raw.lastPullAt! : null,
+      lastPullAt,
+      lastArchiveSuccessAt: timestamp,
+      appArchiveOk: typeof raw.appArchiveOk === 'boolean' ? raw.appArchiveOk : raw.ok === true ? true : null,
+      appArchiveError: typeof raw.appArchiveError === 'string' ? raw.appArchiveError : null,
       ageHours: ageHours !== null && Number.isFinite(ageHours) ? Math.round(ageHours * 10) / 10 : null,
       sizeBytes: typeof raw.sizeBytes === 'number' ? raw.sizeBytes : null,
       ok: typeof raw.ok === 'boolean' ? raw.ok : null,
@@ -266,7 +271,7 @@ export class DashboardService {
       pendingBytes: counts.pendingBytes,
       orphanCount: this.orphanCount(),
       ackedBytes: counts.ackedBytes,
-      lastError: counts.lastError ?? raw.lastError ?? null,
+      lastError: counts.lastError ?? raw.lastError ?? raw.appArchiveError ?? null,
       world: readStatusFile(this.config.worldBackupStatusFile),
       worldPull: readStatusFile(this.config.worldPullStatusFile),
       drill: readStatusFile(this.config.drillStatusFile),

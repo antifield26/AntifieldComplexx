@@ -85,7 +85,7 @@ if (import.meta.main) {
     } else if (command === 'dsh-ready') {
       for (const role of ['web', 'qq', 'mcbot-agent']) {
         const state = JSON.parse(readFileSync('/run/antifield-dsh-' + role + '-status/status.json', 'utf8'))
-        if (state.ready !== true || state.version !== args[0] ||
+        if ((state.ready !== true && !(role === 'qq' && state.bindingPhase === 'unbound')) || state.version !== args[0] ||
             (role === 'qq' && state.pluginVersion !== args[1])) throw new Error('dsh_not_ready')
       }
     } else if (command === 'mcbot-idle') {

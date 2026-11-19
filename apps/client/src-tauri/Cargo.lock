@@ -57,7 +57,7 @@ dependencies = [
 
 [[package]]
 name = "antifieldcomplexx-client"
-version = "1.2.4"
+version = "1.2.5"
 dependencies = [
  "android-keyring",
  "axum",
@@ -77,6 +77,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-util",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -32,7 +32,7 @@ export function createQqWatchdog(child, publish, {
     deadline = timers.setTimeout(() => {
       deadline = undefined
       if (closing || ready) return
-      report('DSH QQ 网关连接超时，等待服务重启')
+      report('DSH QQ 网关连接超时，等待重新连接')
       terminate()
     }, timeoutMs)
     deadline?.unref?.()

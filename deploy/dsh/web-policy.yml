@@ -7,6 +7,9 @@
   disabled: true
 - id: tool-plugin-manager
   disabled: true
+# 实际 QQ 网关只允许在独立 QQ 运行时启动。
+- id: im-qqbot
+  disabled: true
 # 插件查询去掉 npm 12 不接受的 fetch-retries 参数。模型侧插件管理工具保持关闭。
 - id: plugin-manager
   config:

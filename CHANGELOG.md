@@ -10,6 +10,16 @@
 - 除 CHANGELOG/ROADMAP 外，文档统一为当前契约、能力、配置、操作与验收状态；版本引入叙述和 OpenCode 升级实验归档到本文件。
 - 对齐 QQ/告警单 webhook、mcbot 契约 v2 与 404 边界，清除操作手册中已经失效的 QQ 管线、OpenCode 在线升级和直接行动面板说明。
 
+## [v1.2.5] - 2026-11-18
+
+模块：workbench、client、dsh、ops
+
+- DSH 设置增加「QQ 机器人」，主站通过固定私有 socket 管理独立服务的扫码、手动绑定、换号与解绑。
+- 备份分别保留最近成功和当前错误，世界拉取等待目标周期归档，恢复状态区分归档校验和实际解包。
+- 发布验收核对 Pi 固定维护入口、DSH 实际文件和 Windows 任务的脚本副本，schema 保持 22。
+- 个人生产完成 Workbench、DSH 和 mcbot 切换，保留同 schema 回滚源。按用户决定跳过 QQ 真实绑定候选。mcbot 首次探针误用健康字段，自动回滚后按实际契约重新切换并验收通过。
+- Windows 恢复演练改用二进制重定向接收 age 解密输出，schema 22 加密归档链与 Minecraft 世界均通过真实隔离恢复。DSH 安装清单补齐 `session-steps.mjs`，生产独立 Minecraft 代理使用校验过的新发布目录恢复启动。
+
 ## [v1.2.4] - 2026-11-16
 
 模块：workbench、mcbot、client、dsh、ops

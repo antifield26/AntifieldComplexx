@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { createServer, request } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -141,6 +141,15 @@ async function verifyWebBroker() {
   await new Promise((done) => reservation.close(done))
   const directory = join(temp, 'credentials')
   const socketPath = join(temp, 'sso.sock')
+  const profile = join(temp, 'web', 'profiles', 'web')
+  const modules = join(temp, 'runtime', 'node_modules')
+  await mkdir(profile, { recursive: true })
+  await writeFile(join(profile, 'package.json'), JSON.stringify({ name: 'fixture-web', private: true }))
+  await mkdir(join(modules, '@antifield'), { recursive: true })
+  await symlink(join(root, 'node_modules', '@deepseek-ai'), join(modules, '@deepseek-ai'), 'dir')
+  for (const plugin of ['qq', 'mcbot']) {
+    await cp(join(root, 'plugins', plugin), join(modules, '@antifield', `dsh-${plugin}-plugin`), { recursive: true })
+  }
   await mkdir(directory, { mode: 0o700 })
   await writeFile(join(directory, 'deepseek-key'), 'dsh-fixture-key', { mode: 0o600 })
   const entry = join(temp, 'web-broker.mjs')
@@ -149,7 +158,8 @@ async function verifyWebBroker() {
     cwd: temp,
     env: {
       PATH: process.env.PATH, HOME: temp, DSH_HOME: join(temp, 'web'), CREDENTIALS_DIRECTORY: directory,
-      DSH_BIN: bin, DSH_WEB_ORIGIN: 'https://ai.example.test', DSH_WEB_PORT: String(port), DSH_WEB_SSO_SOCKET: socketPath,
+      DSH_BIN: join(modules, '@deepseek-ai/dsh/lib/bin.js'), DSH_WEB_ORIGIN: 'https://ai.example.test',
+      DSH_APP_ORIGIN: 'https://app.example.test', DSH_WEB_PORT: String(port), DSH_WEB_SSO_SOCKET: socketPath,
     },
     stdio: 'ignore',
   })
@@ -190,7 +200,27 @@ async function verifyWebBroker() {
         })
         assert.equal(settingsReply.status, 200, '原生换票后设置控制器必须可达')
         assert.equal(JSON.parse(settingsReply.body).result?.ok, true, '设置接口必须成功完成 RPC')
-        console.log('固定 DSH Web 已通过 Unix socket 原生换票及设置 API')
+        const webGet = (path) => new Promise((resolve, reject) => {
+          const req = request({
+            host: '127.0.0.1', port, path,
+            headers: { host: 'ai.example.test', cookie: result.split(';', 1)[0] },
+            signal: AbortSignal.timeout(4000),
+          }, (res) => {
+            const chunks = []
+            res.on('data', chunk => chunks.push(chunk))
+            res.on('error', reject)
+            res.on('end', () => {
+              if (res.statusCode !== 200) reject(new Error('DSH 设置页面资源不可用'))
+              else resolve(Buffer.concat(chunks).toString('utf8'))
+            })
+          })
+          req.on('error', reject)
+          req.end()
+        })
+        assert.match(await webGet('/'), /@antifield\/dsh-qq-plugin/, 'QQ 设置模块必须列入实际 DSH 启动图')
+        const qq = JSON.parse(await webGet('/antifield/qq-status'))
+        assert.equal(qq.managementUrl, 'https://app.example.test/settings/qq-robot')
+        console.log('固定 DSH Web 已通过 Unix socket 换票、设置 API 和 QQ 客户端模块加载')
         return
       }
       if (Date.now() >= deadline || broker.exitCode !== null) throw new Error('DSH Web 换票器未就绪')

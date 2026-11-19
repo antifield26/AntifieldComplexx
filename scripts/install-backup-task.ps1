@@ -17,7 +17,7 @@
 # 安装/更新当前用户的每日备份任务与周度世界拉取任务，并收紧备份目录 ACL（仅当前用户 + Administrators + SYSTEM）。
 # - 任务参数显式传入 -PiHost/-PiUser/-BackupRoot，避免使用脚本默认占位值导致备份指向错误主机；
 # - 每日任务与世界拉取都把脚本复制到 %LOCALAPPDATA%\AntifieldCloud，计划任务指向副本，不指向仓库路径；
-# - 世界拉取任务名保持 AntifieldCloud-World-Pull，触发为每周日 12:00（本机本地时间）；
+# - 世界拉取任务名保持 AntifieldCloud-World-Pull，触发为每周日 12:30（本机本地时间）；
 # - 任务在电池供电时也运行（AllowStartIfOnBatteries/DontStopIfGoingOnBatteries）；
 # - 可选 -InstallOffsiteTask：额外安装 AntifieldCloud-Backup-Offsite（只上传加密归档到 rclone 远端）；
 #   未提供 -OffsiteRemote 时不安装并打印提示（不静默跳过）；
@@ -132,7 +132,7 @@ if ($DryRun) {
   Write-Host "[DryRun] 任务参数：$dryArguments"
   $dryWorldScript = Join-Path $base "world-pull.ps1"
   $dryWorldArguments = Get-WorldPullArguments -ScriptPath $dryWorldScript
-  Write-Host "[DryRun] 世界拉取任务：AntifieldCloud-World-Pull 每周日 12:00"
+  Write-Host "[DryRun] 世界拉取任务：AntifieldCloud-World-Pull 每周日 12:30"
   Write-Host "[DryRun] 世界拉取参数：$dryWorldArguments"
   if ($installOffsite) {
     $dryOffsiteArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $base 'backup-offsite.ps1')`" -BackupRoot `"$BackupRoot`" -PiHost `"$PiHost`" -PiUser `"$PiUser`" -Remote `"$OffsiteRemote`" -RemotePath `"$OffsiteRemotePath`" -RemoteLabel `"$OffsiteRemoteLabel`" -NodeScriptPath `"$(Join-Path $base 'backup-offsite.mjs')`" -RcloneBin `"$RcloneBin`" -RcloneConfig `"$RcloneConfig`""
@@ -199,7 +199,7 @@ $worldScriptPath = Join-Path $base "world-pull.ps1"
 $worldScriptSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $worldScriptPath).Hash.ToLower()
 $worldArguments = Get-WorldPullArguments -ScriptPath $worldScriptPath
 $worldAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $worldArguments
-$worldTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At "12:00"
+$worldTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At "12:30"
 $worldSettings = New-ScheduledTaskSettingsSet `
   -StartWhenAvailable `
   -MultipleInstances IgnoreNew `
@@ -284,9 +284,12 @@ $marker = [ordered]@{
   offsiteRemoteLabel = if ($offsiteInstalled) { $OffsiteRemoteLabel } else { $null }
   offsiteTime        = if ($offsiteInstalled) { $OffsiteTime } else { $null }
   offsiteArguments   = $offsiteArguments
+  offsiteScriptSha256 = if ($offsiteInstalled) { (Get-FileHash -Algorithm SHA256 -LiteralPath $offsiteScriptPath).Hash.ToLower() } else { $null }
+  offsiteNodeSha256 = if ($offsiteInstalled) { (Get-FileHash -Algorithm SHA256 -LiteralPath $offsiteNodeInstalled).Hash.ToLower() } else { $null }
   worldPullTaskName  = "AntifieldCloud-World-Pull"
   worldPullScriptPath = $worldScriptPath
   worldPullScriptSha256 = $worldScriptSha
+  worldPullTime       = "12:30"
   worldPullArguments = $registeredWorldArguments
 }
 $markerJson = ConvertTo-Json -InputObject $marker -Depth 5

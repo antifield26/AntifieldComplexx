@@ -205,7 +205,7 @@ function Assert-ArchiveName {
 
 function Get-RemoteSnapshot {
   # 一次 ssh 同时取目录是否存在、归档列表与备份状态；避免多次往返放大直连丢包概率。
-  $command = "if [ -d '$RemoteBackupDir' ]; then echo DIR_OK; ls -1 '$RemoteBackupDir' 2>/dev/null; else echo DIR_MISSING; fi; echo '---STATUS---'; cat '$backupStatusPath' 2>/dev/null || echo STATUS_MISSING"
+  $command = "if [ -d '$RemoteBackupDir' ]; then echo DIR_OK; ls -1 '$RemoteBackupDir' 2>/dev/null; else echo DIR_MISSING; fi; echo '---STATUS---'; sudo -n /usr/local/sbin/antifield-maint read-status '$backupStatusPath' 2>/dev/null || echo STATUS_MISSING"
   $output = Invoke-PiSsh -Command $command
   $lines = @(($output -split "`r?`n") | ForEach-Object { $_.Trim() })
   $dirOk = $false
@@ -228,6 +228,47 @@ function Get-RemoteSnapshot {
     Archives = $archives
     Status   = $status
   }
+}
+
+function Get-WorldCycleStart {
+  param([datetimeoffset]$Now)
+  # Asia/Shanghai 当前固定 UTC+08:00，调度周期与执行 PC 的本地时区解耦。
+  $localNow = $Now.ToOffset([timespan]::FromHours(8))
+  $sunday = $localNow.Date.AddDays(-[int]$localNow.DayOfWeek).AddHours(12)
+  $start = [datetimeoffset]::new($sunday, $localNow.Offset)
+  if ($start -gt $localNow) { $start = $start.AddDays(-7) }
+  return $start
+}
+
+function Wait-WorldCycle {
+  $cycle = Get-WorldCycleStart -Now ([datetimeoffset]::UtcNow)
+  $wait = [Diagnostics.Stopwatch]::StartNew()
+  do {
+    $snapshot = Get-RemoteSnapshot
+    $source = $snapshot.Status
+    $stamp = if ($source.startedAt) { $source.startedAt } else { $source.lastRunAt }
+    $origin = [datetimeoffset]::MinValue
+    $valid = $false
+    if ($stamp -is [datetime] -or $stamp -is [datetimeoffset]) {
+      $origin = [datetimeoffset]$stamp
+      $valid = $true
+    } elseif ($stamp) {
+      $valid = [datetimeoffset]::TryParse([string]$stamp, [ref]$origin)
+    }
+    if ($valid -and $origin -ge $cycle) {
+      $script:sourceStatus = $source
+      if ($source.ok -eq $false) {
+        Throw-PullError -Code "world_backup_failed" -Message "Pi 已报告本周世界归档生成失败"
+      }
+      if ($source.ok -eq $true -and $source.archiveName -match '^world-\d{8}T\d{6}Z\.tar\.gz$' -and $source.sha256 -match '^[a-fA-F0-9]{64}$') {
+        return $snapshot
+      }
+    }
+    $remaining = 1800 - $wait.Elapsed.TotalSeconds
+    if ($remaining -le 0) { break }
+    Start-Sleep -Seconds ([Math]::Min(60, [Math]::Ceiling($remaining)))
+  } while ($wait.Elapsed.TotalSeconds -lt 1800)
+  Throw-PullError -Code "world_backup_not_ready" -Message "等待 30 分钟后仍未收到本周世界归档"
 }
 
 function Get-RemoteArchiveSha {
@@ -312,9 +353,12 @@ function Invoke-Ack {
 }
 
 function Invoke-PullArchive {
-  param([string]$Name)
+  param([string]$Name, [string]$CycleSha)
   Assert-ArchiveName -Name $Name
   $expectedSha = Get-RemoteArchiveSha -Name $Name
+  if ($CycleSha -and $expectedSha -ne $CycleSha) {
+    Throw-PullError -Code "world_archive_unverified" -Message "本周世界归档旁文件与生成状态不一致"
+  }
   $remotePath = "$RemoteBackupDir/$Name"
   $localPath = Join-Path $worldRoot $Name
   if ((Test-Path -LiteralPath $localPath) -and ((Get-LocalHash -Path $localPath) -eq $expectedSha)) {
@@ -464,7 +508,7 @@ function Invoke-Pull {
   if (-not (Test-PiReachable)) {
     Throw-PullError -Code "pi_unreachable" -Message "Pi 直连不可达（${PiHost}:22），请检查网线/地址"
   }
-  $snapshot = Get-RemoteSnapshot
+  $snapshot = Wait-WorldCycle
   $sourceStatus = $snapshot.Status
   if ($sourceStatus) {
     Write-Log ("远端世界备份状态：ok=$($sourceStatus.ok) lastRunAt=$($sourceStatus.lastRunAt) archiveName=$($sourceStatus.archiveName)")
@@ -478,8 +522,18 @@ function Invoke-Pull {
     Write-Log "远端没有待拉取的世界归档"
   }
   foreach ($name in $snapshot.Archives) {
-    $result = Invoke-PullArchive -Name $name
+    $cycleSha = if ($name -ceq $sourceStatus.archiveName) { $sourceStatus.sha256 } else { "" }
+    $result = Invoke-PullArchive -Name $name -CycleSha $cycleSha
     $script:pulled += $result
+  }
+  $expectedName = [string]$sourceStatus.archiveName
+  $verified = @($script:pulled | Where-Object { $_.Name -ceq $expectedName -and $_.Sha256 -eq $sourceStatus.sha256 })
+  if ($verified.Count -eq 0) {
+    $local = Join-Path $worldRoot $expectedName
+    if (-not (Test-Path -LiteralPath $local -PathType Leaf) -or (Get-LocalHash -Path $local) -ne $sourceStatus.sha256) {
+      Throw-PullError -Code "world_archive_unverified" -Message "PC 未收到本周经校验的世界归档"
+    }
+    Write-ShaSidecar -ArchivePath $local -Sha256 $sourceStatus.sha256
   }
 
   $script:kept = @(Invoke-LocalRetention)
@@ -506,7 +560,7 @@ try {
   if ($null -ne $_.Exception.Data -and $_.Exception.Data.Contains("code")) { $failureCode = [string]$_.Exception.Data["code"] }
   Write-Log "世界备份拉取失败（$failureCode）：$failureMessage"
   try {
-    Write-RemoteStatus -Ok $false -ErrorMessage $failureMessage -ErrorCode $failureCode -Pulled $script:pulled -Kept $script:kept -PendingRemaining -1 -SourceStatus $null -Warnings $script:warnings
+    Write-RemoteStatus -Ok $false -ErrorMessage $failureMessage -ErrorCode $failureCode -Pulled $script:pulled -Kept $script:kept -PendingRemaining -1 -SourceStatus $script:sourceStatus -Warnings $script:warnings
   } catch {
     Write-Log "错误：失败状态也未能写入远端：$($_.Exception.Message)"
   }

@@ -17,6 +17,7 @@
   [switch]$SkipOffsite,
   [string]$ExpectedVersion = "",
   [int]$ExpectedSchemaVersion = 0,
+  [switch]$RequireRecoveryDrill,
   [string]$ExpectedOpenCodeVersion = "",
   [string]$ExpectedDshVersion = "",
   [string]$ExpectedDshQqVersion = "",
@@ -316,7 +317,8 @@ if ($ExpectedDshVersion) {
       $unit = "antifield-dsh-$kind"
       $out = (Invoke-PiSsh "systemctl is-active --quiet $unit && cat /run/$unit-status/status.json" | Out-String).Trim()
       $state = $out | ConvertFrom-Json -ErrorAction Stop
-      if ($state.ready -ne $true -or $state.version -ne $ExpectedDshVersion -or
+      $available = $state.ready -eq $true -or ($kind -eq "qq" -and $state.bindingPhase -eq "unbound")
+      if (-not $available -or $state.version -ne $ExpectedDshVersion -or
           ($kind -eq "qq" -and $state.pluginVersion -ne $ExpectedDshQqVersion)) {
         throw "服务或固定版本校验失败"
       }
@@ -601,11 +603,20 @@ Check "世界备份拉取状态" {
 Check "恢复演练状态" {
   $json = Get-PiJsonFile "/var/lib/antifieldcloud/drill-status.json"
   if (-not $json) {
+    if ($RequireRecoveryDrill) { throw "缺少当前恢复演练状态" }
     return "SKIP: 尚未生成 drill-status.json（可能是本机从未回写演练状态）"
   }
   if ($json.ok -ne $true) { throw "最近一次恢复演练失败：$($json.error) $($json.message)" }
   $ageDays = Get-StampAgeHours $json.lastRunAt
   if ($null -ne $ageDays -and ($ageDays / 24) -gt 35) { throw "恢复演练已超过 35 天（$([math]::Round($ageDays / 24,1)) 天）" }
+  if ($RequireRecoveryDrill) {
+    if ($ExpectedSchemaVersion -le 0 -or $json.schemaVersion -ne $ExpectedSchemaVersion) {
+      throw "恢复演练缺少与当前部署一致的数据库 schema 证据"
+    }
+    if ($null -eq $ageDays -or $json.worldExtracted -ne $true) {
+      throw "恢复演练缺少有效时间或已解包验证 level.dat 的证据"
+    }
+  }
   # 演练必须针对当前 schema；旧 schema 的演练成功不能代表当前库可恢复，只告警不阻断部署。
   if ($ExpectedSchemaVersion -gt 0 -and $null -ne $json.schemaVersion) {
     $drillSchema = [int]$json.schemaVersion
@@ -631,6 +642,47 @@ if (-not $SkipScriptHash) {
       if ($remoteSha -ne $localSha) { throw "$relative 不一致（远端 $remoteSha / 本地 $localSha）" }
     }
     "$($files.Count) 个脚本 SHA-256 一致"
+  }
+  Check "Pi 固定维护入口与实际密钥包脚本一致" {
+    $fixed = @{
+      "/usr/local/sbin/antifield-maint" = "deploy/host/antifield-maint"
+      "/usr/local/libexec/antifield-maint.mjs" = "scripts/antifield-maint.mjs"
+      "/usr/local/libexec/antifield-backup-secrets.sh" = "scripts/backup-secrets.sh"
+    }
+    foreach ($remote in $fixed.Keys) {
+      $expected = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $root $fixed[$remote])).Hash
+      $actual = (Invoke-PiSsh "sudo -n /usr/local/sbin/antifield-maint hash '$remote'" -TimeoutSeconds 30 | Out-String).Trim()
+      if ($actual -ne $expected) { throw "$($fixed[$remote]) 的实际安装副本缺失或不一致" }
+    }
+    "$($fixed.Count) 个固定文件 SHA-256 一致"
+  }
+  if ($ExpectedDshVersion) {
+    Check "DSH 实际运行时文件与部署清单一致" {
+      $dshRoot = Join-Path $root "deploy/dsh"
+      $files = @(
+        foreach ($entry in (Get-ChildItem -LiteralPath $dshRoot -File)) {
+          if ($entry.Name -match '^(package(?:-lock)?\.json|(?:qq|web|mcbot|runtime|plugin-page|external|pnpm-dsh|patch-qq|dsh-mcbot)[\w-]*\.(?:mjs|yml))$') {
+            [pscustomobject]@{ Local=$entry.FullName; Remote=$entry.Name }
+          }
+        }
+        foreach ($kind in @("qq", "mcbot")) {
+          $plugin = Join-Path $dshRoot "plugins/$kind"
+          foreach ($entry in (Get-ChildItem -LiteralPath $plugin -File -Recurse)) {
+            $relative = $entry.FullName.Substring($plugin.Length + 1).Replace('\', '/')
+            if ($relative -notmatch '^[\w./-]+$') { throw "插件清单含不支持的路径" }
+            [pscustomobject]@{ Local=$entry.FullName; Remote="node_modules/@antifield/dsh-$kind-plugin/$relative" }
+          }
+        }
+      )
+      $commands = @($files | ForEach-Object { "sha256sum -- '/opt/antifield-dsh/current/$($_.Remote)'" })
+      $actual = @((Invoke-PiSsh ($commands -join " && ") -TimeoutSeconds 45) -split '\r?\n' | Where-Object { $_ -match '^[a-f0-9]{64}  ' })
+      if ($files.Count -eq 0 -or $actual.Count -ne $files.Count) { throw "DSH 实际文件清单缺失" }
+      for ($i = 0; $i -lt $files.Count; $i++) {
+        $expected = (Get-FileHash -Algorithm SHA256 -LiteralPath $files[$i].Local).Hash
+        if ($actual[$i].Substring(0, 64) -ne $expected) { throw "DSH 安装副本不一致：$($files[$i].Remote)" }
+      }
+      "$($files.Count) 个实际文件 SHA-256 一致"
+    }
   }
   # 根据当前 Agent 运行时校验安装在 release 之外的辅助脚本。
   SoftCheck "Pi 已安装运行时辅助脚本一致" {
@@ -717,21 +769,35 @@ if (-not $SkipLocalTaskCheck) {
     if (-not $backupTask) { throw "缺少计划任务 AntifieldCloud-Backup-Pull" }
     $worldTask = Get-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -ErrorAction SilentlyContinue
     if (-not $worldTask) { throw "缺少计划任务 AntifieldCloud-World-Pull" }
+    if ($marker.worldPullTime -ne "12:30" -or @($worldTask.Triggers | Where-Object {
+      [string]$_.StartBoundary -match 'T12:30:00' -and ([int]$_.DaysOfWeek -band 1) -eq 1
+    }).Count -ne 1) { throw "世界拉取计划未设为周日 12:30" }
     $installedBackup = Join-Path $env:LOCALAPPDATA "AntifieldCloud\backup-pull.ps1"
     $installedWorld = Join-Path $env:LOCALAPPDATA "AntifieldCloud\world-pull.ps1"
     $backupArgs = @($backupTask.Actions | ForEach-Object { [string]$_.Arguments }) -join " "
     $worldArgs = @($worldTask.Actions | ForEach-Object { [string]$_.Arguments }) -join " "
     if ($backupArgs -notlike "*$installedBackup*") { throw "每日备份任务 -File 不是已安装副本：$installedBackup" }
     if ($worldArgs -notlike "*$installedWorld*") { throw "世界拉取任务 -File 不是已安装副本：$installedWorld" }
-    foreach ($pair in @(
+    $pairs = @(
       @{ Installed = $installedBackup; Repo = (Join-Path $PSScriptRoot "backup-pull.ps1"); Expected = [string]$marker.scriptSha256; Label = "backup-pull.ps1" },
       @{ Installed = $installedWorld; Repo = (Join-Path $PSScriptRoot "world-pull.ps1"); Expected = [string]$marker.worldPullScriptSha256; Label = "world-pull.ps1" }
-    )) {
+    )
+    if ($marker.offsiteInstalled -eq $true) {
+      $offsiteTask = Get-ScheduledTask -TaskName "AntifieldCloud-Backup-Offsite" -ErrorAction SilentlyContinue
+      if (-not $offsiteTask) { throw "缺少已启用的异地备份任务" }
+      $argsText = @($offsiteTask.Actions | ForEach-Object { [string]$_.Arguments }) -join " "
+      $offsite = Join-Path $env:LOCALAPPDATA "AntifieldCloud\backup-offsite.ps1"
+      $offsiteNode = Join-Path $env:LOCALAPPDATA "AntifieldCloud\backup-offsite.mjs"
+      if (!$argsText.Contains($offsite) -or !$argsText.Contains($offsiteNode)) { throw "异地副本任务未使用安装副本" }
+      $pairs += @{ Installed = $offsite; Repo = (Join-Path $PSScriptRoot "backup-offsite.ps1"); Expected = [string]$marker.offsiteScriptSha256; Label = "backup-offsite.ps1" }
+      $pairs += @{ Installed = $offsiteNode; Repo = (Join-Path $PSScriptRoot "backup-offsite.mjs"); Expected = [string]$marker.offsiteNodeSha256; Label = "backup-offsite.mjs" }
+    }
+    foreach ($pair in $pairs) {
       if (-not (Test-Path -LiteralPath $pair.Installed)) { throw "缺少已安装脚本：$($pair.Installed)" }
       $installedSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $pair.Installed).Hash.ToLower()
       $repoSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $pair.Repo).Hash.ToLower()
       if ($installedSha -ne $repoSha) { throw "$($pair.Label) 已安装副本与仓库 SHA 不一致" }
-      if ($pair.Expected -and $installedSha -ne $pair.Expected.ToLower()) { throw "$($pair.Label) 已安装副本与安装标记 SHA 不一致" }
+      if ($pair.Expected -notmatch '^[a-fA-F0-9]{64}$' -or $installedSha -ne $pair.Expected.ToLower()) { throw "$($pair.Label) 已安装副本与安装标记 SHA 不一致" }
     }
     "version=$($marker.appVersion) scriptSha256 一致，计划任务 -File 与已安装副本一致"
   }

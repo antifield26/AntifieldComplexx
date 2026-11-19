@@ -14,6 +14,19 @@ trap 'rm -f -- "$candidate"' EXIT
 install -o root -g root -m 0440 "$root/deploy/host/020-antifield-maint.sudoers" "$candidate"
 visudo -cf "$candidate"
 install -d -o root -g root -m 0755 /usr/local/libexec /usr/local/sbin
+install -d -o root -g root -m 0700 /var/backups/antifieldcloud/maintenance
+rollback=$(mktemp -d /var/backups/antifieldcloud/maintenance/install.XXXXXXXX)
+for fixed in /usr/local/libexec/antifield-maint.mjs /usr/local/libexec/antifield-backup-secrets.sh \
+  /usr/local/sbin/antifield-maint /etc/sudoers.d/020-antifield-maint; do
+  if [[ -e "$fixed" || -L "$fixed" ]]; then
+    [[ -f "$fixed" && ! -L "$fixed" && "$(stat -c %u -- "$fixed")" == 0 ]] || {
+      echo '固定维护副本无法安全保全，安装已中止' >&2
+      exit 1
+    }
+    cp --archive -- "$fixed" "$rollback/"
+  fi
+done
+printf '已保全固定维护入口，回滚目录：%s\n' "$rollback"
 install -o root -g root -m 0755 "$root/scripts/antifield-maint.mjs" /usr/local/libexec/antifield-maint.mjs
 install -o root -g root -m 0755 "$root/scripts/backup-secrets.sh" /usr/local/libexec/antifield-backup-secrets.sh
 install -o root -g root -m 0755 "$root/deploy/host/antifield-maint" /usr/local/sbin/antifield-maint

@@ -476,6 +476,30 @@ function post<T>(path: string, body?: unknown, options: Omit<RequestOptions, 'me
   return request<T>(path, { ...options, method: 'POST', body })
 }
 
+export interface QqBindingStatus {
+  phase: 'unbound' | 'connecting' | 'ready' | 'switching'
+  bound: boolean
+  ready: boolean
+  appIdHint: string | null
+  operation: {
+    id: string
+    phase: 'waiting' | 'confirm' | 'complete' | 'failed'
+    expiresAt: string | null
+    qr: string | null
+    needsAllowlist: boolean
+    appIdHint: string | null
+    error: string | null
+  } | null
+}
+
+export function readQqBinding(signal?: AbortSignal): Promise<QqBindingStatus> {
+  return get('/api/qq-binding', { signal })
+}
+
+export function updateQqBinding(body: Record<string, unknown>): Promise<QqBindingStatus> {
+  return post('/api/qq-binding', body, { skipAuthRedirect: true })
+}
+
 function patch<T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<T> {
   return request<T>(path, { ...options, method: 'PATCH', body })
 }

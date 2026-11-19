@@ -28,6 +28,7 @@ const Trash = lazy(() => import('./pages/Trash').then(({ Trash }) => ({ default:
 const Minecraft = lazy(() => import('./pages/Minecraft').then(({ Minecraft }) => ({ default: Minecraft })))
 const Activity = lazy(() => import('./pages/Activity').then(({ Activity }) => ({ default: Activity })))
 const Settings = lazy(() => import('./pages/Settings').then(({ Settings }) => ({ default: Settings })))
+const QqBinding = lazy(() => import('./pages/QqBinding').then(({ QqBinding }) => ({ default: QqBinding })))
 const More = lazy(() => import('./pages/More').then(({ More }) => ({ default: More })))
 
 /** 受保护路由：会话恢复中显示占位；未登录跳转登录页并带上返回地址。 */
@@ -119,6 +120,7 @@ export function App() {
                   <Route path="/minecraft" element={<Minecraft />} />
                   <Route path="/activity" element={<Activity />} />
                   <Route path="/settings" element={<Settings />} />
+                  <Route path="/settings/qq-robot" element={<QqBinding />} />
                   <Route path="/more" element={<More />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>

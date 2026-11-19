@@ -72,6 +72,23 @@ export function validateState(kind, raw) {
   return normalized
 }
 
+/** 失败更新只替换最新尝试，保留上一份已有证据的成功时间。 */
+export function preserveSuccessfulStatus(value, prior, kind) {
+  const stamp = (...values) => values.find(item => typeof item === 'string'
+    && /^\d{4}-\d{2}-\d{2}T/.test(item) && Number.isFinite(Date.parse(item))) ?? null
+  if (kind === 'pull') {
+    value.lastArchiveSuccessAt = stamp(
+      (value.appArchiveOk === true || value.ok === true) && value.lastPullAt,
+      prior?.lastArchiveSuccessAt, prior?.ok === true && prior.lastPullAt,
+    )
+    value.lastSecretsAt = stamp(value.secretsOk === true && value.lastSecretsAt, prior?.lastSecretsAt)
+  } else {
+    value.lastSuccessAt = stamp(value.ok === true && (value.lastPullAt ?? value.lastRunAt ?? value.lastPushAt),
+      prior?.lastSuccessAt, prior?.ok === true && (prior.lastPullAt ?? prior.lastRunAt ?? prior.lastPushAt))
+  }
+  return value
+}
+
 function trusted(file) {
   // 固定脚本和所有祖先必须由 root 持有且不可被组或其他用户写入。
   let cursor = resolve(file)
@@ -88,10 +105,15 @@ function writeState(kind, source) {
   const uid = Number(process.env.SUDO_UID)
   if (!Number.isSafeInteger(uid) || uid < 1) throw new Error('invalid_caller')
   const raw = validateState(kind, boundedFile(source, MAX_STATUS, uid))
+  const destination = `${BASE}/${STATE_NAMES[kind]}`
+  let previous = null
+  try { previous = JSON.parse(boundedFile(destination, MAX_STATUS, 0)) } catch { /* 旧状态缺失或不可信。 */ }
+  const next = preserveSuccessfulStatus(JSON.parse(raw), previous, kind)
+  const normalized = validateState(kind, Buffer.from(JSON.stringify(next)))
   const temp = `${BASE}/.maintenance-${randomUUID()}.tmp`
   try {
-    writeFileSync(temp, raw, { flag: 'wx', mode: 0o644 })
-    renameSync(temp, `${BASE}/${STATE_NAMES[kind]}`)
+    writeFileSync(temp, normalized, { flag: 'wx', mode: 0o644 })
+    renameSync(temp, destination)
   } catch (error) {
     try { unlinkSync(temp) } catch { /* 原始失败由稳定错误码返回；随机临时文件不复用。 */ }
     throw error

@@ -67,7 +67,7 @@ if ($ExpectedSchemaVersion -le 0) {
 }
 $script:ageCommand = $null
 if (-not [string]::IsNullOrWhiteSpace($AgeIdentityPath)) {
-  if (-not (Test-Path -LiteralPath $AgeIdentityPath)) { throw "age 私钥文件不存在：$AgeIdentityPath" }
+  if (-not (Test-Path -LiteralPath $AgeIdentityPath -PathType Leaf)) { throw "age 私钥文件不存在" }
   $script:ageCommand = Get-Command $AgeExe -ErrorAction SilentlyContinue
   if (-not $script:ageCommand) { throw "找不到 age（-AgeIdentityPath 需要 $AgeExe 在 PATH 中）" }
 }
@@ -154,9 +154,10 @@ function Invoke-NativeWithTimeout {
     [string]$FilePath,
     [string[]]$Arguments,
     [int]$TimeoutSeconds,
-    [string]$Label
+    [string]$Label,
+    [string]$BinaryOutputPath
   )
-  $stdoutPath = [System.IO.Path]::GetTempFileName()
+  $stdoutPath = if ($BinaryOutputPath) { $BinaryOutputPath } else { [System.IO.Path]::GetTempFileName() }
   $stderrPath = [System.IO.Path]::GetTempFileName()
   $commandLine = ConvertTo-ArgumentString -Arguments $Arguments
   try {
@@ -172,7 +173,7 @@ function Invoke-NativeWithTimeout {
       }
       throw (New-DrillException -Code "command_timeout" -Message "命令超时（${TimeoutSeconds}s，已杀进程树）：$Label")
     }
-    $stdoutRaw = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue } else { $null }
+    $stdoutRaw = if (-not $BinaryOutputPath) { Get-Content -LiteralPath $stdoutPath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue } else { $null }
     $stderrRaw = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue } else { $null }
     # Get-Content -Raw 对空文件返回 AutomationNull，[string] 转换后仍不是普通空串，需显式归一化。
     $stdoutText = if ($null -eq $stdoutRaw) { "" } else { [string]$stdoutRaw }
@@ -186,7 +187,8 @@ function Invoke-NativeWithTimeout {
       Output   = ((@($stdoutText, $stderrText) -join "`n").Trim())
     }
   } finally {
-    Remove-Item -Force $stdoutPath, $stderrPath -ErrorAction SilentlyContinue
+    Remove-Item -Force -LiteralPath $stderrPath -ErrorAction SilentlyContinue
+    if (-not $BinaryOutputPath) { Remove-Item -Force -LiteralPath $stdoutPath -ErrorAction SilentlyContinue }
   }
 }
 
@@ -363,6 +365,19 @@ function Read-EncryptionMeta {
   return $meta
 }
 
+# 使用流式 SHA-256，兼容未加载 Get-FileHash 的 Windows PowerShell 环境。
+function Get-ArchiveSha256 {
+  param([string]$Path)
+  $stream = [System.IO.File]::OpenRead($Path)
+  try {
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+    finally { $sha256.Dispose() }
+  } finally {
+    $stream.Dispose()
+  }
+}
+
 # 用离线私钥把 .age 解密到演练临时目录；校验 plainSha256/plainSize 后返回明文路径。
 function Expand-EncryptedArchive {
   param([object]$Archive)
@@ -377,14 +392,16 @@ function Expand-EncryptedArchive {
   $plainName = $Archive.Name -replace '\.age$', ''
   $plainPath = Join-Path $plainDir $plainName
   $timeout = Get-SizeBasedTimeout -SizeBytes $Archive.SizeBytes -BaseSeconds ($CommandTimeoutSec * 2) -SecondsPerMiB 30
+  # 直接重定向二进制流，避免 age 在 Windows 自行打开输出路径时失败。
   $result = Invoke-NativeWithTimeout -FilePath $script:ageCommand.Source -Arguments @(
-    '-d', '-i', $AgeIdentityPath, '-o', $plainPath, $Archive.FullName
-  ) -TimeoutSeconds $timeout -Label "age -d $($Archive.Name)"
-  if ($result.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $plainPath)) {
-    Add-DrillError -Code "encrypted_decrypt_failed" -Message ("age 解密失败（exit=$($result.ExitCode)）：$($Archive.Name) $($result.StdErr)")
+    '-d', '-i', $AgeIdentityPath, '-o', '-', $Archive.FullName
+  ) -TimeoutSeconds $timeout -Label "age -d $($Archive.Name)" -BinaryOutputPath $plainPath
+  if ($result.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $plainPath -PathType Leaf)) {
+    # age 的诊断可能包含离线私钥路径，只在报告保留稳定错误码和退出码。
+    Add-DrillError -Code "encrypted_decrypt_failed" -Message ("age 解密失败（exit=$($result.ExitCode)）：$($Archive.Name)")
     return $null
   }
-  $plainSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $plainPath).Hash.ToLower()
+  $plainSha = Get-ArchiveSha256 -Path $plainPath
   $plainSize = (Get-Item -LiteralPath $plainPath).Length
   if ($plainSha -ne ([string]$meta.plainSha256).ToLower() -or $plainSize -ne [long]$meta.plainSize) {
     Add-DrillError -Code "encrypted_plain_mismatch" -Message ("解密后明文与 .meta.json 的 plainSha256/plainSize 不一致：$($Archive.Name)")
@@ -408,7 +425,7 @@ function Test-Archive {
     $meta = Read-EncryptionMeta -Archive $Archive
     if (-not $meta) { return $null }
     # 密文 SHA/大小与 sidecar 的 cipherSha256/cipherSize 交叉校验（防止 .sha256 与 .meta.json 不一致）。
-    $cipherSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $Archive.FullName).Hash.ToLower()
+    $cipherSha = Get-ArchiveSha256 -Path $Archive.FullName
     $cipherSize = (Get-Item -LiteralPath $Archive.FullName).Length
     if ($cipherSha -ne ([string]$meta.cipherSha256).ToLower() -or $cipherSize -ne [long]$meta.cipherSize) {
       Add-DrillError -Code "encrypted_cipher_mismatch" -Message ("密文 SHA/大小与 .meta.json 不一致：$($Archive.Name)")
@@ -660,6 +677,7 @@ function Write-RemoteDrillStatus {
     schemaVersion = $Report.database.schemaVersion
     worldArchive  = $Report.world.archive
     worldChecked  = $Report.world.sha256Verified
+    worldExtracted = ($Report.world.extracted -eq $true -and $Report.world.restoredLevelDat -eq $true)
     error         = $firstError
     message       = $firstMessage
     errors        = @($errorCodes)

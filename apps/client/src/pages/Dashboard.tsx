@@ -159,12 +159,12 @@ export function Dashboard() {
   const memPercent = percentOf(host.mem.usedBytes, host.mem.totalBytes)
   const rootPercent = percentOf(host.root.usedBytes, host.root.totalBytes)
   const backupStale = backup
-    ? Boolean(backup.overdue) || backup.ok === false || (backup.ageHours !== null && backup.ageHours > 48)
+    ? Boolean(backup.overdue) || (backup.ageHours !== null && backup.ageHours > 48)
     : false
   const backupOverview = backups.data ? summarizeBackups(backups.data) : null
   // 优先使用 dashboard 下发字段；旧服务端回退到 /api/backups 汇总
   const pendingBackups = backup?.pendingCount ?? backupOverview?.pending ?? 0
-  const backupError = backup?.lastError ?? backupOverview?.error ?? null
+  const backupError = backup?.lastError ?? backupOverview?.error ?? (backup?.ok === false ? '最近一次备份有失败项' : null)
   const mcDegraded = minecraft.tps === null || minecraft.whitelistCount === null
   const tempClass =
     host.tempC === null ? 'text-dim' : host.tempC >= 85 ? 'text-danger' : host.tempC >= 75 ? 'text-warning' : undefined
