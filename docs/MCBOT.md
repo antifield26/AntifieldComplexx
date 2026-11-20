@@ -1,6 +1,6 @@
 # Minecraft Bot
 
-游戏内人格名是 Lofii。服务只监听 `127.0.0.1:3010`，跑在 Paper 旁边，用 mineflayer 以离线账号登录。
+游戏内人格名是 Lofii。服务只监听 `127.0.0.1:3010`，跑在本机 Fabric 26.1.2 旁边，用 mineflayer 以离线账号登录。
 
 当前版本：**v1.2.6**。本机契约 v2。发言使用控制 Token。生产自主工具由 DSH 插件经私有 Unix socket 调用，mcbot 自己校验并执行。配置该 socket 后 `/autonomy/mcp` 返回 404。自主会话与管理员对话不回退到 OpenCode。
 

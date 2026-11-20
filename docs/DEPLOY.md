@@ -12,7 +12,7 @@
 |---|---|
 | Workbench | `/opt/antifieldcloud/releases/20261120T002240Z` |
 | Workbench 同 schema 回滚目标 | v1.2.5，`/opt/antifieldcloud/releases/20261118T150139Z` |
-| Workbench 跨 schema 回滚目标 | v1.2.3，保存在 `/var/backups/antifieldcloud/acceptance-126.hjzZRg1i/20261114T082631Z`；要求 schema 21 快照 `db-predeploy-20261116T135240676Z.sqlite`（SHA-256 `ca3f4565626f288013db296dd88dfabc5a55a6355da904e2e1836b9f208bced2`） |
+| Workbench 跨 schema 回滚目标 | v1.2.3，保存在 `/var/backups/antifieldcloud/acceptance-126.hjzZRg1i/20261114T082631Z`；要求 schema 21 快照 `db-predeploy-20261116T135240676Z.sqlite`（SHA-256 `ca3f4565626f288013db296dd88dfabc5a55a6355da904e2e1836b9f108bced2`） |
 | mcbot | `/opt/mcbot/releases/20261120T002522Z`；同契约回滚指针 `/opt/mcbot/releases/20261118T150139Z` |
 | DSH | 当前 `/opt/antifield-dsh/releases/20261120T002111Z`；首选回滚资源 `/opt/antifield-dsh/releases/20261119T020617Z`。回滚前按本手册验证加密冷备、配置和三项服务。 |
 | 生产回滚配置 | Workbench 部署保护目录 `/var/lib/antifieldcloud/deploy-state/20261120T002240Z`。异地监控变更前的 env 位于 `/var/backups/antifieldcloud/offsite-env-126.Dn1vXI4F`。固定维护入口备份位于 `/var/backups/antifieldcloud/maintenance/install.gfxDYUiT`。 |
@@ -26,13 +26,13 @@
 | 主机连接 | 实际地址与备份根只查 gitignored `.local/DEPLOYMENT.md`；直连 SSH 有重试，校园 WiFi 存在 AP 隔离 |
 | 校园网 Portal | Pi 出口认证有效才可连接 Tunnel；7844 出站阻断、1033/530 时先核对出口认证，再在获准范围恢复 cloudflared |
 | 运行时 | Node `/usr/local/bin/node` 26.13.0；npm 12.2.2、pnpm 10.34.9 在 `/usr/local/bin`；cloudflared 2026.10.7；执行前读实际版本 |
-| Minecraft | Paper 26.1.2；RCON 25575 的凭据仅来自受限配置，不输出；接口暴露由防火墙限制，中文输出剥离 `§` 颜色码 |
-| Minecraft 插件 | Chunky 1.5.66、CoreProtect CE 24.1、EssentialsX 2.22.0、LuckPerms 5.5.91、PlaceholderAPI 2.12.3、VaultUnlocked 2.20.3、ViaVersion 5.12.2、Vote2Sleep 1.3.0 |
+| Minecraft | Fabric 26.1.2（Loader 0.20.1），目录 `/home/antifield/minecraft-server`，隧道和世界备份读取同一目录；RCON 25575 的凭据仅来自受限配置，不输出；接口暴露由防火墙限制，中文输出剥离 `§` 颜色码 |
+| Minecraft 模组 | Fabric API 0.155.3、Lithium 0.24.7、FerriteCore 9.0.0、Lithostitched 1.8.1、Terralith 2.6.2 |
 | 健康与存储 | memory cgroup、60 秒健康探针、age/rclone 与 unattended-upgrades；核对状态文件的新鲜度和实际磁盘空间 |
 | 调度 | 世界备份周日 12:00，PC 拉取周日 12:30，异地副本每日 13:00，演练手动/季度；系统维护 timer 保持其默认策略 |
 | 管理边界 | Cloudflare/QQ 后台、交互初始化、私钥和 Windows 管理员任务按根 AGENTS；PiForge 残留不在本项目维护范围 |
 
-当前世界约 4.1 GiB，世界备份按实际目录体积的 1.5× 预留。任何本机路径、版本或资源估算在执行前重新核对。配置清理用 `bootstrap-env.sh --force --prune-unknown`，先备份环境文件；应用不读取 `CHATBOT_*`、`DSH_QQ_MANAGED`、`OPENCODE_HTML_MODE`。
+当前世界约 36 MiB，世界备份按实际目录体积的 1.5× 预留。任何本机路径、版本或资源估算在执行前重新核对。配置清理用 `bootstrap-env.sh --force --prune-unknown`，先备份环境文件；应用不读取 `CHATBOT_*`、`DSH_QQ_MANAGED`、`OPENCODE_HTML_MODE`。
 
 发布证据分别标识 Tag、应用基包 commit/包 SHA、DSH runtime 与现场覆盖文件。未登记的逐文件哈希列为待验，不认定为与 Tag 一致。
 
@@ -71,7 +71,7 @@ DSH 与 SDK 固定为 0.2.2-rc.3，QQ 插件固定为 0.5.5，依赖由 `deploy/
 
 mcbot 是独立服务，只监听 `127.0.0.1:3010`。从 `apps/mcbot` 运行 `scripts/deploy.ps1`。脚本把 release 解到 `/opt/mcbot/releases/<UTC>`，安装生产依赖，原子切换 `current`，失败时切回上一 release。
 
-默认保留最新 3 个 release（`-KeepReleases`），并保护 `current` 与刚替换下来的 `previous`。首次 `-ServerConfig` 才会改 `max-players`、白名单和 OP，并重启 Paper。确认没有玩家在线后再做。
+默认保留最新 3 个 release（`-KeepReleases`），并保护 `current` 与刚替换下来的 `previous`。首次 `-ServerConfig` 才会改 `max-players`、白名单和 OP，并重启 Minecraft。确认没有玩家在线后再做。
 
 Token 由 root 执行 `scripts/sync-mcbot-tokens.sh`，从 `/etc/mcbot/env` 同步到应用环境。`--check` 只比较。控制 Token 为空时，控制接口和游戏发言返回 503。
 

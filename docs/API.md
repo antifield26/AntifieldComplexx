@@ -241,7 +241,7 @@ Workbench 与前端共同遵守本文前半部分。Minecraft Bot 的本机 HTTP
   },
   "minecraft": {
     "online": true,
-    "version": "Paper 26.1.2",
+    "version": "26.1.2",
     "motd": "Raspberry Pi 5 | Minecraft LAN",
     "players": { "online": 0, "max": 5, "names": [] },
     "tps": { "m1": 20.0, "m5": 20.0, "m15": 20.0 },
@@ -459,7 +459,7 @@ body 可带 `{ "sha256": "hex" }`。服务端拼接时逐片比对保存的 SHA-
 ```json
 {
   "online": true,
-  "version": "Paper 26.1.2",
+  "version": "26.1.2",
   "motd": "Raspberry Pi 5 | Minecraft LAN",
   "players": { "online": 0, "max": 5, "names": [] },
   "tps": { "m1": 20.0, "m5": 20.0, "m15": 20.0 },
@@ -862,7 +862,7 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
     "reachable": true,
     "online": 1,
     "max": 6,
-    "versionName": "Paper 26.1.2",
+    "versionName": "26.1.2",
     "motd": "Raspberry Pi 5 | Minecraft LAN",
     "latencyMs": 5,
     "lastPingAt": "2026-10-26T13:25:01.000Z"
@@ -1273,7 +1273,7 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 - 仅 `COMMAND_ALLOWLIST` 内玩家可下命令，默认 `Antifield`。
 - 命令：状态、钓鱼、种田、砍树、挖矿、砍天然林、睡觉、巡逻、收工、回家、存东西、过来、跟随、停下、看我、挥手、帮助。
 - 安全区扩至 `x111–239, z410–474`；挖矿/天然林只在安全区、保护盒外操作；天然林只 oak/spruce/birch 并补种；挖矿只煤/铁/铜裸露矿、不挖隧道。
-- 睡觉用 Vote2Sleep（min 1、40%）；非夜晚/无床/vote 失败正常结束。
+- 睡觉时右键家附近的床；非夜晚、没有床、互动失败或夜晚没有被跳过时正常结束。
 - 巡逻四角安全区边界（内缩 4 格），最多 15 分钟，不主动追怪。
 - 游戏内/AI 意图默认可触发受控动作；`HTTP_ONLY_HIGH_RISK=true` 可关闭高风险触发。
 - 任务期间即使 Antifield 下线，Lofii 保持在线；任务结束恢复动态下线。

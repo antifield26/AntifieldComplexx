@@ -2,6 +2,12 @@
 
 记录按版本从新到旧排列。每个版本注明模块：workbench、mcbot、client、dsh、ops。
 
+## [未发布]
+
+模块：ops
+
+- 生产 Minecraft 为 Fabric 26.1.2（Loader 0.20.1）。服务目录、隧道和世界备份仍使用 `/home/antifield/minecraft-server`。运行模组为 Fabric API 0.155.3、Lithium 0.24.7、FerriteCore 9.0.0、Lithostitched 1.8.1、Terralith 2.6.2。
+
 ## [v1.2.6] - 2026-11-20
 
 模块：workbench、client、mcbot、dsh、ops
