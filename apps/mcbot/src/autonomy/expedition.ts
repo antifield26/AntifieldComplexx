@@ -55,7 +55,9 @@ function saveJson (file: string, value: unknown): void {
 }
 
 function point (value: unknown): Vec3 {
-  if (typeof value !== 'string' || !/^-?\d+,-?\d+,-?\d+$/.test(value)) throw new Blocked('invalid_position', '需要已观测的整数坐标')
+  if (typeof value !== 'string' || !/^-?\d+ *, *-?\d+ *, *-?\d+$/.test(value.trim())) {
+    throw new Blocked('invalid_position', '需要已观测的整数坐标')
+  }
   const [x, y, z] = value.split(',').map(Number)
   if (Math.abs(x!) > 29999984 || Math.abs(z!) > 29999984 || y! < -64 || y! > 319) throw new Blocked('invalid_position', '坐标超出范围')
   return new Vec3(x!, y!, z!)
@@ -220,7 +222,8 @@ export class Expedition {
 
   private async perform (execution: Execution, operation: Operation, args: Record<string, unknown>): Promise<Result> {
     const { bot, run, dimension } = execution
-    const item = typeof args.item === 'string' && NAME.test(args.item) ? args.item : ''
+    const itemName = typeof args.item === 'string' ? args.item.replace(/^minecraft:/, '') : ''
+    const item = NAME.test(itemName) ? itemName : ''
     const quantity = typeof args.quantity === 'number' && Number.isInteger(args.quantity) && args.quantity >= 1 && args.quantity <= 64 ? args.quantity : 0
     const registryItem = item ? bot.registry.itemsByName[item] : undefined
     const target = this.goals.get(run)
@@ -589,7 +592,6 @@ export class Expedition {
     const peers = Object.values(bot.players).some(player => player.entity && player.entity.id !== owner.id &&
       player.entity !== bot.entity && player.entity.position.distanceTo(bot.entity.position) < 6)
     if (peers) throw new Blocked('delivery_crowded', '请主人到空旷位置接收，避免其他玩家误捡')
-    await bot.lookAt(owner.position.offset(0, 0.4, 0))
     this.assertSafe(execution)
     this.beginTransfer(execution, 'deliver', goal.item, quantity)
     let verified = 0
@@ -611,6 +613,9 @@ export class Expedition {
       for (let index = 0; index < quantity; index += 1) {
         this.assertSafe(execution)
         if (this.player(bot, dimension)?.id !== owner.id || owner.position.distanceTo(bot.entity.position) > 3.5) break
+        // 每件投掷前更新朝向，避免把掉落物投到自己的脚边或主人刚离开的位置。
+        await bot.lookAt(owner.position.offset(0, 1.4, 0), true)
+        this.assertSafe(execution)
         await bot.toss(bot.registry.itemsByName[goal.item]!.id, null, 1)
         const deadline = Date.now() + 4000
         while (verified <= index && Date.now() < deadline) await delay(125, undefined, { signal })

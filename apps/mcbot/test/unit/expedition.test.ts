@@ -19,6 +19,7 @@ function fixture (t: TestContext, pickupByOwner = true) {
   const entry = { id: 3, name: 'iron_ingot', count: 0 }
   const owner = { id: 2, position: new Vec3(1, 64, 0) }
   const position = new Vec3(0, 64, 0)
+  const aimed: Vec3[] = []
   let entityId = 10
   const bot = Object.assign(new EventEmitter(), {
     username: 'Lofii', health: 20, food: 20,
@@ -27,7 +28,7 @@ function fixture (t: TestContext, pickupByOwner = true) {
     game: { dimension: 'minecraft:overworld' },
     registry: { itemsByName: { iron_ingot: entry } },
     inventory: { items: () => entry.count ? [entry] : [] },
-    lookAt: async () => undefined,
+    lookAt: async (target: Vec3) => { aimed.push(target) },
     blockAt: () => ({ name: 'air' }),
     chat: (command: string) => { commands.push(command); entry.count += Number(command.split(' ').at(-1)) },
     toss: async () => {
@@ -35,18 +36,19 @@ function fixture (t: TestContext, pickupByOwner = true) {
       const item = { id: entityId++, position, getDroppedItem: () => ({ name: 'iron_ingot', count: 1 }) }
       bot.emit('itemDrop', item)
       bot.emit('playerCollect', pickupByOwner ? owner : { id: 1 }, item)
+      owner.position.x += 0.25
     }
   })
   const create = () => new Expedition(config, {} as MovementManager, () => bot as unknown as Bot)
   const expedition = create()
   const abort = new AbortController()
-  return { expedition, commands, entry, abort, create, run: (operation: string, args = {}) =>
+  return { expedition, commands, entry, aimed, abort, create, run: (operation: string, args = {}) =>
     expedition.execute('fixture-run', abort.signal, { operation, ...args }) }
 }
 
 test('逐次许可只接受主人且不能重放，交付按拾取证据完成', async t => {
   const f = fixture(t)
-  await f.run('goal', { item: 'iron_ingot', quantity: 2 })
+  assert.equal((await f.run('goal', { item: 'minecraft:iron_ingot', quantity: 2 })).ok, true)
   const request = await f.run('give', { item: 'iron_ingot', quantity: 2 })
   assert.equal(request.status, 'approval_required')
   const text = '确认 ' + request.approvalCode
@@ -58,6 +60,14 @@ test('逐次许可只接受主人且不能重放，交付按拾取证据完成',
   assert.equal(result.ok, true)
   assert.equal((result.target as { delivered: number }).delivered, 2)
   assert.equal(f.entry.count, 0)
+  assert.deepEqual(f.aimed, [new Vec3(1, 65.4, 0), new Vec3(1.25, 65.4, 0)])
+})
+
+test('坐标工具接受逗号后的自然空格', async t => {
+  const f = fixture(t)
+  const result = await f.run('walk', { position: '0, 64 , 0' })
+  assert.equal(result.ok, true)
+  assert.equal((await f.run('walk', { position: '0, 64, 0; 1' })).error, 'invalid_position')
 })
 
 test('急停后旧许可不能执行', async t => {
