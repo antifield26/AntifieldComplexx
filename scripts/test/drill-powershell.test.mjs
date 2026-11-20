@@ -92,7 +92,7 @@ test('Windows 演练端到端校验增量覆盖、物理文件和世界解包', 
   }
 })
 
-test('Windows 演练流式接收 age 二进制输出并拒绝失败进程', { skip: process.platform !== 'win32', timeout: 90_000 }, () => {
+test('Windows 演练流式接收 age 二进制输出并拒绝失败进程', { skip: process.platform !== 'win32', timeout: 90_000 }, (t) => {
   const root = mkdtempSync(join(tmpdir(), 'antifield-drill-age-'))
   const daily = join(root, 'daily')
   const archive = 'snapshot-20260601T000000Z-full.tar.gz'
@@ -149,23 +149,30 @@ public static class FakeAge {
     unlinkSync(`${plain}.sha256`)
 
     copyFileSync(age, join(root, 'rclone.exe'))
-    for (const identityMode of ['accept', 'reject', 'cloud']) {
+    const cases = ['accept', 'reject', 'cloud']
+    if (spawnSync('where.exe', ['pwsh.exe']).status === 0) cases.push('cloud-pwsh')
+    else t.diagnostic('未安装 PowerShell 7，跳过其云端演练分支')
+    for (const identityMode of cases) {
+      const cloud = identityMode.startsWith('cloud')
       const identity = join(root, `${identityMode}-fixture-identity.txt`)
       const reports = join(root, `${identityMode}-reports`)
       writeFileSync(identity, identityMode)
-      const result = spawnSync('powershell.exe', [
-        ...launch, '-File', drill, '-BackupRoot', identityMode === 'cloud' ? join(root, 'empty-local') : root, '-ReportRoot', reports,
-        ...(identityMode === 'cloud' ? ['-CloudRemote', 'fixture'] : []),
+      const result = spawnSync(identityMode === 'cloud-pwsh' ? 'pwsh.exe' : 'powershell.exe', [
+        ...launch, '-File', drill, '-BackupRoot', cloud ? join(root, 'empty-local') : root, '-ReportRoot', reports,
+        ...(cloud ? ['-CloudRemote', 'fixture'] : []),
         '-AgeExe', age, '-AgeIdentityPath', identity, '-SkipRemoteStatus',
       ], { encoding: 'utf8', env: { ...env, PATH: root + ';' + process.env.PATH, DRILL_FIXTURE_REMOTE: daily }, timeout: 30_000 })
       assert.ifError(result.error)
       const accepted = identityMode !== 'reject'
       assert.equal(result.status, accepted ? 0 : 1, result.stdout + result.stderr)
-      const reportRoot = identityMode === 'cloud' ? join(reports, 'cloud') : reports
+      const reportRoot = cloud ? join(reports, 'cloud') : reports
       const reportText = readFileSync(join(reportRoot, readdirSync(reportRoot)[0], 'report.json'), 'utf8')
       const report = JSON.parse(reportText)
       assert.equal(report.chainVerified, accepted)
-      if (accepted) assert.equal(Date.parse(report.recoveryPoint), Date.parse('2026-06-01T00:00:00Z'))
+      if (accepted) {
+        assert.match(report.recoveryPoint, /^2026-06-01T00:00:00(?:\.\d+)?Z$/)
+        assert.equal(Date.parse(report.recoveryPoint), Date.parse('2026-06-01T00:00:00Z'))
+      }
       if (!accepted) {
         assert.ok(report.errors.some(({ code, message }) => code === 'encrypted_decrypt_failed' && message.includes('exit=7')))
         assert.ok(!reportText.includes('reject-fixture-identity.txt'))

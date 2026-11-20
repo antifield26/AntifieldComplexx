@@ -204,6 +204,15 @@ function ConvertFrom-JsonText {
   try { return ($lines[$lines.Count - 1] | ConvertFrom-Json) } catch { return $null }
 }
 
+# PowerShell 7 可能自动解析 JSON 日期。已解析的值按 UTC 序列化，避免丢失时区。
+function ConvertTo-DrillTimestampText {
+  param($Value)
+  if ($Value -is [DateTime] -or $Value -is [DateTimeOffset]) {
+    return $Value.ToUniversalTime().ToString("o", [Globalization.CultureInfo]::InvariantCulture)
+  }
+  return [string]$Value
+}
+
 # 调用 drill-verify.mjs：返回解析后的 JSON；退出码 0/1 都解析（1 表示校验失败）。
 function Invoke-Verify {
   param([string[]]$Arguments, [int]$TimeoutSeconds = $CommandTimeoutSec, [string]$Label = "drill-verify")
@@ -934,12 +943,12 @@ try {
       # 允许覆盖重叠，但增量不能留下空洞，也不能让覆盖水位倒退。
       if ($script:errors.Count -eq 0 -and $chainChecks.Count -eq (@($selected.Increments).Count + 1)) {
         $previousCreatedAt = $null
-        if ($chainChecks[0].Manifest) { $previousCreatedAt = [string]$chainChecks[0].Manifest.createdAt }
+        if ($chainChecks[0].Manifest) { $previousCreatedAt = ConvertTo-DrillTimestampText $chainChecks[0].Manifest.createdAt }
         $chainVerified = $true
         for ($index = 1; $index -lt $chainChecks.Count; $index++) {
           $current = $chainChecks[$index]
-          $since = if ($current.Manifest) { [string]$current.Manifest.since } else { $null }
-          $createdAt = if ($current.Manifest) { [string]$current.Manifest.createdAt } else { $null }
+          $since = if ($current.Manifest) { ConvertTo-DrillTimestampText $current.Manifest.since } else { $null }
+          $createdAt = if ($current.Manifest) { ConvertTo-DrillTimestampText $current.Manifest.createdAt } else { $null }
           if ([string]::IsNullOrWhiteSpace($since)) {
             Add-DrillError -Code "chain_since_missing" -Message ("inc 归档 manifest 缺少 since，无法验证链连续性：$($current.Archive.Name)")
             $chainVerified = $false
