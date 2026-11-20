@@ -6,16 +6,16 @@
 
 ## 当前运行与回滚
 
-当前 schema **v22**，已部署应用 v1.2.5，mcbot 契约 v2。以下资源按 2026-11-19 生产检查记录，实际操作前重新验证。包 SHA 与待验项见 [ACCEPTANCE](ACCEPTANCE.md)。
+当前 schema **v22**，已部署应用与 mcbot v1.2.6，mcbot 契约 v2。以下资源按 2026-11-20 生产检查记录，实际操作前重新验证。包 SHA 与待验项见 [ACCEPTANCE](ACCEPTANCE.md)。
 
 | 组件/用途 | 当前资源 |
 |---|---|
-| Workbench | `/opt/antifieldcloud/releases/20261118T150139Z` |
-| Workbench 同 schema 回滚目标 | v1.2.4，`/opt/antifieldcloud/releases/20261116T135139Z` |
-| Workbench 跨 schema 回滚目标 | v1.2.3，`/opt/antifieldcloud/releases/20261114T082631Z`；要求 schema 21 快照 `db-predeploy-20261116T135240676Z.sqlite`（SHA-256 `ca3f4565626f288013db296dd88dfabc5a55a6355da904e2e1836b9f208bced2`） |
-| mcbot | `/opt/mcbot/releases/20261118T150139Z`；同契约回滚指针 `/opt/mcbot/releases/20261116T135658Z` |
-| DSH | 当前 `/opt/antifield-dsh/releases/20261119T020617Z`，基包 `/opt/antifield-dsh/releases/20261118T150321Z`。基包缺少 Minecraft Agent 所需模块。上一版回滚资源为 `/opt/antifield-dsh/releases/20261114T051442Z`，恢复前按本手册核对配置和三个服务。 |
-| 生产回滚配置 | `/var/backups/antifieldcloud/update-125-20261118T150139Z`，包含旧指针、环境和 DSH 单元。固定维护入口另有安装备份 |
+| Workbench | `/opt/antifieldcloud/releases/20261120T002240Z` |
+| Workbench 同 schema 回滚目标 | v1.2.5，`/opt/antifieldcloud/releases/20261118T150139Z` |
+| Workbench 跨 schema 回滚目标 | v1.2.3，保存在 `/var/backups/antifieldcloud/acceptance-126.hjzZRg1i/20261114T082631Z`；要求 schema 21 快照 `db-predeploy-20261116T135240676Z.sqlite`（SHA-256 `ca3f4565626f288013db296dd88dfabc5a55a6355da904e2e1836b9f208bced2`） |
+| mcbot | `/opt/mcbot/releases/20261120T002522Z`；同契约回滚指针 `/opt/mcbot/releases/20261118T150139Z` |
+| DSH | 当前 `/opt/antifield-dsh/releases/20261120T002111Z`；首选回滚资源 `/opt/antifield-dsh/releases/20261119T020617Z`。回滚前按本手册验证加密冷备、配置和三项服务。 |
+| 生产回滚配置 | Workbench 部署保护目录 `/var/lib/antifieldcloud/deploy-state/20261120T002240Z`。异地监控变更前的 env 位于 `/var/backups/antifieldcloud/offsite-env-126.Dn1vXI4F`。固定维护入口备份位于 `/var/backups/antifieldcloud/maintenance/install.gfxDYUiT`。 |
 
 同 schema 回滚只恢复指针和配置，保留现行 DB/WAL。目标程序不支持现行 schema 时进入人工维护，先加密保全新写入，再使用匹配快照，不能只切 release。其他版本的变更记录仅见 CHANGELOG/ROADMAP，不能凭版本名称直接推断可恢复性。
 

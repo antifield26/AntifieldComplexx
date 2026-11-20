@@ -2,10 +2,14 @@
 
 记录按版本从新到旧排列。每个版本注明模块：workbench、mcbot、client、dsh、ops。
 
-## [v1.2.6] · 开发候选
+## [v1.2.6] - 2026-11-20
+
+模块：workbench、client、mcbot、dsh、ops
 
 - 工作台采用石墨黑与暖橙品牌，桌面与手机共用文件、笔记和书签搜索。
-- 备份评估、手动异地恢复演练和每日磁盘预览进入工作台。DSH 运行时从装配后的候选目录验证。
+- 备份评估、手动异地恢复演练和每日磁盘预览进入工作台。Windows PowerShell 与 PowerShell 7 均保留恢复水位的 UTC 时区。
+- DSH 运行时从装配后的候选目录验证。生产树莓派已运行 v1.2.6，Windows 桌面与三项备份任务已更新，schema 保持 22，mcbot 契约保持 v2。
+- 发布附注标签 `v1.2.6`，附 Windows x64 安装包、同证书签名的 Android ARM64 APK 及 SHA-256 校验清单。版本来源和现场证据见 [验收状态](docs/ACCEPTANCE.md)。
 
 ## [未发布]
 
