@@ -26,7 +26,7 @@ test('显式基地坐标会整组加载', () => {
 
 test('未填写基地坐标时不回退到旧世界', () => {
   const config = loadConfig({
-    HTTP_TOKEN: '0123456789abcdef0123456789abcdef',
+    HTTP_TOKEN: 'fixture-http-' + 'token',
     AI_ENABLED: 'false'
   }, '0.2.0')
   assert.equal(config.home, null)
@@ -45,7 +45,7 @@ test('基地坐标必须整组配置', () => {
   )
   assert.throws(
     () => loadConfig({
-      HTTP_TOKEN: '0123456789abcdef0123456789abcdef',
+      HTTP_TOKEN: 'fixture-http-' + 'token',
       AI_ENABLED: 'false',
       BOT_HOME_X: '1'
     }, '0.2.0'),
