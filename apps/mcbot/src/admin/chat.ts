@@ -46,7 +46,7 @@ export class AdminChat {
     }
   }
 
-  submit (raw: string): { ok: true, turnId: string } | { ok: false, code: AdminChatCode } {
+  submit (raw: string, replyInGame?: (text: string) => void): { ok: true, turnId: string } | { ok: false, code: AdminChatCode } {
     const message = raw.trim()
     if (message.length === 0 || message.length > MAX_CHARS || /[\u0000-\u001f\u007f]/.test(message)) {
       return { ok: false, code: 'invalid_request' }
@@ -57,7 +57,7 @@ export class AdminChat {
     this.push({ id: randomUUID(), role: 'user', text: message, at: new Date().toISOString() })
     this.pushStep({ kind: 'user', text: message })
     this.clearIdle()
-    void this.runTurn(turnId, message)
+    void this.runTurn(turnId, message, replyInGame)
     return { ok: true, turnId }
   }
 
@@ -69,7 +69,7 @@ export class AdminChat {
     await this.autonomy.stopAdmin('emergency')
   }
 
-  private async runTurn (turnId: string, message: string): Promise<void> {
+  private async runTurn (turnId: string, message: string, replyInGame?: (text: string) => void): Promise<void> {
     try {
       const reply = await this.deliver(message, true)
       if (this.turn?.id !== turnId) return
@@ -85,7 +85,9 @@ export class AdminChat {
       }
       this.turn = { id: turnId, status: 'ok', error: null }
       this.armIdle()
+      if (reply.text) replyInGame?.(reply.text)
     } catch (error) {
+      if (this.turn?.id === turnId) replyInGame?.('这次未能确认任务结果，请稍后再问。')
       if (error instanceof OpenCodeSessionError && error.status === 409) {
         this.failTurn(turnId, 'chat_busy')
         return

@@ -39,7 +39,7 @@ const taskNames = [...toolsModule.AUTONOMY_TASK_NAMES]
 const readOnlyContextSections = [...aiToolsModule.READ_ONLY_AI_TOOL_NAMES]
 const permissionPrefix = toolsModule.AUTONOMY_PERMISSION_PREFIX
 
-if (autonomyTools.length !== 13) errors.push(`工具数量应为 13，实际 ${autonomyTools.length}`)
+if (autonomyTools.length !== 14) errors.push(`工具数量应为 14，实际 ${autonomyTools.length}`)
 if (taskNames.length !== 11) errors.push(`任务数量应为 11，实际 ${taskNames.length}`)
 
 const toolDocs = ['docs/MCBOT.md', 'docs/API.md']
@@ -87,6 +87,7 @@ const envKeys = [
   'PATH_AI_TIMEOUT_MS',
   'PATH_AI_COOLDOWN_MS',
   'SCAN_RADIUS',
+  'MC_WORLD_ID',
   'CRITICAL_HEALTH'
 ]
 for (const key of envKeys) {

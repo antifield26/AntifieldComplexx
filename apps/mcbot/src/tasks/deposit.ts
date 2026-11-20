@@ -11,7 +11,9 @@ export interface SupplyRequest {
 }
 
 function chestPoint (ctx: TaskContext, category: StorageCategory): ConfigPoint {
-  return ctx.config.storageChests[category] ?? ctx.config.chest
+  const point = ctx.config.storageChests[category] ?? ctx.config.chest
+  if (!point) throw new TaskError('还没有配置箱子')
+  return point
 }
 
 function chestLabel (category: StorageCategory): string {

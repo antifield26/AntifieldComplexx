@@ -87,11 +87,11 @@ export class DshAgentClient implements DshAutonomySession {
   }
 
   async openRun (bearer: string, tools: McpToolDefinition[]): Promise<string> {
-    return this.openSlot('/run/start', { bearer, tools })
+    return this.openSlot('/run/start', { bearer, tools, toolContract: 2 })
   }
 
   async openAdmin (bearer: string, tools: McpToolDefinition[], prompt: string): Promise<string> {
-    return this.openSlot('/admin/start', { bearer, tools, prompt })
+    return this.openSlot('/admin/start', { bearer, tools, prompt, toolContract: 2 })
   }
 
   private async openSlot (path: '/run/start' | '/admin/start', payload: Record<string, unknown>): Promise<string> {

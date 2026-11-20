@@ -1,54 +1,52 @@
-/** 游戏内自主入口的授权与严格面板控制边界；仅使用进程内假依赖。 */
+/** 游戏点名和本地停止语义使用进程内夹具验证。 */
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ChatRouter, type ChatRouterDeps } from '../../src/chat/router.ts'
-import { EventBus } from '../../src/events/bus.ts'
 import { createLogger } from '../../src/logger.ts'
-import { makeConfig, makeState } from '../helpers.ts'
+import { makeConfig } from '../helpers.ts'
 
 function fixture (httpOnlyHighRisk: boolean) {
-  const config = makeConfig({ httpOnlyHighRisk, autonomyEnabled: true })
-  const starts: Array<{ goal: string | null, username: string }> = []
-  const messages: string[] = []
-  const audits: unknown[] = []
-  const deps = {
-    config,
-    state: makeState(config),
+  const commands: string[] = []
+  const replies: string[] = []
+  const approvals: string[] = []
+  let stopped = 0
+  const router = new ChatRouter({
+    config: makeConfig({ httpOnlyHighRisk, commandAllowlist: ['Antifield'] }),
     logger: createLogger('error'),
-    events: new EventBus(100),
-    chatSender: { say: async (text: string) => { messages.push(text); return [text] } },
-    commands: { isAuthorized: (username: string) => username === 'Antifield' },
-    intent: { shouldClassify: () => false },
-    ai: { ask: () => { throw new Error('自主命令不应进入普通对话') } },
-    audit: { append: (event: unknown) => { audits.push(event) } },
-    autonomy: {
-      enabled: true,
-      isActive: () => false,
-      start: async (goal: string | null, username: string) => {
-        starts.push({ goal, username })
-        return { ok: true }
-      }
-    }
-  } as unknown as ChatRouterDeps
-  return { router: new ChatRouter(deps), starts, messages, audits }
+    chatSender: { say: async (text: string) => { replies.push(text); return [text] } } as ChatRouterDeps['chatSender'],
+    expedition: {
+      answer: async (_user, text) => { approvals.push(text); return '确认结果' },
+      teachSharedChest: () => '已记住共享箱',
+      reconcile: () => '已核对物品'
+    },
+    submit: text => { commands.push(text); return true },
+    stop: () => { stopped += 1 }
+  })
+  return { router, commands, replies, approvals, stopped: () => stopped }
 }
 
-test('严格面板模式拒绝主人在游戏内启动自主会话', async () => {
-  const f = fixture(true)
-  for (const message of ['Lofii 开始自主', 'Lofii 自主行动 采集木头', 'Lofii 自主模式']) {
-    f.router.handle({ username: 'Antifield', message })
-  }
-  await new Promise<void>(resolve => setImmediate(resolve))
-  assert.equal(f.starts.length, 0)
-  assert.equal(f.messages.length, 3)
-  assert.ok(f.messages.every(text => text.includes('面板')))
-  assert.ok(f.audits.every(event => (event as { details: { reason: string } }).details.reason === 'http_only_high_risk'))
+test('主人点名提交自然语言，旧任务短语作为普通文本，其他玩家无法委托', () => {
+  const f = fixture(false)
+  f.router.handle({ username: 'other', message: 'Lofii 帮我弄 8 个铁锭' })
+  f.router.handle({ username: 'Antifield', message: 'Lofii，帮我弄 8 个铁锭' })
+  f.router.handle({ username: 'Antifield', message: 'Lofii 挖矿' })
+  assert.deepEqual(f.commands, ['帮我弄 8 个铁锭', '挖矿'])
 })
 
-test('允许游戏内控制时主人仍可启动自主会话', async () => {
+test('严格面板模式限制委托，主人仍可本地停止', () => {
+  const f = fixture(true)
+  f.router.handle({ username: 'Antifield', message: 'Lofii 去采矿' })
+  f.router.handle({ username: 'Antifield', message: 'Lofii 停止' })
+  assert.deepEqual(f.commands, [])
+  assert.equal(f.stopped(), 1)
+  assert.match(f.replies[0] ?? '', /管理员会话/)
+})
+
+test('只有主人能回复许可，确认号可以省略唤醒词', async () => {
   const f = fixture(false)
-  f.router.handle({ username: 'Antifield', message: 'Lofii 自主行动 采集木头' })
+  f.router.handle({ username: 'other', message: '确认 123456' })
+  f.router.handle({ username: 'Antifield', message: '确认 123456' })
   await new Promise<void>(resolve => setImmediate(resolve))
-  assert.deepEqual(f.starts, [{ goal: '采集木头', username: 'Antifield' }])
-  assert.equal(f.audits.length, 0)
+  assert.deepEqual(f.approvals, ['确认 123456'])
+  assert.equal(f.commands.length, 0)
 })

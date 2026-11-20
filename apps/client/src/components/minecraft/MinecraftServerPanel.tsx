@@ -172,7 +172,7 @@ export function MinecraftServerPanel() {
   ]
 
   const names = whitelist?.names ?? []
-  const tps = status?.tps ?? null
+  const tick = status?.tick ?? null
   const publicAddress = status?.publicAddress || null
 
   return (
@@ -218,9 +218,9 @@ export function MinecraftServerPanel() {
                   <span className="mc-fact-value">{status.players.online} / {status.players.max}</span>
                 </div>
                 <div className="mc-fact">
-                  <span className="mc-fact-label">TPS（1m / 5m / 15m）</span>
+                  <span className="mc-fact-label">刻率目标 / MSPT</span>
                   <span className="mc-fact-value">
-                    {tps ? `${tps.m1.toFixed(1)} / ${tps.m5.toFixed(1)} / ${tps.m15.toFixed(1)}` : '—'}
+                    {tick ? `${tick.targetRate.toFixed(1)} / ${tick.averageMs.toFixed(1)} ms` : '—'}
                   </span>
                 </div>
                 <div className="mc-fact">
@@ -250,8 +250,8 @@ export function MinecraftServerPanel() {
 
               {status.motd ? <p className="mc-motd">{status.motd}</p> : null}
               {status.error ? <div className="notice notice-warning">{status.error}</div> : null}
-              {!status.error && tps === null ? (
-                <div className="notice notice-warning">RCON 不可用，TPS 与白名单数据暂时无法读取。</div>
+              {!status.error && tick === null ? (
+                <div className="notice notice-warning">服务器刻率指标暂时无法读取。</div>
               ) : null}
               <p className="card-footnote">状态检查于 <RelativeTime ts={status.checkedAt} /></p>
             </>

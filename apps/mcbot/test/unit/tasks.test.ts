@@ -12,10 +12,10 @@ import type { Item } from 'prismarine-item'
 import { Vec3 } from 'vec3'
 import { baseEnv, makeConfig } from '../helpers.ts'
 
-test('v0.2 config defaults match the prepared base', () => {
+test('显式基地坐标会整组加载', () => {
   const config = loadConfig(baseEnv(), '0.2.0')
-  assert.equal(config.home.x, 175.5)
-  assert.equal(config.home.z, 410.5)
+  assert.equal(config.home?.x, 175.5)
+  assert.equal(config.home?.z, 410.5)
   assert.deepEqual(config.safeZone, { minX: 111, maxX: 239, minZ: 410, maxZ: 474 })
   assert.deepEqual(config.farm, { minX: 177, maxX: 183, minZ: 432, maxZ: 439, groundY: 63, cropY: 64 })
   assert.deepEqual(config.chest, { x: 184, y: 64, z: 435 })
@@ -24,10 +24,39 @@ test('v0.2 config defaults match the prepared base', () => {
   assert.equal(config.taskRecoveryMax, 3)
 })
 
+test('未填写基地坐标时不回退到旧世界', () => {
+  const config = loadConfig({
+    HTTP_TOKEN: '0123456789abcdef0123456789abcdef',
+    AI_ENABLED: 'false'
+  }, '0.2.0')
+  assert.equal(config.home, null)
+  assert.equal(config.safeZone, null)
+  assert.equal(config.farm, null)
+  assert.equal(config.chest, null)
+  assert.equal(config.fishStand, null)
+  assert.equal(config.fishWater, null)
+  assert.equal(config.treeFarm, null)
+})
+
+test('基地坐标必须整组配置', () => {
+  assert.throws(
+    () => loadConfig(baseEnv({ BOT_HOME_X: '' }), '0.2.0'),
+    (error: unknown) => error instanceof ConfigError && /基地坐标必须整组配置/.test(error.message)
+  )
+  assert.throws(
+    () => loadConfig({
+      HTTP_TOKEN: '0123456789abcdef0123456789abcdef',
+      AI_ENABLED: 'false',
+      BOT_HOME_X: '1'
+    }, '0.2.0'),
+    (error: unknown) => error instanceof ConfigError && /基地坐标必须整组配置/.test(error.message)
+  )
+})
+
 test('v1.0.10 config accepts a farm outside the old rectangle', () => {
   const config = loadConfig(baseEnv({ FARM_MIN_X: '300', FARM_MAX_X: '310' }), '0.2.0')
-  assert.equal(config.farm.minX, 300)
-  assert.equal(config.farm.maxX, 310)
+  assert.equal(config.farm?.minX, 300)
+  assert.equal(config.farm?.maxX, 310)
   assert.throws(
     () => loadConfig(baseEnv({ FARM_MIN_X: '200', FARM_MAX_X: '100' }), '0.2.0'),
     (error: unknown) => error instanceof ConfigError && /FARM_MIN/.test(error.message)

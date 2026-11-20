@@ -4,11 +4,11 @@
 
 ## 平台
 
-当前产品 v1.2.6，schema 22，mcbot 契约 v2；DSH 0.2.2-rc.3，QQ 插件 0.5.5。版本期望以 `deploy/tool-versions.json` 为准。
+当前产品 v1.3.0，schema 22，mcbot 契约 v2；DSH 0.2.2-rc.3，QQ 插件 0.5.5。版本期望以 `deploy/tool-versions.json` 为准。
 
 - Windows、Android 与 Web 共用账号与业务接口，原生请求使用设备签名。文件、知识库、分享、主机指标、告警及灾备能力按 API/UI-SPEC 提供。
 - Minecraft Bot 面板由状态、管理员会话和事件组成。会话显示内存中的文本、工具名/成败、目标或待办的动作和短标题；正文与步骤不写应用 DB，不显示工具参数、凭据、提示词或世界记忆正文。
-- 管理员明确指令由模型决定是否调用 13 个 mcbot 工具，以及 DSH 的 goal/todo；任务白名单 11 项。游戏内口令可用。急停直接撤权并清空时间线，不经过模型；空闲的 `no_active_task` 算成功。
+- 管理员明确指令由模型决定是否调用 14 个 mcbot 工具，以及 DSH 的 goal/todo；任务白名单 11 项。主人可用游戏点名自然语言委托。急停直接撤权并清空时间线，不经过模型；空闲的 `no_active_task` 算成功。
 - 应用提供在线模式、只读状态、停止任务、停止自主会话和急停；任务开始、目标读写、自主开始、移动、游戏发言和历史代理路径不存在。
 - QQ 由独立 DSH QQ Agent 管理；Workbench 不承担 QQ 收发、发布或管理，也不提供 OpenCode Chat。告警投递仅 webhook。
 - AI 工作区使用 DSH Web 反代、Host/Origin 校验和一次性 SSO，HTML 原样转发。客户端具有隔离 AI 容器。站点提供图标与清单，不提供 PWA 安装或离线壳。

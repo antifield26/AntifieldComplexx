@@ -1,6 +1,6 @@
 import net from 'node:net'
 
-const READONLY_COMMANDS = new Set(['tps', 'list', 'whitelist list', 'time'])
+const READONLY_COMMANDS = new Set(['tick query', 'list', 'whitelist list', 'time query daytime'])
 
 export class RconError extends Error {
   constructor (message: string) {

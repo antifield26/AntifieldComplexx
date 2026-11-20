@@ -6,6 +6,7 @@
  */
 import type { TaskName } from '../state.ts'
 import { WORLD_MEMORY_CATEGORIES } from './world-memory.ts'
+import { EXPEDITION_SCHEMA } from './expedition-contract.ts'
 
 export const AUTONOMY_MCP_SERVER = 'mcbot_autonomy'
 export const AUTONOMY_PERMISSION_PREFIX = `${AUTONOMY_MCP_SERVER}_*`
@@ -38,7 +39,8 @@ export const AUTONOMY_RAW_TOOLS = [
   'finish',
   'memory_read',
   'memory_write',
-  'memory_forget'
+  'memory_forget',
+  'expedition'
 ] as const
 
 export type AutonomyToolName = typeof AUTONOMY_RAW_TOOLS[number]
@@ -252,6 +254,16 @@ export function buildToolDefinitions (): McpToolDefinition[] {
           key: { type: 'string', description: '要删除的键。' }
         },
         required: ['run_id', 'category', 'key', 'reason'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'expedition',
+      description: '执行一步生存合作。goal 登记物品数量，status 查看核对水位，scan 查找方块，walk 探路，follow 同维度跟随主人，gather 采集已复核的方块，craft 合成产物，smelt 冶炼输入原料，withdraw 从共享箱取出，deliver 核实交付，locate 查询结构，teleport 自身传送到已加载的主人，give 请求主人许可。参数使用原版 ID。每步以返回证据为准。',
+      inputSchema: {
+        type: 'object',
+        properties: { ...commonProperties(), ...EXPEDITION_SCHEMA },
+        required: ['run_id', 'operation', 'reason'],
         additionalProperties: false
       }
     }

@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer'
-import { isExpired, requireBot, sleep, TaskStopError, type TaskContext } from './types.ts'
+import { isExpired, requireBot, requireLayout, sleep, TaskStopError, type TaskContext } from './types.ts'
 
 /** 选择护送目标：优先在线玩家（排除自己），按名字排序稳定选择。 */
 export function pickEscortTarget (bot: Bot, preferred?: string): string | null {
@@ -17,6 +17,7 @@ export function pickEscortTarget (bot: Bot, preferred?: string): string | null {
 export async function runEscort (ctx: TaskContext): Promise<void> {
   const bot = requireBot(ctx)
   const { config, movement } = ctx
+  const home = requireLayout(config).home
   const preferred = config.commandAllowlist[0]
   let target: string | null = null
   let lastPosition = bot.entity?.position.clone() ?? null
@@ -27,7 +28,7 @@ export async function runEscort (ctx: TaskContext): Promise<void> {
       target = pickEscortTarget(bot, preferred)
       if (!target) {
         try {
-          await movement.goNearPoint(config.home.x, config.home.y, config.home.z, 4, 12000, true)
+          await movement.goNearPoint(home.x, home.y, home.z, 4, 12000, true)
         } catch {
           // 目标不存在时继续等待；移动失败不视为致命。
         }

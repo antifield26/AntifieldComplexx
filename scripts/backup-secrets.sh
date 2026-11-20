@@ -157,12 +157,13 @@ case "${mcbot_enabled,,}" in
     data=${data:-/var/lib/mcbot}
     goals=$(read_setting /etc/mcbot/env GOALS_FILE)
     task=$(read_setting /etc/mcbot/env TASK_STATE_FILE)
+    world_id=$(read_setting /etc/mcbot/env MC_WORLD_ID)
     mcbot_snapshot=$(mktemp -d "$snapshot_parent/mcbot.XXXXXX")
     chown mcbot:mcbot "$mcbot_snapshot"
     # 固定维护副本与 release 目录均使用这个非 root 快照入口；不得加载调用者指定脚本。
     helper=/opt/antifieldcloud/current/scripts/backup-mcbot-state.mjs
     if ! result=$(runuser -u mcbot -- "$NODE_BIN" "$helper" capture "$mcbot_snapshot/mcbot-state" \
-        "$data" "${goals:-$data/goals.db}" "${task:-$data/task-state.json}" 2>/dev/null); then
+        "$data" "${goals:-$data/goals.db}" "${task:-$data/task-state.json}" "${world_id:-current}" 2>/dev/null); then
       printf '%s\n' "$result" >&2
       json_error "mcbot 状态读取或一致性快照失败"
     fi

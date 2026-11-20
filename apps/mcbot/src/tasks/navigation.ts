@@ -9,8 +9,9 @@ const HAZARD_BLOCKS = new Set(['water', 'lava', 'fire', 'soul_fire', 'cactus', '
 const CROP_BLOCKS = new Set(['wheat', 'carrots', 'potatoes', 'beetroot', 'pumpkin_stem', 'melon_stem', 'nether_wart'])
 
 export function insideSafeZone (config: Config, x: number, z: number): boolean {
-  return x >= config.safeZone.minX && x <= config.safeZone.maxX &&
-    z >= config.safeZone.minZ && z <= config.safeZone.maxZ
+  const zone = config.safeZone
+  if (!zone) return false
+  return x >= zone.minX && x <= zone.maxX && z >= zone.minZ && z <= zone.maxZ
 }
 
 /** 以原点为圆心的水平列。半径超过 64 时截断，避免扫描扩大到整个世界。 */
@@ -32,13 +33,10 @@ export function columnsWithinRadius (origin: { x: number, z: number }, radius: n
 /** 传送落点必须是家、箱子、钓点、农田、树场、分类箱或探索航点附近。 */
 export function isTeleportAnchor (config: Config, x: number, y: number, z: number): boolean {
   const slack = 8
-  const points: Array<{ x: number, y: number, z: number }> = [
-    config.home,
-    config.chest,
-    config.fishStand,
-    config.fishWater,
-    ...config.exploreWaypoints
-  ]
+  const points: Array<{ x: number, y: number, z: number }> = []
+  for (const point of [config.home, config.chest, config.fishStand, config.fishWater, ...config.exploreWaypoints]) {
+    if (point) points.push(point)
+  }
   for (const point of [config.storageChests.ores, config.storageChests.food, config.storageChests.saplings, config.storageChests.misc]) {
     if (point) points.push(point)
   }
@@ -47,8 +45,11 @@ export function isTeleportAnchor (config: Config, x: number, y: number, z: numbe
     x >= minX - slack && x <= maxX + slack &&
     z >= minZ - slack && z <= maxZ + slack &&
     Math.abs(y - anchorY) <= slack + 4
-  if (inRect(config.farm.minX, config.farm.maxX, config.farm.minZ, config.farm.maxZ, config.farm.cropY)) return true
-  return inRect(config.treeFarm.minX, config.treeFarm.maxX, config.treeFarm.minZ, config.treeFarm.maxZ, config.treeFarm.logMinY)
+  const farm = config.farm
+  if (farm && inRect(farm.minX, farm.maxX, farm.minZ, farm.maxZ, farm.cropY)) return true
+  const treeFarm = config.treeFarm
+  if (!treeFarm) return false
+  return inRect(treeFarm.minX, treeFarm.maxX, treeFarm.minZ, treeFarm.maxZ, treeFarm.logMinY)
 }
 
 /** 家或 Bot 周围四个调查点，距离不超过扫描半径。 */
@@ -63,8 +64,9 @@ export function surveyRing (origin: { x: number, y: number, z: number }, radius:
 }
 
 export function insideFarm (config: Config, x: number, z: number): boolean {
-  return x >= config.farm.minX && x <= config.farm.maxX &&
-    z >= config.farm.minZ && z <= config.farm.maxZ
+  const farm = config.farm
+  if (!farm) return false
+  return x >= farm.minX && x <= farm.maxX && z >= farm.minZ && z <= farm.maxZ
 }
 
 function isTreeBlock (name: string): boolean {
@@ -113,6 +115,7 @@ export function findChestAt (bot: Bot, point: { x: number, y: number, z: number 
 }
 
 export function findChest (bot: Bot, config: Config): Block {
+  if (!config.chest) throw new TaskError('还没有配置箱子')
   return findChestAt(bot, config.chest)
 }
 
@@ -123,10 +126,12 @@ export function isMatureWheat (block: Block | null): boolean {
 }
 
 export function findMatureWheat (bot: Bot, config: Config): Block[] {
+  const farm = config.farm
+  if (!farm) return []
   const found: Block[] = []
-  for (let x = config.farm.minX; x <= config.farm.maxX; x++) {
-    for (let z = config.farm.minZ; z <= config.farm.maxZ; z++) {
-      const block = bot.blockAt(new Vec3(x, config.farm.cropY, z), false)
+  for (let x = farm.minX; x <= farm.maxX; x++) {
+    for (let z = farm.minZ; z <= farm.maxZ; z++) {
+      const block = bot.blockAt(new Vec3(x, farm.cropY, z), false)
       if (isMatureWheat(block)) found.push(block as Block)
     }
   }
@@ -134,11 +139,13 @@ export function findMatureWheat (bot: Bot, config: Config): Block[] {
 }
 
 export function findEmptyFarmland (bot: Bot, config: Config): Block[] {
+  const farm = config.farm
+  if (!farm) return []
   const found: Block[] = []
-  for (let x = config.farm.minX; x <= config.farm.maxX; x++) {
-    for (let z = config.farm.minZ; z <= config.farm.maxZ; z++) {
-      const ground = bot.blockAt(new Vec3(x, config.farm.groundY, z), false)
-      const crop = bot.blockAt(new Vec3(x, config.farm.cropY, z), false)
+  for (let x = farm.minX; x <= farm.maxX; x++) {
+    for (let z = farm.minZ; z <= farm.maxZ; z++) {
+      const ground = bot.blockAt(new Vec3(x, farm.groundY, z), false)
+      const crop = bot.blockAt(new Vec3(x, farm.cropY, z), false)
       if (ground?.name === 'farmland' && isClear(crop)) found.push(ground)
     }
   }
@@ -146,9 +153,11 @@ export function findEmptyFarmland (bot: Bot, config: Config): Block[] {
 }
 
 export function farmAnchor (config: Config): { x: number, y: number, z: number } {
+  const farm = config.farm
+  if (!farm) throw new TaskError('还没有配置基地')
   return {
-    x: (config.farm.minX + config.farm.maxX) / 2 + 0.5,
-    y: config.farm.cropY,
-    z: (config.farm.minZ + config.farm.maxZ) / 2 + 0.5
+    x: (farm.minX + farm.maxX) / 2 + 0.5,
+    y: farm.cropY,
+    z: (farm.minZ + farm.maxZ) / 2 + 0.5
   }
 }

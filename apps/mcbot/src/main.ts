@@ -14,13 +14,10 @@ import { MemoryStore } from './memory/store.ts'
 import { ChatSender } from './minecraft/chat.ts'
 import { MovementManager } from './minecraft/movement.ts'
 import { MinecraftClient } from './minecraft/bot.ts'
-import { CommandExecutor } from './minecraft/commands.ts'
 import { OpenCodeClient } from './ai/opencode.ts'
 import { PathAdvisor } from './ai/path-advisor.ts'
 import { DshAgentClient } from './ai/dsh.ts'
 import { AdminChat } from './admin/chat.ts'
-import { IntentClassifier } from './ai/intent.ts'
-import { AiChatService } from './ai/queue.ts'
 import { AutonomyService } from './autonomy/service.ts'
 import { startDshToolSocket } from './autonomy/dsh-socket.ts'
 import { ChatRouter } from './chat/router.ts'
@@ -31,7 +28,6 @@ import { GoalRunner } from './goals/runner.ts'
 import { GoalStore } from './goals/store.ts'
 import { TaskManager } from './tasks/manager.ts'
 import { TaskStore } from './tasks/store.ts'
-import { ProactiveManager } from './proactive.ts'
 import { SdNotify } from './runtime/sdnotify.ts'
 import { MemoryGuard } from './runtime/memory-guard.ts'
 
@@ -182,11 +178,6 @@ async function main (): Promise<void> {
       alerts.raise('memory_high', `内存占用偏高：${rssMb} MB（阈值 ${limitMb} MB）`, { rssMb, limitMb }, 'warning')
     }
   })
-  client.setDisconnectHandler(reason => {
-    goals?.interrupt('Bot 已断线，连接恢复后请继续目标')
-    alerts.raise('disconnected', `Lofii 断线：${reason}`, { reason }, 'error')
-  })
-
   const admin = new AdminService({
     config,
     logger: logger.withScope('admin'),
@@ -230,18 +221,6 @@ async function main (): Promise<void> {
     goalStore.close()
   }
 
-  const commands = new CommandExecutor({
-    config,
-    logger: logger.withScope('commands'),
-    chatSender,
-    movement,
-    tasks,
-    audit,
-    getBot: () => client.getBot(),
-    goalBusy: () => goals?.isBusy() ?? false,
-    stopGoal: () => goals?.interrupt('主人已停止目标') ?? false
-  })
-
   const dshClient = config.dshAgentSocket ? new DshAgentClient(config.dshAgentSocket, config.aiTimeoutMs) : null
   const aiClient = dshClient ?? new OpenCodeClient(config, logger.withScope('opencode'))
   const pathAdvisor = new PathAdvisor(config, logger.withScope('path-advisor'), aiClient)
@@ -249,16 +228,6 @@ async function main (): Promise<void> {
   logger.info('path advisor configured', {
     enabled: config.pathAiEnabled,
     available: pathAdvisor.available
-  })
-  const intent = new IntentClassifier(config, logger.withScope('intent'), aiClient)
-  const ai = new AiChatService({
-    config,
-    logger: logger.withScope('ai'),
-    state,
-    memory,
-    client: aiClient,
-    chatSender,
-    getBot: () => client.getBot()
   })
   const autonomy = new AutonomyService({
     config,
@@ -272,6 +241,12 @@ async function main (): Promise<void> {
     opencode: dshClient,
     getBot: () => client.getBot(),
     goalBusy: () => goals?.isBusy() ?? false
+  })
+  client.setDisconnectHandler(reason => {
+    autonomy.interrupt('disconnected')
+    void autonomy.stopAdmin('disconnected')
+    goals?.interrupt('Bot 已断线，连接恢复后请继续目标')
+    alerts.raise('disconnected', `Lofii 断线：${reason}`, { reason }, 'error')
   })
   if (goalStore.isOpen()) {
     goals = new GoalRunner({
@@ -296,26 +271,33 @@ async function main (): Promise<void> {
         return null
       }
     })
-    tasks.setGoalBusy(() => goals?.isBusy() ?? false)
   }
+  tasks.setGoalBusy(() => Boolean(goals?.isBusy() || autonomy.expedition.isBusy()))
 
+  const adminChat = dshClient ? new AdminChat(autonomy) : null
   const router = new ChatRouter({
     config,
     logger: logger.withScope('chat'),
-    state,
     chatSender,
-    commands,
-    intent,
-    ai,
-    events,
-    audit,
-    autonomy
+    expedition: autonomy.expedition,
+    submit: (text, reply) => {
+      if (!adminChat) {
+        reply('当前无法连接任务模型。')
+        return true
+      }
+      return adminChat.submit(text, reply).ok
+    },
+    stop: () => {
+      autonomy.interrupt('manual_chat')
+      void adminChat?.stop()
+      goals?.interrupt('主人已停止目标')
+      tasks.requestStop('chat')
+      movement.stop('chat')
+    }
   })
   client.setChatHandler(message => router.handle(message))
 
-  const proactive = new ProactiveManager(config, logger.withScope('proactive'), chatSender)
   client.setSpawnHandler(() => {
-    proactive.attach(client.getBot())
     // 上线后先做一次生存/补货检查，避免空手/低饥饿状态下直接进入长路径任务。
     setTimeout(() => {
       void tasks.autoSurvival()
@@ -323,7 +305,6 @@ async function main (): Promise<void> {
     }, 3000).unref?.()
   })
 
-  const adminChat = dshClient ? new AdminChat(autonomy) : null
   const http = new HttpApi({
     config,
     logger: logger.withScope('http'),
@@ -401,7 +382,6 @@ async function main (): Promise<void> {
       if (restockTimer) clearInterval(restockTimer)
       if (survivalTimer) clearInterval(survivalTimer)
       memoryGuard.stop()
-      ai.stop()
       await autonomy.shutdown()
       await stopDshTools?.()
       statePublisher.stop()
@@ -411,7 +391,6 @@ async function main (): Promise<void> {
       await goals?.stop()
       await tasks.shutdown()
       goalStore.close()
-      proactive.detach()
       await presence.stop()
       await client.stop('shutdown')
       await http.stop()

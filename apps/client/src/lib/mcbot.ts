@@ -475,6 +475,9 @@ export function safeLofiiStatus(value: unknown): McbotStatus | null {
   const position = asRecord(player.position)
   const lastDisconnect = asRecord(minecraft.lastDisconnect)
   const tps = asRecord(admin.tps) ?? {}
+  const tick = asRecord(admin.tick)
+  const targetRate = asCount(tick?.targetRate)
+  const averageMs = asCount(tick?.averageMs)
   const online = asRecord(admin.online) ?? {}
   const whitelist = asRecord(admin.whitelist) ?? {}
   const time = asRecord(admin.time) ?? {}
@@ -631,6 +634,7 @@ export function safeLofiiStatus(value: unknown): McbotStatus | null {
       rcon: admin.rcon === true,
       updatedAt: asText(admin.updatedAt),
       lastError: asText(admin.lastError),
+      tick: targetRate !== null && averageMs !== null ? { targetRate, averageMs } : null,
       tps: {
         one: asCount(tps.one),
         five: asCount(tps.five),

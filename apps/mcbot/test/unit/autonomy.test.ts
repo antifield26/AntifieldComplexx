@@ -194,7 +194,7 @@ test('DSH 自主急停立即撤销 Bearer，清理重试完成后才能再次启
   const cleanup = new Promise<void>(resolve => { finishCleanup = resolve })
   const agent: DshAutonomySession & DshAdminSession = {
     openRun: async (bearer, tools) => {
-      assert.equal(tools.length, 13)
+      assert.equal(tools.length, 14)
       token = bearer
       return `session-test-${++starts}`
     },
@@ -236,7 +236,7 @@ test('管理员 Bearer 可调用工具，finish 不结束对话', async () => {
   const stopped: string[] = []
   const agent: DshAdminSession = {
     openAdmin: async (bearer, tools, text) => {
-      assert.equal(tools.length, 13)
+      assert.equal(tools.length, 14)
       token = bearer
       prompt = text
       return 'session-admin-1'

@@ -1,4 +1,4 @@
-import { isExpired, requireBot, sleep, TaskStopError, type TaskContext } from './types.ts'
+import { isExpired, requireBot, requireLayout, sleep, TaskStopError, type TaskContext } from './types.ts'
 
 /**
  * 基地守卫：在 BOT_HOME 附近（GUARD_RADIUS）驻守，只对任务中被动防御白名单内的敌对生物接战，
@@ -6,7 +6,9 @@ import { isExpired, requireBot, sleep, TaskStopError, type TaskContext } from '.
  */
 export async function runGuard (ctx: TaskContext): Promise<void> {
   const bot = requireBot(ctx)
-  const { config, movement } = ctx
+  const { movement } = ctx
+  const home = requireLayout(ctx.config).home
+  const guardRadius = ctx.config.guardRadius
   while (!isExpired(ctx)) {
     if (ctx.signal.aborted) throw new TaskStopError()
     const outcome = await ctx.defend()
@@ -15,10 +17,10 @@ export async function runGuard (ctx: TaskContext): Promise<void> {
     }
     const position = bot.entity?.position
     if (position) {
-      const distance = Math.hypot(position.x - config.home.x, position.z - config.home.z)
-      if (distance > config.guardRadius) {
+      const distance = Math.hypot(position.x - home.x, position.z - home.z)
+      if (distance > guardRadius) {
         try {
-          await movement.goNearPoint(config.home.x, config.home.y, config.home.z, 4, 12000, true)
+          await movement.goNearPoint(home.x, home.y, home.z, 4, 12000, true)
         } catch (error) {
           if (ctx.signal.aborted) throw new TaskStopError()
           ctx.logger.warn('guard: return to base failed', {

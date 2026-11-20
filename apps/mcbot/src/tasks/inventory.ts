@@ -117,3 +117,10 @@ export async function eatIfNeeded (ctx: TaskContext): Promise<void> {
 export function inventoryItems (bot: Bot): Item[] {
   return bot.inventory.items()
 }
+
+export function freshAxe (bot: Bot): ReturnType<Bot['inventory']['items']>[number] | null {
+  return bot.inventory.items()
+    .filter(item => item.name === 'iron_axe')
+    .sort((a, b) => ((b.maxDurability ?? 0) - (b.durabilityUsed ?? 0)) - ((a.maxDurability ?? 0) - (a.durabilityUsed ?? 0)))
+    .find(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10) ?? null
+}

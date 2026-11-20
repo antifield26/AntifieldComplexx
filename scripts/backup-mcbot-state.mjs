@@ -7,13 +7,15 @@ import { dirname, isAbsolute, join } from 'node:path'
 import { DatabaseSync, backup } from 'node:sqlite'
 import { GoalStore } from '../apps/mcbot/src/goals/store.ts'
 import { parseTaskState } from '../apps/mcbot/src/tasks/store.ts'
-import { parseWorldMemory } from '../apps/mcbot/src/autonomy/world-memory.ts'
+import { parseWorldMemory, worldMemoryDir } from '../apps/mcbot/src/autonomy/world-memory.ts'
 
 const GOALS = 'goals.db'
 const TASK = 'task-state.json'
 const MEMORY = 'world-memory.json'
 const DIMENSION_MEMORIES = ['world-memory.nether.json', 'world-memory.end.json']
 const FILES = [GOALS, TASK, MEMORY, ...DIMENSION_MEMORIES]
+const WORLD_ID = /^[a-z0-9][a-z0-9_-]{0,47}$/
+const WORLD_FILES = [MEMORY, ...DIMENSION_MEMORIES, 'shared-overworld.json', 'shared-nether.json', 'shared-end.json', 'transfer.json', 'target.json']
 const MAX_JSON_BYTES = 1024 * 1024
 
 function readJsonFile(file) {
@@ -48,12 +50,38 @@ function validateJson(name, raw) {
     const state = parseTaskState(raw.toString('utf8'))
     return { pendingTask: state.active !== null, queuedTasks: state.queue.length }
   }
+  if (name === 'transfer.json') {
+    const data = JSON.parse(raw.toString('utf8'))
+    if (data !== null && (!['give', 'deliver'].includes(data.operation) || typeof data.run !== 'string' ||
+        !/^[a-z0-9_]{1,64}$/.test(data.item) || !Number.isInteger(data.quantity) || data.quantity < 1 || data.quantity > 64)) {
+      throw new Error('invalid_pending_transfer')
+    }
+    return { pendingTransfer: data !== null }
+  }
+  if (name === 'target.json') {
+    const target = JSON.parse(raw.toString('utf8'))
+    if (target !== null && (!/^[a-z0-9_]{1,64}$/.test(target.item) || !Number.isInteger(target.quantity) ||
+        target.quantity < 1 || target.quantity > 64 || !Number.isInteger(target.delivered) || target.delivered < 0 ||
+        target.delivered > target.quantity || typeof target.dimension !== 'string')) throw new Error('invalid_expedition_target')
+    return { pendingTarget: target !== null && target.delivered < target.quantity }
+  }
+  if (name.startsWith('shared-')) {
+    const entries = JSON.parse(raw.toString('utf8'))
+    if (!Array.isArray(entries) || entries.length > 32 || entries.some(entry =>
+      !['chest', 'trapped_chest', 'barrel'].includes(entry?.name) ||
+      ![entry.x, entry.y, entry.z].every(Number.isSafeInteger) ||
+      typeof entry.dimension !== 'string' || !Number.isFinite(Date.parse(entry.observedAt)))) {
+      throw new Error('invalid_shared_containers')
+    }
+    return { sharedContainers: entries.length }
+  }
   const entries = parseWorldMemory(raw.toString('utf8'))
   if (entries === null) throw new Error('invalid_world_memory')
   return { worldMemoryItems: entries.length }
 }
 
-export async function captureMcbotState(directory, sources) {
+export async function captureMcbotState(directory, sources, world = null) {
+  if (world && !WORLD_ID.test(world.id)) throw new Error('invalid_world_id')
   mkdirSync(directory, { mode: 0o700 })
   const files = {}
   for (const name of FILES) {
@@ -91,13 +119,32 @@ export async function captureMcbotState(directory, sources) {
       files[name] = { status: name !== GOALS && error.code === 'ENOENT' ? 'not_created' : 'read_failed' }
     }
   }
-  writeFileSync(join(directory, 'manifest.json'), JSON.stringify({ version: 1, files }) + '\n', { mode: 0o600 })
+  if (world) {
+    const root = worldMemoryDir(directory, world.id)
+    const source = worldMemoryDir(world.data, world.id)
+    mkdirSync(root, { recursive: true, mode: 0o700 })
+    for (const name of WORLD_FILES) {
+      const key = `worlds/${world.id}/${name}`
+      try {
+        const raw = readJsonFile(join(source, name))
+        validateJson(name, raw)
+        const file = join(root, name)
+        writeFileSync(file, raw, { flag: 'wx', mode: 0o600 })
+        files[key] = { status: 'included', sha256: await sha256(file), size: raw.length }
+      } catch (error) {
+        files[key] = { status: error.code === 'ENOENT' ? 'not_created' : 'read_failed' }
+      }
+    }
+  }
+  writeFileSync(join(directory, 'manifest.json'), JSON.stringify(world ? { version: 2, worldId: world.id, files } : { version: 1, files }) + '\n', { mode: 0o600 })
   return files
 }
 
 export async function verifyMcbotState(directory, { restore = false } = {}) {
   const manifest = JSON.parse(readJsonFile(join(directory, 'manifest.json')).toString('utf8'))
-  if (manifest.version !== 1) throw new Error('invalid_mcbot_manifest')
+  if (manifest.version !== 1 && (manifest.version !== 2 || typeof manifest.worldId !== 'string' || !WORLD_ID.test(manifest.worldId))) {
+    throw new Error('invalid_mcbot_manifest')
+  }
   const details = {}
   for (const name of FILES) {
     const entry = manifest.files?.[name]
@@ -124,6 +171,20 @@ export async function verifyMcbotState(directory, { restore = false } = {}) {
       } else Object.assign(details, checked)
     }
   }
+  if (manifest.version === 2) {
+    const world = {}
+    for (const name of WORLD_FILES) {
+      const file = join(worldMemoryDir(directory, manifest.worldId), name)
+      const entry = manifest.files?.[`worlds/${manifest.worldId}/${name}`]
+      if (entry?.status === 'not_created' && !existsSync(file)) continue
+      if (entry?.status !== 'included' || !lstatSync(file).isFile() ||
+          entry.size !== lstatSync(file).size || entry.sha256 !== await sha256(file)) {
+        throw new Error('invalid_mcbot_world_entry:' + name)
+      }
+      world[name] = validateJson(name, readJsonFile(file))
+    }
+    details.world = world
+  }
   if (restore) {
     // 仅在隔离解包副本上启动目标库，使中断目标进入暂停态。
     const store = new GoalStore(join(directory, GOALS))
@@ -145,14 +206,15 @@ export async function verifyMcbotState(directory, { restore = false } = {}) {
 
 if (import.meta.main) {
   try {
-    const [command, directory, data, goals, task] = process.argv.slice(2)
+    const [command, directory, data, goals, task, worldId] = process.argv.slice(2)
     if (command === 'capture') {
       if (![directory, data, goals, task].every(value => typeof value === 'string' && isAbsolute(value))) {
         throw new Error('invalid_mcbot_paths')
       }
       process.umask(0o077)
-      const files = await captureMcbotState(directory, { [GOALS]: goals, [TASK]: task, [MEMORY]: join(data, MEMORY) })
-      const states = Object.fromEntries(FILES.map(name => [name, files[name].status]))
+      const world = worldId ? { data, id: worldId } : null
+      const files = await captureMcbotState(directory, { [GOALS]: goals, [TASK]: task, [MEMORY]: join(data, MEMORY) }, world)
+      const states = Object.fromEntries(Object.entries(files).map(([name, entry]) => [name, entry.status]))
       const ok = !Object.values(states).includes('read_failed')
       process.stdout.write(JSON.stringify({ ok, files: states }) + '\n')
       if (!ok) process.exitCode = 1

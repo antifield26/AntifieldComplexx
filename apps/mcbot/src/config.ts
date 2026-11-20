@@ -18,6 +18,7 @@ export interface Config {
   mcVersion: string | false
   mcAuth: 'offline'
   dataDir: string
+  worldId: string
   httpHost: string
   httpPort: number
   httpToken: string
@@ -73,7 +74,7 @@ export interface Config {
     maxY: number
     logType: string
     saplingType: string
-  }
+  } | null
   treeMaxLogs: number
   treeDepositEveryMs: number
   mining: {
@@ -126,9 +127,10 @@ export interface Config {
   defenseMaxHostiles: number
   defenseTargets: string[]
   chunkWaitMs: number
-  home: { x: number, y: number, z: number }
-  /** 旧矩形。仍解析以兼容现有 env，不再限制行走、扫描或锚点。 */
-  safeZone: { minX: number, maxX: number, minZ: number, maxZ: number }
+  /** 未整组配置时为 null，不再回退到已归档世界的坐标。 */
+  home: ConfigPoint | null
+  /** 旧矩形。仍解析以兼容现有 env，不再限制行走、扫描或锚点。未配置时为 null。 */
+  safeZone: { minX: number, maxX: number, minZ: number, maxZ: number } | null
   /** 以 Bot 为圆心的扫描半径，硬顶 64。 */
   scanRadius: number
   /** 血量低于等于该值时传送回基地。0 表示关闭。 */
@@ -140,8 +142,8 @@ export interface Config {
     maxZ: number
     groundY: number
     cropY: number
-  }
-  chest: { x: number, y: number, z: number }
+  } | null
+  chest: ConfigPoint | null
   /** 按类别分箱存储；未配置的分类回退到主箱 chest。 */
   storageChests: {
     ores: ConfigPoint | null
@@ -149,8 +151,8 @@ export interface Config {
     saplings: ConfigPoint | null
     misc: ConfigPoint | null
   }
-  fishStand: { x: number, y: number, z: number }
-  fishWater: { x: number, y: number, z: number }
+  fishStand: ConfigPoint | null
+  fishWater: ConfigPoint | null
   taskMaxMinutes: number
   taskRecoveryMax: number
   teleportDistance: number
@@ -330,6 +332,36 @@ function readUrl (env: Env, key: string, fallback: string): string {
   return raw.replace(/\/+$/, '')
 }
 
+function envPresent (env: Env, key: string): boolean {
+  const raw = env[key]
+  return raw !== undefined && raw.trim() !== ''
+}
+
+const BASE_LAYOUT_GROUPS: Array<{ label: string, keys: string[] }> = [
+  { label: 'BOT_HOME', keys: ['BOT_HOME_X', 'BOT_HOME_Y', 'BOT_HOME_Z'] },
+  { label: 'SAFE', keys: ['SAFE_MIN_X', 'SAFE_MAX_X', 'SAFE_MIN_Z', 'SAFE_MAX_Z'] },
+  { label: 'FARM', keys: ['FARM_MIN_X', 'FARM_MAX_X', 'FARM_MIN_Z', 'FARM_MAX_Z', 'FARM_GROUND_Y', 'FARM_CROP_Y'] },
+  { label: 'CHEST', keys: ['CHEST_X', 'CHEST_Y', 'CHEST_Z'] },
+  { label: 'FISH', keys: ['FISH_STAND_X', 'FISH_STAND_Y', 'FISH_STAND_Z', 'FISH_WATER_X', 'FISH_WATER_Y', 'FISH_WATER_Z'] },
+  { label: 'TREE_FARM', keys: ['TREE_FARM_MIN_X', 'TREE_FARM_MAX_X', 'TREE_FARM_MIN_Z', 'TREE_FARM_MAX_Z', 'TREE_FARM_GROUND_Y', 'TREE_FARM_LOG_MIN_Y', 'TREE_FARM_MAX_Y'] }
+]
+
+/** 基地坐标整组出现才启用。全部省略表示没有基地，不再套用旧世界默认点。 */
+function baseLayoutConfigured (env: Env): boolean {
+  const incomplete = BASE_LAYOUT_GROUPS.filter(group => {
+    const present = group.keys.filter(key => envPresent(env, key)).length
+    return present !== 0 && present !== group.keys.length
+  }).map(group => group.label)
+  if (incomplete.length > 0) {
+    throw new ConfigError(`基地坐标必须整组配置，缺少：${incomplete.join('、')}`)
+  }
+  const any = BASE_LAYOUT_GROUPS.some(group => group.keys.some(key => envPresent(env, key)))
+  if (!any) return false
+  const missing = BASE_LAYOUT_GROUPS.filter(group => !group.keys.every(key => envPresent(env, key))).map(group => group.label)
+  if (missing.length > 0) throw new ConfigError(`基地坐标必须整组配置，缺少：${missing.join('、')}`)
+  return true
+}
+
 /** 可选坐标点：三个 env 都缺失返回 null；只配置一部分视为错误。 */
 function readOptionalPoint (env: Env, prefix: string): ConfigPoint | null {
   const rawX = env[`${prefix}_X`]
@@ -409,6 +441,8 @@ function readAiToolAllowlist (env: Env): string[] {
 
 export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
   const dataDir = readString(env, 'DATA_DIR', '/var/lib/mcbot')
+  const worldId = readString(env, 'MC_WORLD_ID', 'current')
+  if (!/^[a-z0-9][a-z0-9_-]{0,47}$/.test(worldId)) throw new Error('MC_WORLD_ID 必须是安全的存档标识')
   const httpHost = readString(env, 'HTTP_HOST', '127.0.0.1')
   const httpAllowNonLoopback = readBool(env, 'HTTP_ALLOW_NON_LOOPBACK', false)
   if (!httpAllowNonLoopback && !isLoopbackHost(httpHost)) {
@@ -434,67 +468,68 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
   const httpToken = readRequired(env, 'HTTP_TOKEN')
   if (httpToken.length < 16) throw new ConfigError('HTTP_TOKEN must be at least 16 characters')
 
-  const safeZone = {
-    minX: readNumber(env, 'SAFE_MIN_X', 111, -30000000, 30000000),
-    maxX: readNumber(env, 'SAFE_MAX_X', 239, -30000000, 30000000),
-    minZ: readNumber(env, 'SAFE_MIN_Z', 410, -30000000, 30000000),
-    maxZ: readNumber(env, 'SAFE_MAX_Z', 474, -30000000, 30000000)
-  }
-  if (safeZone.minX > safeZone.maxX || safeZone.minZ > safeZone.maxZ) {
+  const baseConfigured = baseLayoutConfigured(env)
+  const safeZone = baseConfigured ? {
+    minX: readNumber(env, 'SAFE_MIN_X', 0, -30000000, 30000000),
+    maxX: readNumber(env, 'SAFE_MAX_X', 0, -30000000, 30000000),
+    minZ: readNumber(env, 'SAFE_MIN_Z', 0, -30000000, 30000000),
+    maxZ: readNumber(env, 'SAFE_MAX_Z', 0, -30000000, 30000000)
+  } : null
+  if (safeZone && (safeZone.minX > safeZone.maxX || safeZone.minZ > safeZone.maxZ)) {
     throw new ConfigError('SAFE_MIN_* must be <= SAFE_MAX_*')
   }
-  const home = {
-    x: readNumber(env, 'BOT_HOME_X', 175.5, -30000000, 30000000),
-    y: readNumber(env, 'BOT_HOME_Y', 64, -256, 512),
-    z: readNumber(env, 'BOT_HOME_Z', 410.5, -30000000, 30000000)
-  }
-  const farm = {
-    minX: readNumber(env, 'FARM_MIN_X', 177, -30000000, 30000000),
-    maxX: readNumber(env, 'FARM_MAX_X', 183, -30000000, 30000000),
-    minZ: readNumber(env, 'FARM_MIN_Z', 432, -30000000, 30000000),
-    maxZ: readNumber(env, 'FARM_MAX_Z', 439, -30000000, 30000000),
-    groundY: readNumber(env, 'FARM_GROUND_Y', 63, -256, 512),
-    cropY: readNumber(env, 'FARM_CROP_Y', 64, -256, 512)
-  }
-  if (farm.minX > farm.maxX || farm.minZ > farm.maxZ) {
+  const home = baseConfigured ? {
+    x: readNumber(env, 'BOT_HOME_X', 0, -30000000, 30000000),
+    y: readNumber(env, 'BOT_HOME_Y', 0, -256, 512),
+    z: readNumber(env, 'BOT_HOME_Z', 0, -30000000, 30000000)
+  } : null
+  const farm = baseConfigured ? {
+    minX: readNumber(env, 'FARM_MIN_X', 0, -30000000, 30000000),
+    maxX: readNumber(env, 'FARM_MAX_X', 0, -30000000, 30000000),
+    minZ: readNumber(env, 'FARM_MIN_Z', 0, -30000000, 30000000),
+    maxZ: readNumber(env, 'FARM_MAX_Z', 0, -30000000, 30000000),
+    groundY: readNumber(env, 'FARM_GROUND_Y', 0, -256, 512),
+    cropY: readNumber(env, 'FARM_CROP_Y', 0, -256, 512)
+  } : null
+  if (farm && (farm.minX > farm.maxX || farm.minZ > farm.maxZ)) {
     throw new ConfigError('FARM_MIN_* must be <= FARM_MAX_*')
   }
-  const chest = {
-    x: readNumber(env, 'CHEST_X', 184, -30000000, 30000000),
-    y: readNumber(env, 'CHEST_Y', 64, -256, 512),
-    z: readNumber(env, 'CHEST_Z', 435, -30000000, 30000000)
-  }
+  const chest = baseConfigured ? {
+    x: readNumber(env, 'CHEST_X', 0, -30000000, 30000000),
+    y: readNumber(env, 'CHEST_Y', 0, -256, 512),
+    z: readNumber(env, 'CHEST_Z', 0, -30000000, 30000000)
+  } : null
   const storageChests = {
     ores: readOptionalPoint(env, 'CHEST_ORES'),
     food: readOptionalPoint(env, 'CHEST_FOOD'),
     saplings: readOptionalPoint(env, 'CHEST_SAPLINGS'),
     misc: readOptionalPoint(env, 'CHEST_MISC')
   }
-  const fishStand = {
-    x: readNumber(env, 'FISH_STAND_X', 204.5, -30000000, 30000000),
-    y: readNumber(env, 'FISH_STAND_Y', 63, -256, 512),
-    z: readNumber(env, 'FISH_STAND_Z', 469.5, -30000000, 30000000)
-  }
-  const fishWater = {
-    x: readNumber(env, 'FISH_WATER_X', 204.5, -30000000, 30000000),
-    y: readNumber(env, 'FISH_WATER_Y', 62.5, -256, 512),
-    z: readNumber(env, 'FISH_WATER_Z', 470.5, -30000000, 30000000)
-  }
-  const treeFarm = {
-    minX: readNumber(env, 'TREE_FARM_MIN_X', 180, -30000000, 30000000),
-    maxX: readNumber(env, 'TREE_FARM_MAX_X', 193, -30000000, 30000000),
-    minZ: readNumber(env, 'TREE_FARM_MIN_Z', 455, -30000000, 30000000),
-    maxZ: readNumber(env, 'TREE_FARM_MAX_Z', 464, -30000000, 30000000),
-    groundY: readNumber(env, 'TREE_FARM_GROUND_Y', 63, -256, 512),
-    logMinY: readNumber(env, 'TREE_FARM_LOG_MIN_Y', 64, -256, 512),
-    maxY: readNumber(env, 'TREE_FARM_MAX_Y', 96, -256, 512),
+  const fishStand = baseConfigured ? {
+    x: readNumber(env, 'FISH_STAND_X', 0, -30000000, 30000000),
+    y: readNumber(env, 'FISH_STAND_Y', 0, -256, 512),
+    z: readNumber(env, 'FISH_STAND_Z', 0, -30000000, 30000000)
+  } : null
+  const fishWater = baseConfigured ? {
+    x: readNumber(env, 'FISH_WATER_X', 0, -30000000, 30000000),
+    y: readNumber(env, 'FISH_WATER_Y', 0, -256, 512),
+    z: readNumber(env, 'FISH_WATER_Z', 0, -30000000, 30000000)
+  } : null
+  const treeFarm = baseConfigured ? {
+    minX: readNumber(env, 'TREE_FARM_MIN_X', 0, -30000000, 30000000),
+    maxX: readNumber(env, 'TREE_FARM_MAX_X', 0, -30000000, 30000000),
+    minZ: readNumber(env, 'TREE_FARM_MIN_Z', 0, -30000000, 30000000),
+    maxZ: readNumber(env, 'TREE_FARM_MAX_Z', 0, -30000000, 30000000),
+    groundY: readNumber(env, 'TREE_FARM_GROUND_Y', 0, -256, 512),
+    logMinY: readNumber(env, 'TREE_FARM_LOG_MIN_Y', 0, -256, 512),
+    maxY: readNumber(env, 'TREE_FARM_MAX_Y', 0, -256, 512),
     logType: readString(env, 'TREE_LOG_TYPE', 'oak_log'),
     saplingType: readString(env, 'TREE_SAPLING_TYPE', 'oak_sapling')
-  }
-  if (treeFarm.minX > treeFarm.maxX || treeFarm.minZ > treeFarm.maxZ) {
+  } : null
+  if (treeFarm && (treeFarm.minX > treeFarm.maxX || treeFarm.minZ > treeFarm.maxZ)) {
     throw new ConfigError('TREE_FARM_MIN_* must be <= TREE_FARM_MAX_*')
   }
-  if (treeFarm.logMinY <= treeFarm.groundY || treeFarm.maxY < treeFarm.logMinY) {
+  if (treeFarm && (treeFarm.logMinY <= treeFarm.groundY || treeFarm.maxY < treeFarm.logMinY)) {
     throw new ConfigError('TREE_FARM_LOG_MIN_Y must be > TREE_FARM_GROUND_Y and <= TREE_FARM_MAX_Y')
   }
   const mining = {
@@ -590,6 +625,7 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     mcVersion,
     mcAuth: 'offline',
     dataDir,
+    worldId,
     httpHost,
     httpPort: readInt(env, 'HTTP_PORT', 3010, 1, 65535),
     httpToken,

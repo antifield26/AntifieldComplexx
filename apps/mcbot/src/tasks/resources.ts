@@ -3,6 +3,7 @@ import type { Block } from 'prismarine-block'
 import { Vec3 } from 'vec3'
 import type { Config } from '../config.ts'
 import { columnsWithinRadius, insideSafeZone, surveyRing } from './navigation.ts'
+import { TaskError } from './types.ts'
 
 export interface ProtectedPoint {
   x: number
@@ -10,12 +11,22 @@ export interface ProtectedPoint {
 }
 
 export function protectedPoints (config: Config): ProtectedPoint[] {
-  return [
-    { x: config.home.x, z: config.home.z },
-    { x: (config.farm.minX + config.farm.maxX) / 2, z: (config.farm.minZ + config.farm.maxZ) / 2 },
-    { x: config.chest.x, z: config.chest.z },
-    { x: (config.treeFarm.minX + config.treeFarm.maxX) / 2, z: (config.treeFarm.minZ + config.treeFarm.maxZ) / 2 }
-  ]
+  const points: ProtectedPoint[] = []
+  if (config.home) points.push({ x: config.home.x, z: config.home.z })
+  if (config.farm) {
+    points.push({
+      x: (config.farm.minX + config.farm.maxX) / 2,
+      z: (config.farm.minZ + config.farm.maxZ) / 2
+    })
+  }
+  if (config.chest) points.push({ x: config.chest.x, z: config.chest.z })
+  if (config.treeFarm) {
+    points.push({
+      x: (config.treeFarm.minX + config.treeFarm.maxX) / 2,
+      z: (config.treeFarm.minZ + config.treeFarm.maxZ) / 2
+    })
+  }
+  return points
 }
 
 export function insideProtected (config: Config, x: number, z: number, radius: number): boolean {
@@ -92,6 +103,7 @@ export function forestSpeciesForLog (config: Config, name: string): string | nul
 }
 
 export function surveyCells (config: Config): Vec3[] {
+  if (!config.home) throw new TaskError('还没有配置基地')
   return surveyRing(config.home, config.scanRadius)
 }
 

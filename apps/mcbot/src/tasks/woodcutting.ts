@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer'
 import { Vec3 } from 'vec3'
 import type { Config } from '../config.ts'
 import { depositProduce, withdrawSupplies } from './deposit.ts'
-import { countItem, emptySlots, equipItem } from './inventory.ts'
+import { countItem, emptySlots, equipItem, freshAxe } from './inventory.ts'
 import {
   isExpired,
   requireBot,
@@ -18,11 +18,12 @@ export interface OakTree {
 }
 
 function isLog (name: string | undefined, config: Config): boolean {
-  return name === config.treeFarm.logType
+  return config.treeFarm !== null && name === config.treeFarm.logType
 }
 
 function inFarm (position: Vec3, config: Config): boolean {
   const farm = config.treeFarm
+  if (!farm) return false
   return position.x >= farm.minX && position.x <= farm.maxX &&
     position.z >= farm.minZ && position.z <= farm.maxZ &&
     position.y >= farm.logMinY && position.y <= farm.maxY
@@ -30,6 +31,7 @@ function inFarm (position: Vec3, config: Config): boolean {
 
 export function scanOakTrees (bot: Bot, config: Config): OakTree[] {
   const farm = config.treeFarm
+  if (!farm) return []
   const seen = new Set<string>()
   const trees: OakTree[] = []
   const key = (position: Vec3): string => `${position.x},${position.y},${position.z}`
@@ -78,13 +80,6 @@ export function scanOakTrees (bot: Bot, config: Config): OakTree[] {
   return trees.sort((a, b) => a.base.distanceTo(origin) - b.base.distanceTo(origin))
 }
 
-function freshAxe (bot: Bot): ReturnType<Bot['inventory']['items']>[number] | null {
-  return bot.inventory.items()
-    .filter(item => item.name === 'iron_axe')
-    .sort((a, b) => ((b.maxDurability ?? 0) - (b.durabilityUsed ?? 0)) - ((a.maxDurability ?? 0) - (a.durabilityUsed ?? 0)))
-    .find(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10) ?? null
-}
-
 async function moveNear (ctx: TaskContext, position: Vec3): Promise<void> {
   if (ctx.signal.aborted) throw new TaskStopError()
   const target = position.offset(0.5, 0, 0.5)
@@ -125,7 +120,9 @@ async function digReachable (ctx: TaskContext, bot: Bot, position: Vec3): Promis
 }
 
 async function plantSapling (ctx: TaskContext, bot: Bot, base: Vec3): Promise<boolean> {
-  const sapling = bot.inventory.items().find(item => item.name === ctx.config.treeFarm.saplingType)
+  const treeFarm = ctx.config.treeFarm
+  if (!treeFarm) throw new TaskError('还没有配置基地')
+  const sapling = bot.inventory.items().find(item => item.name === treeFarm.saplingType)
   if (!sapling) throw new TaskError('没有橡树树苗了，先补货')
   const below = bot.blockAt(base.offset(0, -1, 0), false)
   if (!below || !['dirt', 'grass_block', 'coarse_dirt', 'rooted_dirt'].includes(below.name)) {
@@ -227,10 +224,12 @@ export async function runWoodcutting (ctx: TaskContext): Promise<void> {
 
 export async function withdrawWoodcuttingSupplies (ctx: TaskContext): Promise<void> {
   const bot = requireBot(ctx)
-  const saplingCount = countItem(bot, ctx.config.treeFarm.saplingType)
+  const treeFarm = ctx.config.treeFarm
+  if (!treeFarm) throw new TaskError('还没有配置基地')
+  const saplingCount = countItem(bot, treeFarm.saplingType)
   const axes = bot.inventory.items().filter(item => item.name === 'iron_axe')
   await withdrawSupplies(ctx, [
     { name: 'iron_axe', count: Math.max(2, axes.length + 1) },
-    { name: ctx.config.treeFarm.saplingType, count: Math.max(16, saplingCount + 8) }
+    { name: treeFarm.saplingType, count: Math.max(16, saplingCount + 8) }
   ])
 }

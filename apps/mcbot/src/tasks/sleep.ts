@@ -5,8 +5,7 @@ import type { Config } from '../config.ts'
 import { requireBot, sleep, TaskStopError, type TaskContext } from './types.ts'
 
 function isNightOrStorm (bot: Bot, serverTicks: number | null): boolean {
-  // Prefer the server's RCON `time` value when available. Mineflayer's
-  // timeOfDay can be offset on some Paper versions.
+  // 优先使用服务端 RCON 的 time。mineflayer 的 timeOfDay 在部分服务端上可能偏移。
   const time = serverTicks ?? bot.time?.timeOfDay ?? 0
   const thunder = typeof bot.thunderState === 'number' ? bot.thunderState : 0
   const night = time >= 12500 && time <= 23000
@@ -20,12 +19,14 @@ function isBed (name: string | undefined): boolean {
 export function findBedNear (bot: Bot, config: Config): Block | null {
   const position = bot.entity?.position
   if (!position) return null
+  const home = config.home
+  if (!home) return null
   const radius = Math.floor(config.sleep.bedSearchRadius)
   // Search around home, not the bot's transient position (it may still be at
   // the chest after final deposit).
-  const centerX = Math.floor(config.home.x)
-  const centerY = Math.floor(config.home.y)
-  const centerZ = Math.floor(config.home.z)
+  const centerX = Math.floor(home.x)
+  const centerY = Math.floor(home.y)
+  const centerZ = Math.floor(home.z)
   const beds: Block[] = []
   for (let dx = -radius; dx <= radius; dx++) {
     for (let dz = -radius; dz <= radius; dz++) {
@@ -45,9 +46,7 @@ export function findBedNear (bot: Bot, config: Config): Block | null {
 }
 
 /**
- * Vote2Sleep integration. The bot right-clicks a nearby bed to cast its vote;
- * the plugin (minimum 1 player, 40% threshold) skips the night. If the night
- * is not skipped, the task ends normally rather than failing.
+ * 右键家附近的床。没有床、互动失败或夜晚没有被跳过时，任务正常结束。
  */
 async function currentTicks (ctx: TaskContext): Promise<number | null> {
   if (ctx.serverTimeTicks) {

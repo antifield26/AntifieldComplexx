@@ -4,6 +4,9 @@
 
 ## 2026-11-20
 
+- **v1.3.0 候选** · mcbot、dsh、workbench、client：自然语言生存协作、按游戏证据核对物资交付、Fabric 刻率指标及全端几何徽记。
+
+- **未发布** · mcbot：未填写基地坐标时不再回退到已归档世界。聊天记忆按 version 2 保存。
 - **未发布** · ops：生产 Minecraft 为 Fabric 26.1.2，服务目录、隧道和世界备份仍用原配置。
 
 ## 2026-11-19
@@ -12,7 +15,7 @@
 
 ## 2026-11-18
 
-- **v1.2.5** · workbench、client、dsh、ops：DSH 注册 QQ 设置分页，主站管理独立绑定。核对实际发布副本，修复世界拉取时序并记录真实解包证据。个人生产验收状态见 [ACCEPTANCE](ACCEPTANCE.md)。
+- **v1.2.5** · workbench、client、dsh、docs、ops：DSH 注册 QQ 设置分页，主站管理独立绑定。核对实际发布副本，修复世界拉取时序并记录真实解包证据。工程指令分层，现行文档只保留当前契约与操作。个人生产验收状态见 [ACCEPTANCE](ACCEPTANCE.md)。
 
 ## 2026-11-16
 

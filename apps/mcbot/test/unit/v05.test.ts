@@ -61,10 +61,10 @@ test('v0.5 admin tps/list/whitelist parsing', () => {
 })
 
 test('v0.5 RCON only accepts the three read-only commands', async () => {
-  assert.equal(isReadOnlyCommand('tps'), true)
+  assert.equal(isReadOnlyCommand('tick query'), true)
   assert.equal(isReadOnlyCommand('list'), true)
   assert.equal(isReadOnlyCommand('whitelist list'), true)
-  assert.equal(isReadOnlyCommand('time'), true)
+  assert.equal(isReadOnlyCommand('time query daytime'), true)
   assert.equal(isReadOnlyCommand('op Antifield'), false)
   const client = new RconClient({ host: '127.0.0.1', port: 25575, password: 'secret', timeoutMs: 200 })
   await assert.rejects(() => client.command('stop'), RconError)
@@ -79,16 +79,17 @@ test('v0.5 admin service fills the state snapshot from a read-only source', asyn
     state,
     client: {
       command: async command => {
-        if (command === 'tps') return 'TPS from last 1m, 5m, 15m: 20.0, 19.8, 19.5'
+        if (command === 'tick query') return 'Target tick rate: 20.0 per second.\nAverage time per tick: 14.5ms (Target: 50.0ms)'
         if (command === 'list') return 'There are 1 of a max of 6 players online: lofii'
-        if (command === 'time') return 'world time is 02:14 (20247 ticks)'
+        if (command === 'time query daytime') return 'world time is 02:14 (20247 ticks)'
         return 'There are 2 whitelisted player(s): Antifield, lofii'
       }
     }
   })
   await service.refresh()
   assert.equal(state.admin.rcon, true)
-  assert.deepEqual(state.admin.tps, { one: 20, five: 19.8, fifteen: 19.5 })
+  assert.deepEqual(state.admin.tick, { targetRate: 20, averageMs: 14.5 })
+  assert.deepEqual(state.admin.tps, { one: null, five: null, fifteen: null })
   assert.equal(state.admin.online.count, 1)
   assert.equal(state.admin.whitelist.count, 2)
   assert.equal(state.admin.backup.status, 'unknown')

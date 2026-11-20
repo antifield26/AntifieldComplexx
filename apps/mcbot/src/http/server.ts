@@ -491,6 +491,7 @@ export class HttpApi {
   private async handleEmergencyStop (res: ServerResponse): Promise<void> {
     const failures: string[] = []
     const task = this.deps.state.task
+    const adminStop = this.deps.adminChat?.stop()
     try {
       if (this.deps.autonomy?.isActive()) await this.deps.autonomy.stop('emergency')
     } catch {
@@ -504,7 +505,7 @@ export class HttpApi {
       failures.push('task')
     }
     try {
-      if (this.deps.adminChat) await this.deps.adminChat.stop()
+      await adminStop
     } catch {
       failures.push('admin')
     }

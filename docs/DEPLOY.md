@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.2.6）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.3.0）
 
 操作按本文件执行。涉及系统状态时先核对任务授权、备份和回滚条件，在已有授权内逐项执行并记录结果。公开仓库里的域名、地址和网段都是占位值，安装前按 `.local/DEPLOYMENT.md` 替换。该文件不提交。
 
@@ -163,7 +163,7 @@ npm run check
 
 ### 3.0 当前部署步骤
 
-1. PC 执行 `npm run check`、`npm run build`、`node scripts/check-version.mjs` 与 `node scripts/check-prod-deps.mjs`；期望版本从 tool-versions 读取，当前应用/mcbot 1.2.6、schema 22、契约 2、DSH 0.2.2-rc.3、QQ 插件 0.5.5。
+1. PC 执行 `npm run check`、`npm run build`、`node scripts/check-version.mjs` 与 `node scripts/check-prod-deps.mjs`；期望版本从 tool-versions 读取。切换 mcbot 候选时，同步部署匹配的 DSH 工具契约与会话步骤清单。
 2. 核对 pending、磁盘、配置与运行指针，保存当前 schema 22 的一致性快照。用于 v1.2.3 回退的 schema 21 快照另行保留，不能用当前快照覆盖。
 3. 执行 `.\scripts\deploy.ps1 -PiHost <直连IP>`；核对包清单/SHA、目标依赖、快照、版本/schema/运行时就绪。跨 schema 失败转人工维护，同 schema 回滚保留现行库。
 4. Bot 空闲后切换 mcbot，核对 healthz 与契约 v2；Minecraft 保持运行。DSH 各服务分别验收。

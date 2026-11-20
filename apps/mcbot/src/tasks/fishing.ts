@@ -5,6 +5,7 @@ import { countFish, eatIfNeeded, emptySlots, equipItem } from './inventory.ts'
 import {
   isExpired,
   requireBot,
+  requireLayout,
   sleep,
   stopSignal,
   TaskError,
@@ -42,7 +43,8 @@ async function equipRod (ctx: TaskContext, bot: Bot): Promise<void> {
 }
 
 async function faceWater (ctx: TaskContext, bot: Bot): Promise<void> {
-  const water = new Vec3(ctx.config.fishWater.x, ctx.config.fishWater.y, ctx.config.fishWater.z)
+  const point = requireLayout(ctx.config).fishWater
+  const water = new Vec3(point.x, point.y, point.z)
   let block = bot.blockAt(water, false)
   if (block?.name !== 'water') {
     try {
@@ -118,8 +120,9 @@ async function collectDrops (ctx: TaskContext, bot: Bot): Promise<void> {
 
 export async function runFishing (ctx: TaskContext): Promise<void> {
   const bot = requireBot(ctx)
-  if (bot.entity && bot.entity.position.distanceTo(new Vec3(ctx.config.fishStand.x, ctx.config.fishStand.y, ctx.config.fishStand.z)) > 1.5) {
-    await ctx.movement.teleportTo(ctx.config.fishStand.x, ctx.config.fishStand.y, ctx.config.fishStand.z)
+  const stand = requireLayout(ctx.config).fishStand
+  if (bot.entity && bot.entity.position.distanceTo(new Vec3(stand.x, stand.y, stand.z)) > 1.5) {
+    await ctx.movement.teleportTo(stand.x, stand.y, stand.z)
   }
   await equipRod(ctx, bot)
   let castTimeouts = 0

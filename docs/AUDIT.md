@@ -19,7 +19,7 @@
 
 | 文档声明 | 代码 | 状态 |
 |---|---|---|
-| 自主工具 13 个，权限前缀 `mcbot_autonomy_` | `apps/mcbot/src/autonomy/tools.ts` 的 `AUTONOMY_RAW_TOOLS` | 一致 |
+| 自主工具 14 个，权限前缀 `mcbot_autonomy_` | `apps/mcbot/src/autonomy/tools.ts` 的 `AUTONOMY_RAW_TOOLS` | 一致 |
 | 任务白名单 11 个，含 `clearing` | `AUTONOMY_TASK_NAMES` | 一致 |
 | 提示词上下文段 `READ_ONLY_AI_TOOL_NAMES` | `apps/mcbot/src/ai/tools.ts` | 一致 |
 | 环境键与 `PATH_*` 九键同时出现在 env 模板、bootstrap 与 API | `apps/mcbot/deploy/env.example`、`bootstrap-env.sh`、`docs/API.md` | 一致 |

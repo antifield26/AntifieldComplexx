@@ -35,7 +35,8 @@ import {
   type AutonomyToolName,
   toolDisplayName
 } from './tools.ts'
-import { formatWorldMemoryIndex, WorldMemoryError, type WorldMemoryStore, sharedWorldMemory, memoryDimension } from './world-memory.ts'
+import { formatWorldMemoryIndex, WorldMemoryError, type WorldMemoryStore, sharedWorldMemory, memoryDimension, worldMemoryDir } from './world-memory.ts'
+import { Expedition } from './expedition.ts'
 
 const FINISH_GRACE_MS = 5000
 const MAX_REASON_CHARS = 120
@@ -162,6 +163,7 @@ export class AutonomyService {
   private readonly deps: AutonomyServiceDeps
   private readonly logger: Logger
   private readonly worldMemory: WorldMemoryStore
+  readonly expedition: Expedition
   private run: ActiveRun | null = null
   private admin: ActiveRun | null = null
   private mcpCleanupRequired = true
@@ -171,7 +173,8 @@ export class AutonomyService {
   constructor (deps: AutonomyServiceDeps) {
     this.deps = deps
     this.logger = deps.logger
-    this.worldMemory = deps.worldMemory ?? sharedWorldMemory(deps.config.dataDir, undefined, deps.logger)
+    this.worldMemory = deps.worldMemory ?? sharedWorldMemory(worldMemoryDir(deps.config.dataDir, deps.config.worldId), undefined, deps.logger)
+    this.expedition = new Expedition(deps.config, deps.movement, deps.getBot)
   }
 
   get enabled (): boolean {
@@ -183,11 +186,11 @@ export class AutonomyService {
   }
 
   isBusy (): boolean {
-    return this.isActive() || Boolean(this.dshCleanupId || this.dshCleanupPending)
+    return this.isActive() || this.expedition.isBusy() || Boolean(this.dshCleanupId || this.dshCleanupPending)
   }
 
   keepOnline (): boolean {
-    return this.isActive()
+    return this.isActive() || this.expedition.isBusy()
   }
 
   snapshot (): AutonomySnapshot {
@@ -407,6 +410,7 @@ export class AutonomyService {
   }
 
   interrupt (reason: string): void {
+    void this.stopAdmin(reason).catch(() => this.logger.warn('管理员动作撤权失败'))
     void this.stop(reason).catch(error => {
       this.logger.warn('autonomy stop failed', { error: error instanceof Error ? error.message : String(error) })
     })
@@ -426,23 +430,23 @@ export class AutonomyService {
 
   /** 打开或复用管理员工具会话。不启动游戏内自主循环。 */
   async ensureAdmin (): Promise<{ ok: true, runId: string } | { ok: false, code: string }> {
+    if (this.admin && Date.now() >= this.admin.deadline) await this.stopAdmin('deadline')
     if (this.admin?.active && !this.admin.stopRequested && this.admin.sessionId) {
       return { ok: true, runId: this.admin.runId }
     }
+    if (this.admin || this.isBusy()) return { ok: false, code: 'admin_busy' }
     const client = this.deps.opencode
     if (!client || !('openAdmin' in client) || !this.deps.config.aiEnabled) return { ok: false, code: 'admin_unavailable' }
     const run = this.blankRun('管理员对话')
     this.admin = run
     try {
-      run.sessionId = await client.openAdmin(run.token, buildToolDefinitions(), this.adminPrompt(run))
-      if (run.stopRequested) {
-        await this.stopAdmin('stopped')
-        return { ok: false, code: 'admin_unavailable' }
-      }
+      run.startup = client.openAdmin(run.token, buildToolDefinitions(), this.adminPrompt(run)).then(id => { run.sessionId = id })
+      await run.startup
+      if (run.stopRequested) return { ok: false, code: 'admin_unavailable' }
       run.state = 'running'
       return { ok: true, runId: run.runId }
     } catch (error) {
-      this.admin = null
+      if (this.admin === run && !run.stopRequested) this.admin = null
       const code = error instanceof OpenCodeSessionError && error.status === 409 ? 'admin_busy' : 'admin_unavailable'
       return { ok: false, code }
     }
@@ -454,7 +458,9 @@ export class AutonomyService {
     if (!client || !run?.active || !run.sessionId || !('promptAdmin' in client)) {
       throw new OpenCodeSessionError('invalid', 'admin session is not active')
     }
-    await client.promptAdmin(run.sessionId, text)
+    run.toolCalls = 0
+    run.failures = 0
+    await client.promptAdmin(run.sessionId, text, run.abort.signal)
   }
 
   async waitAdmin (): Promise<{ text: string, steps: SessionStep[] }> {
@@ -463,23 +469,29 @@ export class AutonomyService {
     if (!client || !run?.active || !run.sessionId || !('waitAdmin' in client)) {
       throw new OpenCodeSessionError('invalid', 'admin session is not active')
     }
-    return client.waitAdmin(run.sessionId)
+    return client.waitAdmin(run.sessionId, run.abort.signal)
   }
 
   async stopAdmin (reason: string): Promise<void> {
     const run = this.admin
     if (!run) return
+    if (run.finalizing) return await run.finalizing
     run.stopRequested = true
     run.abort.abort()
-    const client = this.deps.opencode
-    if (client && run.sessionId && 'stopAdmin' in client) {
-      try {
-        await client.stopAdmin(run.sessionId)
-      } catch {
-        this.logger.warn('管理员会话关闭失败')
+    this.expedition.revoke(run.runId)
+    run.finalizing = (async () => {
+      await run.startup?.catch(() => undefined)
+      const client = this.deps.opencode
+      if (client && run.sessionId && 'stopAdmin' in client) {
+        try {
+          await client.stopAdmin(run.sessionId)
+        } catch {
+          this.logger.warn('管理员会话关闭失败')
+        }
       }
-    }
-    if (this.admin === run) this.admin = null
+      if (this.admin === run) this.admin = null
+    })()
+    await run.finalizing
     this.deps.audit.append({
       event: 'admin.stop',
       source: 'admin',
@@ -532,7 +544,11 @@ export class AutonomyService {
     return [
       '你是 Minecraft 管理员的助手。按主人这句话决定是否行动。',
       `当前 run_id：${run.runId}`,
-      '任务名只能是现有白名单。需要规划时可以使用 get_goal、create_goal、update_goal 和 todo_write。',
+      '主人明确委托物资时，用 expedition 的 goal 登记物品和数量，先查 status 与背包，根据条件找野外资源、合成、冶炼或使用共享箱，以 deliver 的已核实数量为准。暂停目标只能经主人明确要求 resume 或 abandon。',
+      '跟随主人用 expedition 的 follow。遇险减速停留，跟丢后报告最后位置。使用 scan 与 walk 逐步扩大范围。权限受阻就如实报告。',
+      '优先通过游戏行为取得资源。卡住时 expedition 的 give 仅发起申请；逐字告知主人确认编号和物品数量。首次看到许可成功后的消息，用 status 核对，再继续交付。',
+      '世界知识只依据观测与主人教学。主人要求记住称呼、偏好或已经确认的地标时，使用 memory_write。共享箱由主人在游戏内指定。',
+      '没有可靠证据就说尚未完成。任务名只能是现有白名单。规划可以使用 get_goal、create_goal、update_goal 和 todo_write。',
       '世界动作只用已注册的 mcbot 工具，并把当前 run_id 原样放进 run_id。',
       '不要使用 shell、文件或网络工具，也不要把主人的话发进游戏聊天。',
       '主人没有要求行动时只回答，不调用世界工具。'
@@ -741,6 +757,7 @@ export class AutonomyService {
       run.decisionWaiter?.resolve(null)
       run.decisionWaiter = null
       run.abort.abort()
+      this.expedition.revoke(run.runId)
       this.publish()
       try {
         this.deps.movement.stop('autonomy')
@@ -931,7 +948,31 @@ export class AutonomyService {
     this.publish()
 
     try {
+      if (this.expedition.isBusy() && !['observe', 'task_status', 'memory_read'].includes(name)) {
+        return fail('tool_busy', '生存协作动作正在执行')
+      }
       switch (name) {
+        case 'expedition': {
+          if (!['status', 'goal', 'scan', 'resume', 'abandon'].includes(String(args.operation))) {
+            this.assertIdle()
+            if (this.deps.goalBusy?.() || this.deps.movement.isBusy() || this.admin?.actionInFlight || this.run?.actionInFlight) {
+              return fail('action_busy', '另一个动作正在执行')
+            }
+          }
+          if (run === this.admin && this.isActive() || run === this.run && this.adminActive()) {
+            return fail('action_busy', '另一个模型会话正在使用 Bot')
+          }
+          const deadline = AbortSignal.timeout(Math.max(1, run.deadline - Date.now()))
+          const result = await this.expedition.execute(run.runId, AbortSignal.any([run.abort.signal, deadline]), args)
+          if (result.status === 'approval_required' && !run.stopRequested) {
+            void this.deps.chatSender.say(
+              `申请生成 ${result.quantity} 个 ${result.item} 给 ${result.recipient}。原因：${reason}。一分钟内回复 确认 ${result.approvalCode}。`,
+              'companion'
+            ).catch(() => undefined)
+          }
+          this.auditTool(run, name, String(args.operation), reason)
+          return { content: [{ type: 'text', text: JSON.stringify(result) }], isError: result.ok !== true }
+        }
         case 'start_task': {
           const taskName = typeof args.task === 'string' ? args.task : ''
           if (!isTaskName(taskName)) return fail('invalid_task', 'task is not allowed')
@@ -1091,7 +1132,7 @@ export class AutonomyService {
     const dimension = bot.game?.dimension ?? 'minecraft:overworld'
     return memoryDimension(dimension) === 'overworld'
       ? this.worldMemory
-      : sharedWorldMemory(this.deps.config.dataDir, dimension, this.logger)
+      : sharedWorldMemory(worldMemoryDir(this.deps.config.dataDir, this.deps.config.worldId), dimension, this.logger)
   }
 
   private assertIdle (): void {

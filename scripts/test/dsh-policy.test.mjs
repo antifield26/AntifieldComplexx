@@ -87,7 +87,7 @@ test('QQ 只导入可验证归属的角色和记忆，清除使当前候选失�
   }
 })
 
-test('dsh-mcbot 仅注册原有 13 个工具并拒绝重放到另一个会话', async () => {
+test('dsh-mcbot 仅注册原有 14 个工具并拒绝重放到另一个会话', async () => {
   const binding = validateBinding({
     socketPath: join(tmpdir(), 'dsh-tool-test.sock'),
     sessionId: 'session-test1234', bearer: 'example-binding-credential-12345',
@@ -99,7 +99,7 @@ test('dsh-mcbot 仅注册原有 13 个工具并拒绝重放到另一个会话', 
     register: (definition, options) => definitions.set(definition.name, { definition, options }),
     guard: (handler) => { guard = handler },
   }, binding, (_binding, name) => name)
-  assert.equal(definitions.size, 13)
+  assert.equal(definitions.size, 14)
   const name = 'mcbot_autonomy_observe'
   const { definition, options } = definitions.get(name)
   const agent = { session: { id: binding.sessionId } }

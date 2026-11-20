@@ -1,6 +1,6 @@
 /**
  * 管理员对话的内存时间线步骤。
- * 只接受用户/助手正文、13 个 mcbot 工具、goal 与 todo。
+ * 只接受用户/助手正文、已声明的 mcbot 工具、goal 与 todo。
  * 非法步骤丢弃。最多 80 步，steps JSON 不超过 24 KiB，并与正文一起放进 64 KiB。
  */
 import { AUTONOMY_RAW_TOOLS } from '../autonomy/tools.ts'

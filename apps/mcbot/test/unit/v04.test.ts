@@ -52,8 +52,8 @@ test('v1.0.10 config accepts a tree farm outside the old rectangle', () => {
     TREE_FARM_MIN_X: '500',
     TREE_FARM_MAX_X: '510'
   }), '0.4.0')
-  assert.equal(config.treeFarm.minX, 500)
-  assert.equal(config.treeFarm.maxX, 510)
+  assert.equal(config.treeFarm?.minX, 500)
+  assert.equal(config.treeFarm?.maxX, 510)
   assert.throws(() => loadConfig(baseEnv({
     TREE_FARM_MIN_X: '510',
     TREE_FARM_MAX_X: '500'

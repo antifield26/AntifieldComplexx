@@ -123,6 +123,7 @@ export interface MinecraftStatus {
   motd: string | null
   players: PlayersInfo
   tps: TpsInfo | null
+  tick?: { targetRate: number; averageMs: number } | null
   whitelistCount: number | null
   serviceActive: ServiceState
   publicAddress: string | null
@@ -1137,6 +1138,7 @@ export interface McbotAdmin {
   updatedAt: string | null
   lastError: string | null
   tps: { one: number | null; five: number | null; fifteen: number | null }
+  tick?: { targetRate: number; averageMs: number } | null
   online: { count: number | null; max: number | null; players: string[] }
   whitelist: { count: number | null; names: string[] }
   time: { ticks: number | null; label: string | null }

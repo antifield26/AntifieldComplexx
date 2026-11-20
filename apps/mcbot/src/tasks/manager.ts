@@ -27,6 +27,7 @@ import { chooseFoodReflex, droppedItemName, FOOD_PICKUP_RADIUS } from './food-re
 import { TaskStore, type PersistedQueueTask, type PersistedTask } from './store.ts'
 import {
   requireBot,
+  requireLayout,
   TaskError,
   TaskStopError,
   type TaskContext,
@@ -643,18 +644,19 @@ export class TaskManager implements TaskController {
   }
 
   private async ensureAtAnchor (active: ActiveTask): Promise<void> {
-    const { config, movement } = this.deps
+    const { movement } = this.deps
+    const layout = requireLayout(this.deps.config)
     const bot = requireBot(this.context(active))
     if (active.name === 'fishing') {
-      if (config.taskAnchorTeleport) {
-        await movement.teleportTo(config.fishStand.x, config.fishStand.y, config.fishStand.z)
+      if (this.deps.config.taskAnchorTeleport) {
+        await movement.teleportTo(layout.fishStand.x, layout.fishStand.y, layout.fishStand.z)
       } else {
-        await movement.goNearPoint(config.fishStand.x, config.fishStand.y, config.fishStand.z, 2, 15000, true)
+        await movement.goNearPoint(layout.fishStand.x, layout.fishStand.y, layout.fishStand.z, 2, 15000, true)
       }
       return
     }
     if (active.name === 'woodcutting') {
-      const farm = config.treeFarm
+      const farm = layout.treeFarm
       const position = bot.entity.position
       if (active.goalExecutionId &&
         position.x >= farm.minX && position.x < farm.maxX + 1 &&
@@ -665,35 +667,35 @@ export class TaskManager implements TaskController {
       }
       const centerX = (farm.minX + farm.maxX) / 2
       const centerZ = (farm.minZ + farm.maxZ) / 2
-      if (config.taskAnchorTeleport) {
-        await movement.teleportNearPoint(centerX, config.treeFarm.logMinY, centerZ, 5)
+      if (this.deps.config.taskAnchorTeleport) {
+        await movement.teleportNearPoint(centerX, farm.logMinY, centerZ, 5)
       } else {
-        await movement.goNearPoint(centerX, config.treeFarm.logMinY, centerZ, 4, 15000, true)
+        await movement.goNearPoint(centerX, farm.logMinY, centerZ, 4, 15000, true)
       }
       return
     }
     if (active.name === 'mining' || active.name === 'forest' || active.name === 'sleep' || active.name === 'patrol' ||
       active.name === 'guard' || active.name === 'escort' || active.name === 'explore') {
       if (bot.entity && Math.hypot(
-        bot.entity.position.x - config.home.x,
-        bot.entity.position.y - config.home.y,
-        bot.entity.position.z - config.home.z
+        bot.entity.position.x - layout.home.x,
+        bot.entity.position.y - layout.home.y,
+        bot.entity.position.z - layout.home.z
       ) <= 8) return
-      if (config.taskAnchorTeleport) {
-        await movement.teleportNearPoint(config.home.x, config.home.y, config.home.z, 4)
+      if (this.deps.config.taskAnchorTeleport) {
+        await movement.teleportNearPoint(layout.home.x, layout.home.y, layout.home.z, 4)
       } else {
-        await movement.goNearPoint(config.home.x, config.home.y, config.home.z, 3, 15000, true)
+        await movement.goNearPoint(layout.home.x, layout.home.y, layout.home.z, 3, 15000, true)
       }
       return
     }
     if (bot.entity) {
-      const nearChest = Math.hypot(bot.entity.position.x - config.chest.x, bot.entity.position.z - config.chest.z) <= 5
+      const nearChest = Math.hypot(bot.entity.position.x - layout.chest.x, bot.entity.position.z - layout.chest.z) <= 5
       if (nearChest) return
     }
-    if (config.taskAnchorTeleport) {
-      await movement.teleportNearPoint(config.chest.x, config.chest.y, config.chest.z, 4)
+    if (this.deps.config.taskAnchorTeleport) {
+      await movement.teleportNearPoint(layout.chest.x, layout.chest.y, layout.chest.z, 4)
     } else {
-      await movement.goNearPoint(config.chest.x, config.chest.y, config.chest.z, 3, 15000, true)
+      await movement.goNearPoint(layout.chest.x, layout.chest.y, layout.chest.z, 3, 15000, true)
     }
   }
 
@@ -740,12 +742,14 @@ export class TaskManager implements TaskController {
     } else if (active.name === 'sleep') {
       requests = []
     } else {
+      const treeFarm = this.deps.config.treeFarm
+      if (!treeFarm) throw new TaskError('还没有配置基地')
       const axes = bot.inventory.items().filter(item => item.name === 'iron_axe')
       const hasFreshAxe = axes.some(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10)
-      const saplings = countItem(bot, this.deps.config.treeFarm.saplingType)
+      const saplings = countItem(bot, treeFarm.saplingType)
       requests = [
         { name: 'iron_axe', count: Math.max(2, axes.length + 1) },
-        { name: this.deps.config.treeFarm.saplingType, count: 16 },
+        { name: treeFarm.saplingType, count: 16 },
         { name: 'food', count: 4 }
       ]
       const missing = !hasFreshAxe || saplings < 8 || countFood(bot) < 4
@@ -784,7 +788,9 @@ export class TaskManager implements TaskController {
       if (!axes.some(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10)) {
         throw new TaskError('铁斧快坏了，箱子里没有备用斧')
       }
-      if (countItem(fresh, this.deps.config.treeFarm.saplingType) === 0) {
+      const treeFarm = this.deps.config.treeFarm
+      if (!treeFarm) throw new TaskError('还没有配置基地')
+      if (countItem(fresh, treeFarm.saplingType) === 0) {
         throw new TaskError('箱子里没有橡树树苗')
       }
     }
@@ -1102,6 +1108,7 @@ export class TaskManager implements TaskController {
     if (!config.autoRestock || this.restocking || this.stopped || this.active || this.pending || this.queue.length > 0) return
     const bot = this.deps.getBot()
     if (!bot?.entity || !bot.inventory) return
+    if (!(config.storageChests.food ?? config.chest) && !(config.storageChests.misc ?? config.chest)) return
     const freshTool = (name: string): boolean => bot.inventory.items().some(item =>
       item.name === name && ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10
     )

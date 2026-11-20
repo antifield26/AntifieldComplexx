@@ -1,6 +1,6 @@
 # 验收状态
 
-当前版本 v1.2.6，已部署至生产树莓派与本机 Windows。Workbench schema 22，mcbot 契约 v2，DSH 0.2.2-rc.3，QQ 插件 0.5.5。正式发布与版本沿革见 [CHANGELOG](../CHANGELOG.md)。
+当前版本 v1.3.0 候选，隔离 Fabric 与签名安装包验收待完成。生产树莓派与本机 Windows 使用 v1.2.6。Workbench schema 22，mcbot 契约 v2，DSH 0.2.2-rc.3，QQ 插件 0.5.5。正式发布与版本沿革见 [CHANGELOG](../CHANGELOG.md)。
 
 ## 当前运行资产
 
@@ -13,6 +13,13 @@
 | 正式发布 | 最新正式 Tag 为 `v1.2.6`，指向 `8d7c1877005d07be295a1bba364e4f00452256aa`。2026-11-20 08:51（北京时间）发布，两个客户端附件和 SHA-256 清单均已从 GitHub 下载核验。客户端产物来自 `a22b9a7`，至发布标签仅追加恢复脚本和回归测试变更。[GitHub Release](https://github.com/antifield26/AntifieldComplexx/releases/tag/v1.2.6) |
 
 ## 验证结果与缺口
+
+| v1.3.0 候选范围 | 环境与观测 |
+|---|---|
+| 游戏执行器 | 2026-11-20，Pi 隔离 Fabric 26.1.2，Loader 0.20.1，匹配生产模组。两个测试账号分别验证共享箱取出和主人拾取 8 个铁锭。另验证同维度会合与跟丢、扫描与采矿入包、真实冶炼、逐次许可及重放拒绝。测试进程最高一次观测 RSS 221 MiB。 |
+| Fabric 刻率 | 隔离 Fabric 控制台返回目标 20.0 刻/秒与平均每刻耗时。RCON 通路由离线夹具验证。 |
+| 模型 | Pi ARM64 固定 DSH 包完成占位凭据的进程级工具注册与隔离 smoke。真实 DeepSeek 自然语言决策需独立候选凭据，仍待验。 |
+| 本机原生构建 | Windows x64 NSIS 安装包已生成，SHA-256 `e3031e61ac5bcdb0f948674044fa35982cfee9bb9da47224d062e71a01b05aaa`。Android ARM64 未签名 APK 已生成，SHA-256 `a902f88edd2283c73bcbc31999323da5879a3f0b9ab1bbb58bb3af6df0c30e07`。签名与原位安装待验。 |
 
 | 范围 | 状态 | 证据 |
 |---|---|---|

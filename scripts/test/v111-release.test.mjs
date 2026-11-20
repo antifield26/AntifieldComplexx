@@ -162,3 +162,28 @@ test('密钥包收录维度侧文件，历史清单缺字段仅在文件未产�
   writeFileSync(join(directory, 'world-memory.nether.json'), raw.replace('coal', 'iron'))
   await assert.rejects(verifyMcbotState(directory), /invalid_mcbot_archive_entry/)
 })
+
+test('存档侧目标及待核对转移进入密钥包，篡改会使恢复校验失败', async t => {
+  const dir = temporary(t)
+  const source = join(dir, 'goals.db')
+  const store = new GoalStore(source)
+  store.init()
+  store.close()
+  const world = join(dir, 'worlds', 'fabric')
+  mkdirSync(world, { recursive: true })
+  writeFileSync(join(world, 'target.json'), JSON.stringify({ item: 'iron_ingot', quantity: 8, delivered: 3, dimension: 'overworld' }))
+  const transfer = { run: 'fixture', operation: 'deliver', item: 'iron_ingot', quantity: 1 }
+  writeFileSync(join(world, 'transfer.json'), JSON.stringify(transfer))
+  const destination = join(dir, 'capture')
+  const files = await captureMcbotState(destination, {
+    'goals.db': source, 'task-state.json': join(dir, 'absent-task'), 'world-memory.json': join(dir, 'world-memory.json')
+  }, { id: 'fabric', data: dir })
+  assert.equal(files['worlds/fabric/target.json'].status, 'included')
+  const restored = await verifyMcbotState(destination)
+  assert.equal(restored.world['target.json'].pendingTarget, true)
+  assert.equal(restored.world['transfer.json'].pendingTransfer, true)
+  writeFileSync(join(destination, 'worlds', 'fabric', 'transfer.json'), JSON.stringify({ ...transfer, quantity: 2 }))
+  await assert.rejects(verifyMcbotState(destination), /invalid_mcbot_world_entry/)
+  writeFileSync(join(destination, 'worlds', 'fabric', 'transfer.json'), JSON.stringify(transfer))
+  await verifyMcbotState(destination, { restore: true })
+})

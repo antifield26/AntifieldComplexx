@@ -9,7 +9,7 @@ import { Vec3 } from 'vec3'
 import type { AuditLogger } from '../../src/audit.ts'
 import type { AutonomySessionClient, SessionPermission } from '../../src/ai/session.ts'
 import { AutonomyService } from '../../src/autonomy/service.ts'
-import { sharedWorldMemory } from '../../src/autonomy/world-memory.ts'
+import { sharedWorldMemory, worldMemoryDir } from '../../src/autonomy/world-memory.ts'
 import { EventBus } from '../../src/events/bus.ts'
 import type { ChatSender } from '../../src/minecraft/chat.ts'
 import type { MovementManager } from '../../src/minecraft/movement.ts'
@@ -223,8 +223,8 @@ test('记忆工具只读取当前维度，断线时不回退主世界', async ()
   const disconnected = { value: false }
   const f = fixture({ DATA_DIR: dir }, disconnected)
   try {
-    await sharedWorldMemory(dir).write('note', 'scope', '主世界记录')
-    await sharedWorldMemory(dir, 'nether').write('note', 'scope', '下界记录')
+    await sharedWorldMemory(worldMemoryDir(dir, 'current')).write('note', 'scope', '主世界记录')
+    await sharedWorldMemory(worldMemoryDir(dir, 'current'), 'nether').write('note', 'scope', '下界记录')
     f.bot.game.dimension = 'the_nether'
     const { runId, token } = await startRun(f)
     const args = { run_id: runId, category: 'note', key: 'scope' }
@@ -246,7 +246,7 @@ test('v1.0.3 exposes observe and guarded action tools', async () => {
   const list = await f.service.handleMcpHttp(token, { jsonrpc: '2.0', id: 1, method: 'tools/list' })
   const body = list.body as { result: { tools: Array<{ name: string }> } }
   const names = body.result.tools.map(tool => tool.name)
-  assert.deepEqual(names, ['start_task', 'stop_task', 'go_home', 'deposit', 'task_status', 'observe', 'inspect_chest', 'eat', 'equip', 'finish', 'memory_read', 'memory_write', 'memory_forget'])
+  assert.deepEqual(names, ['start_task', 'stop_task', 'go_home', 'deposit', 'task_status', 'observe', 'inspect_chest', 'eat', 'equip', 'finish', 'memory_read', 'memory_write', 'memory_forget', 'expedition'])
 
   const observed = await call(f, token, 'observe', { run_id: runId })
   assert.equal((observed as { ok: boolean }).ok, true)

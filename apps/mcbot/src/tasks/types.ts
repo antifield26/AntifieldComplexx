@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer'
-import type { Config } from '../config.ts'
+import type { Config, ConfigPoint } from '../config.ts'
 import type { Logger } from '../logger.ts'
 import type { RuntimeState, TaskName, TaskProgress, TaskSnapshot } from '../state.ts'
 import type { ChatSender } from '../minecraft/chat.ts'
@@ -44,6 +44,25 @@ export function requireBot (ctx: TaskContext): Bot {
   const bot = ctx.getBot()
   if (!bot || !bot.entity) throw new TaskError('我还没连上服务器')
   return bot
+}
+
+export interface BaseLayout {
+  home: ConfigPoint
+  safeZone: NonNullable<Config['safeZone']>
+  farm: NonNullable<Config['farm']>
+  chest: ConfigPoint
+  fishStand: ConfigPoint
+  fishWater: ConfigPoint
+  treeFarm: NonNullable<Config['treeFarm']>
+}
+
+/** 基地任务、传送和补货都依赖整组坐标。缺任何一组就拒绝，不回退到旧世界。 */
+export function requireLayout (config: Config): BaseLayout {
+  const { home, safeZone, farm, chest, fishStand, fishWater, treeFarm } = config
+  if (!home || !safeZone || !farm || !chest || !fishStand || !fishWater || !treeFarm) {
+    throw new TaskError('还没有配置基地')
+  }
+  return { home, safeZone, farm, chest, fishStand, fishWater, treeFarm }
 }
 
 export function isExpired (ctx: TaskContext): boolean {

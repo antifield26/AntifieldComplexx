@@ -292,7 +292,7 @@ try {
     assert.equal(await readFile(binding + '.ready', 'utf8'), 'ready\n')
     await harness.close()
     harness = undefined
-    console.log('固定 DSH SDK 已加载 dsh-mcbot 的 13 个工具')
+    console.log(`固定 DSH SDK 已加载 dsh-mcbot 的 ${buildToolDefinitions().length} 个工具`)
   }
 
   server.listen(0, '127.0.0.1')

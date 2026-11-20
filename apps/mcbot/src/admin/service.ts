@@ -24,6 +24,14 @@ export function stripColors (text: string): string {
   return text.replace(/§./g, '')
 }
 
+/** Fabric 原版目标刻率与平均耗时。未知格式留空。 */
+export function parseTick (text: string): NonNullable<AdminSnapshot['tick']> | null {
+  const match = stripColors(text).match(/Target tick rate: (\d+(?:\.\d+)?) per second\.\s+Average time per tick: (\d+(?:\.\d+)?)ms/i)
+  if (!match) return null
+  const [targetRate, averageMs] = match.slice(1).map(Number)
+  return Number.isFinite(targetRate) && Number.isFinite(averageMs) ? { targetRate: targetRate!, averageMs: averageMs! } : null
+}
+
 export function parseTps (text: string): TpsSnapshot {
   const clean = stripColors(text)
   const payload = clean.includes(':') ? clean.slice(clean.indexOf(':') + 1) : clean
@@ -67,10 +75,10 @@ export function parseList (text: string): { count: number | null, max: number | 
 
 export function parseTime (text: string): { ticks: number | null, label: string | null } {
   const clean = stripColors(text)
-  const ticksMatch = /(\d+)\s*ticks/i.exec(clean)
+  const ticksMatch = /(\d+)\s*ticks|^The time is (\d+)\s*$/im.exec(clean)
   const labelMatch = /(\d{1,2}):(\d{2})/.exec(clean)
   return {
-    ticks: ticksMatch ? Number(ticksMatch[1]) : null,
+    ticks: ticksMatch ? Number(ticksMatch[1] ?? ticksMatch[2]) : null,
     label: labelMatch ? `${labelMatch[1]}:${labelMatch[2]}` : null
   }
 }
@@ -148,7 +156,7 @@ export class AdminService {
   async timeNow (): Promise<number | null> {
     if (!this.deps.config.rcon.enabled) return null
     try {
-      const text = await this.client.command('time')
+      const text = await this.client.command('time query daytime')
       const time = parseTime(text)
       if (time.ticks !== null) {
         this.lastGood = { ...this.lastGood, time }
@@ -175,13 +183,12 @@ export class AdminService {
 
   private async doRefresh (): Promise<void> {
     try {
-      const [tpsText, listText, whitelistText, timeText] = await Promise.all([
-        this.client.command('tps'),
+      const [tick, listText, whitelistText, timeText] = await Promise.all([
+        this.client.command('tick query').then(parseTick, () => null),
         this.client.command('list'),
         this.client.command('whitelist list'),
-        this.client.command('time')
+        this.client.command('time query daytime').catch(() => '')
       ])
-      const tps = parseTps(tpsText)
       const online = parseList(listText)
       const whitelist = parseWhitelist(whitelistText)
       const time = parseTime(timeText)
@@ -190,7 +197,8 @@ export class AdminService {
         rcon: true,
         updatedAt: new Date().toISOString(),
         lastError: null,
-        tps,
+        tps: emptyTps(),
+        tick,
         online,
         whitelist,
         time,

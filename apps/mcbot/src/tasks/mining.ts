@@ -6,6 +6,7 @@ import { surveyRing } from './navigation.ts'
 import { depositProduce } from './deposit.ts'
 import { equipItem } from './inventory.ts'
 import { isExpired, requireBot, sleep, TaskError, TaskStopError, type TaskContext } from './types.ts'
+import { worldMemoryDir } from '../autonomy/world-memory.ts'
 import { readResourceMemory, rememberedOreTargets, rememberedProbes, rememberObservedResources } from './memory-points.ts'
 import { playerNear, scanExposedOres, type OreTarget } from './resources.ts'
 
@@ -153,14 +154,14 @@ function pointKey (position: Vec3): string {
 }
 
 function rememberOres (bot: Bot, config: Config, skipped: Set<string>): OreTarget[] {
-  return rememberedOreTargets(bot, config, readResourceMemory(config.dataDir, bot.game?.dimension))
+  return rememberedOreTargets(bot, config, readResourceMemory(worldMemoryDir(config.dataDir, config.worldId), bot.game?.dimension))
     .filter(target => !skipped.has(pointKey(target.position)))
 }
 
 function nextOreProbe (bot: Bot, config: Config, skipped: Set<string>, tried: Set<string>): Vec3 | null {
   const origin = bot.entity?.position
   if (!origin) return null
-  return rememberedProbes(bot, readResourceMemory(config.dataDir, bot.game?.dimension), 'ore', origin, config.scanRadius * 2)
+  return rememberedProbes(bot, readResourceMemory(worldMemoryDir(config.dataDir, config.worldId), bot.game?.dimension), 'ore', origin, config.scanRadius * 2)
     .find(point => {
       const key = pointKey(point)
       return !skipped.has(key) && !tried.has(key)

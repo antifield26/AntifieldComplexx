@@ -696,7 +696,7 @@ Workbench 不提供 QQ 管理、Webhook、发布或 OpenCode Chat。这些路径
 
 ## 15. mcbot Bot 对接
 
-mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）。应用轮询只读接口，并代理管理员对话、在线模式、停止和急停。浏览器不直连 mcbot，服务端不下发 Token 或 URL。目标上游为 mcbot **v1.2.6**，只接受契约 v2。非 v2 的读取拒绝。这些端点都要会话，写操作还要 CSRF。凭据与响应边界见 `docs/SECURITY.md`。
+mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）。应用轮询只读接口，并代理管理员对话、在线模式、停止和急停。浏览器不直连 mcbot，服务端不下发 Token 或 URL。目标上游为 mcbot **v1.3.0**，只接受契约 v2。非 v2 的读取拒绝。这些端点都要会话，写操作还要 CSRF。凭据与响应边界见 `docs/SECURITY.md`。
 
 ### 通用语义
 
@@ -768,7 +768,7 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 
 ### GET /api/mcbot/chat
 
-需要会话 + GET 60/min。关闭时 `503 mcbot_disabled`。返回 mcbot 内存中的 `{ "messages", "turn", "steps" }`。`turn` 为 `{ "id", "status": "pending|ok|error", "error" }` 或 `null`。每条消息含 `id`、`role`（`user` 或 `assistant`）、`text`、`at`，最多 40 条。`steps` 最多 80 条，种类只有 `user`（`text`）、`assistant`（`text`）、`tool`（`name` 与 `status: ok|error`）、`goal`（`action` 与最多 120 字的 `title`）、`todo`（`action` 与最多 120 字的 `title`）。工具名只来自现有 13 个 mcbot 工具。不返回工具参数、令牌、提示词或世界记忆正文。正文和步骤不进 SQLite，不进审计，重启即丢失。急停清空步骤。
+需要会话 + GET 60/min。关闭时 `503 mcbot_disabled`。返回 mcbot 内存中的 `{ "messages", "turn", "steps" }`。`turn` 为 `{ "id", "status": "pending|ok|error", "error" }` 或 `null`。每条消息含 `id`、`role`（`user` 或 `assistant`）、`text`、`at`，最多 40 条。`steps` 最多 80 条，种类只有 `user`（`text`）、`assistant`（`text`）、`tool`（`name` 与 `status: ok|error`）、`goal`（`action` 与最多 120 字的 `title`）、`todo`（`action` 与最多 120 字的 `title`）。工具名只来自现有 14 个 mcbot 工具。不返回工具参数、令牌、提示词或世界记忆正文。正文和步骤不进 SQLite，不进审计，重启即丢失。急停清空步骤。
 
 ### POST /api/mcbot/chat
 
@@ -787,6 +787,8 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 
 
 ## Minecraft Bot 本机契约
+
+私有 DSH 工具 `expedition` 接收 `run_id`、`operation`、`reason` 与按动作选择的 `item`、`quantity` 或 `position`。返回执行 ID 和游戏核验证据。环境键 `MC_WORLD_ID` 选择存档隔离目录。服务器状态与 Bot 管理状态的可选 `tick` 包含 `targetRate` 和 `averageMs`；无法读取时为 `null`。
 
 Bot 只监听回环地址。读 Token 与控制 Token 分离。下面的路径是 mcbot 自己的路径，不是 Workbench 的 `/api/mcbot`。
 
@@ -1212,7 +1214,7 @@ Authorization: Bearer <HTTP_TOKEN>
 
 ### 9.1 GET /admin/status
 
-需要读 Token。只读 RCON 白名单：`tps`、`list`、`whitelist list`、`time`。
+需要读 Token。只读 RCON 白名单为 `tick query`、`list`、`whitelist list`、`time query daytime`。
 
 ```json
 {
@@ -1272,9 +1274,9 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 - 唤醒词：`Lofii` / `@Lofii`（不区分大小写；只回应被点名的消息）。
 - 仅 `COMMAND_ALLOWLIST` 内玩家可下命令，默认 `Antifield`。
 - 命令：状态、钓鱼、种田、砍树、挖矿、砍天然林、睡觉、巡逻、收工、回家、存东西、过来、跟随、停下、看我、挥手、帮助。
-- 安全区扩至 `x111–239, z410–474`；挖矿/天然林只在安全区、保护盒外操作；天然林只 oak/spruce/birch 并补种；挖矿只煤/铁/铜裸露矿、不挖隧道。
+- 未整组配置基地时不使用已归档坐标，依赖这些锚点的任务会拒绝。挖矿和天然林在保护盒外操作；天然林只 oak/spruce/birch 并补种；挖矿只煤/铁/铜裸露矿、不挖隧道。
 - 睡觉时右键家附近的床；非夜晚、没有床、互动失败或夜晚没有被跳过时正常结束。
-- 巡逻四角安全区边界（内缩 4 格），最多 15 分钟，不主动追怪。
+- 巡逻绕家四个方向，最多 15 分钟，不主动追怪。
 - 游戏内/AI 意图默认可触发受控动作；`HTTP_ONLY_HIGH_RISK=true` 可关闭高风险触发。
 - 任务期间即使 Antifield 下线，Lofii 保持在线；任务结束恢复动态下线。
 
@@ -1329,7 +1331,7 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 | `memory_write` | `run_id, category, key, text, reason` | 按分类和键写入或覆盖。键 1–64，正文 1–240，均不含控制字符。最多 200 条；已有键可更新，满额后拒绝新键。不启动任务 |
 | `memory_forget` | `run_id, category, key, reason` | 删除一条记忆。不存在则返回错误。不启动任务 |
 
-每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码、容器类型/摘要计数，不记录 prompt/Token/完整容器内容。记忆工具只记分类和键，不记正文。世界记忆与聊天记忆分开，按当前维度选取 `world-memory.json`／`world-memory.nether.json`／`world-memory.end.json`（均 0600，每文件最多 200 条），支持主世界 version 1 数据格式。提示词只带当前维度、分类计数和最近 8 个键，`observe` 返回半径内方块和容器。挖矿／天然林可记录已扫描并复核的 resource 坐标；到场继续复核，失效时回退扫描。工具表仍是上面 13 个，不新增环境变量、参数或跨维度移动。
+每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码、容器类型/摘要计数，不记录 prompt/Token/完整容器内容。记忆工具只记分类和键，不记正文。世界记忆与聊天记忆分开，按当前维度选取 `world-memory.json`／`world-memory.nether.json`／`world-memory.end.json`（均 0600，每文件最多 200 条），支持主世界 version 1 数据格式。提示词只带当前维度、分类计数和最近 8 个键，`observe` 返回半径内方块和容器。挖矿／天然林可记录已扫描并复核的 resource 坐标；到场继续复核，失效时回退扫描。工具表仍是上面 14 个，跨维度不移动。
 
 断线时无法确认当前维度，记忆工具返回 `memory_dimension_unavailable`，不会回退读取主世界记录；未知维度返回 `memory_dimension_invalid`。
 
@@ -1358,7 +1360,7 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 
 **导航环境变量**：`PATH_PLANNER_ENABLED`、`PATH_PLANNER_MAX_NODES`、`PATH_PLANNER_TIMEOUT_MS`、`PATH_MAX_REPLANS`、`PATH_TELEPORT_FALLBACK`、`PATH_OUTSIDE_SAFE_RADIUS`、`PATH_AI_ENABLED`、`PATH_AI_TIMEOUT_MS`、`PATH_AI_COOLDOWN_MS`。
 
-**活动范围**：行走不受 `SAFE_*` 限制。`SCAN_RADIUS` 默认 32、最大 64。`CRITICAL_HEALTH` 默认 6，设为 0 关闭濒危回基地。寻路失败不把目标点当作传送落点；`PATH_TELEPORT_FALLBACK` 仍被读取，但不触发任意点传送。
+**活动范围**：行走不受 `SAFE_*` 限制。`SCAN_RADIUS` 默认 32、最大 64。`CRITICAL_HEALTH` 默认 6，设为 0 关闭濒危回基地。家、安全区、农田、主箱、钓点和树场必须整组出现；全部省略表示没有基地，不再回退到已归档坐标，濒危回基地、自动补货和依赖这些锚点的任务都会拒绝。寻路失败不把目标点当作传送落点；`PATH_TELEPORT_FALLBACK` 仍被读取，但不触发任意点传送。
 
 ### 12.5 事件驱动重决策
 

@@ -89,7 +89,7 @@ export class MovementManager {
     movements.canOpenDoors = false
     movements.allowParkour = false
     movements.allowSprinting = true
-    // PaperMC 高低差地形：允许安全的两格下落，避免一格台阶/坡道边缘被判定为不可达。
+    // 允许安全的两格下落，避免一格台阶或坡道边缘被判定为不可达。
     // pathfinder 仍不挖掘、不开门、不跑酷、不搭建。木门由确定性执行器打开，铁门只报告阻挡。
     movements.maxDropDown = 2
     movements.scafoldingBlocks = []
@@ -164,7 +164,9 @@ export class MovementManager {
   }
 
   atHome (): boolean {
-    return Boolean(this.bot && this.config && this.reachedTarget(this.bot, this.config.home, 1))
+    const home = this.config?.home
+    if (!this.bot || !home) return false
+    return this.reachedTarget(this.bot, home, 1)
   }
 
   private requireBot (): Bot {
@@ -722,7 +724,7 @@ export class MovementManager {
   noteHealth (): void {
     const bot = this.bot
     const config = this.config
-    if (!bot?.entity || !config || config.criticalHealth <= 0 || this.criticalBusy) return
+    if (!bot?.entity || !config || !config.home || config.criticalHealth <= 0 || this.criticalBusy) return
     if (!Number.isFinite(bot.health) || bot.health <= 0 || bot.health > config.criticalHealth) return
     const position = bot.entity.position
     const home = config.home
@@ -735,17 +737,18 @@ export class MovementManager {
   }
 
   private async criticalTeleportHome (health: number): Promise<void> {
-    const config = this.requireConfig()
+    const home = this.requireConfig().home
+    if (!home) throw new MovementError('还没有配置基地')
     this.stop('critical')
     this.logger.warn('movement critical teleport home', { health })
     this.criticalListener?.(health)
     this.notify?.('血量太低，我先回基地。')
-    await this.teleportTo(config.home.x, config.home.y, config.home.z)
+    await this.teleportTo(home.x, home.y, home.z)
   }
 
   async home (): Promise<void> {
-    const config = this.requireConfig()
-    const home = config.home
+    const home = this.requireConfig().home
+    if (!home) throw new MovementError('还没有配置基地')
     await this.goNearPoint(home.x, home.y, home.z, 1, 30000, false)
   }
 

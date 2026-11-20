@@ -29,6 +29,8 @@ test('v1.0.10 扫描列有上界，超大半径被截到 64', () => {
 
 test('v1.0.10 任意坐标不能传送，家和锚点可以', async () => {
   const config = makeConfig()
+  assert.ok(config.home)
+  assert.ok(config.fishStand)
   assert.equal(isTeleportAnchor(config, config.home.x, config.home.y, config.home.z), true)
   assert.equal(isTeleportAnchor(config, 1, 64, 1), false)
   assert.equal(isTeleportAnchor(config, config.fishStand.x, config.fishStand.y, config.fishStand.z), true)

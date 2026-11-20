@@ -28,6 +28,7 @@ export interface McStatus {
   motd: string
   players: { online: number; max: number; names: string[] }
   tps: McTps | null
+  tick?: { targetRate: number, averageMs: number } | null
   whitelistCount: number | null
   serviceActive: 'active' | 'inactive' | 'unknown'
   publicAddress: string
@@ -79,6 +80,14 @@ export function parseTpsResponse(text: string): McTps | null {
   const floats = (clean.match(/\d+(?:\.\d+)?/g) ?? []).map(Number)
   if (floats.length >= 3) return { m1: floats[0]!, m5: floats[1]!, m15: floats[2]! }
   return null
+}
+
+/** 目标刻率和实际每刻耗时来自不同字段，均不代表历史 TPS。 */
+export function parseTickResponse(text: string): { targetRate: number, averageMs: number } | null {
+  const match = stripColors(text).match(/Target tick rate: (\d+(?:\.\d+)?) per second\.\s+Average time per tick: (\d+(?:\.\d+)?)ms/i)
+  if (!match) return null
+  const [targetRate, averageMs] = match.slice(1).map(Number)
+  return Number.isFinite(targetRate) && Number.isFinite(averageMs) ? { targetRate: targetRate!, averageMs: averageMs! } : null
 }
 
 export class MinecraftService {
@@ -150,16 +159,16 @@ export class MinecraftService {
     }
 
     let list: { online: number; max: number; names: string[] } | null = null
-    let tps: McTps | null = null
+    let tick: McStatus['tick'] = null
     let whitelist: string[] | null = null
     let rconError: string | null = null
     try {
       const listText = await this.rcon('list')
       list = parseListResponse(listText)
       try {
-        tps = parseTpsResponse(await this.rcon('tps'))
+        tick = parseTickResponse(await this.rcon('tick query'))
       } catch {
-        tps = null
+        tick = null
       }
       try {
         whitelist = parseWhitelistResponse(await this.rcon('whitelist list'))
@@ -182,7 +191,8 @@ export class MinecraftService {
         max: list?.max ?? slp?.playersMax ?? 0,
         names,
       },
-      tps,
+      tps: null,
+      tick,
       whitelistCount: whitelist ? whitelist.length : null,
       serviceActive,
       publicAddress: this.config.mcPublicAddress,

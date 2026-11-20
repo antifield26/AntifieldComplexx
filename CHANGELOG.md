@@ -2,10 +2,14 @@
 
 记录按版本从新到旧排列。每个版本注明模块：workbench、mcbot、client、dsh、ops。
 
-## [未发布]
+## [v1.3.0] - 候选
 
-模块：ops
+模块：mcbot、dsh、workbench、client、ops
 
+- Lofii 的游戏点名和管理员会话共用自然语言执行入口。新增按物品数量核验的生存协作工具，支持跟随、探索、采集、加工、共享箱、交付和逐次物品生成许可。
+- Fabric 目标刻率与 MSPT 分开显示。全端应用图标改用石墨底暖橙几何徽记。
+
+- 未填写基地坐标时不再回退到旧世界默认点。依赖基地的传送、补货和任务在坐标整组配齐前拒绝执行。聊天记忆文件按现行 version 2 保存。
 - 生产 Minecraft 为 Fabric 26.1.2（Loader 0.20.1）。服务目录、隧道和世界备份仍使用 `/home/antifield/minecraft-server`。运行模组为 Fabric API 0.155.3、Lithium 0.24.7、FerriteCore 9.0.0、Lithostitched 1.8.1、Terralith 2.6.2。
 
 ## [v1.2.6] - 2026-11-20
@@ -17,23 +21,16 @@
 - DSH 运行时从装配后的候选目录验证。生产树莓派已运行 v1.2.6，Windows 桌面与三项备份任务已更新，schema 保持 22，mcbot 契约保持 v2。
 - 发布附注标签 `v1.2.6`，附 Windows x64 安装包、同证书签名的 Android ARM64 APK 及 SHA-256 校验清单。版本来源和现场证据见 [验收状态](docs/ACCEPTANCE.md)。
 
-## [未发布]
-
-模块：docs、ops
-
-- 工程指令按目录分层，根文件精简并增加体积、导航和命令引用检查。
-- 除 CHANGELOG/ROADMAP 外，文档统一为当前契约、能力、配置、操作与验收状态；版本引入叙述和 OpenCode 升级实验归档到本文件。
-- 对齐 QQ/告警单 webhook、mcbot 契约 v2 与 404 边界，清除操作手册中已经失效的 QQ 管线、OpenCode 在线升级和直接行动面板说明。
-
 ## [v1.2.5] - 2026-11-18
 
-模块：workbench、client、dsh、ops
+模块：workbench、client、dsh、docs、ops
 
 - DSH 设置增加「QQ 机器人」，主站通过固定私有 socket 管理独立服务的扫码、手动绑定、换号与解绑。
 - 备份分别保留最近成功和当前错误，世界拉取等待目标周期归档，恢复状态区分归档校验和实际解包。
 - 发布验收核对 Pi 固定维护入口、DSH 实际文件和 Windows 任务的脚本副本，schema 保持 22。
 - 个人生产完成 Workbench、DSH 和 mcbot 切换，保留同 schema 回滚源。按用户决定跳过 QQ 真实绑定候选。mcbot 首次探针误用健康字段，自动回滚后按实际契约重新切换并验收通过。
 - Windows 恢复演练改用二进制重定向接收 age 解密输出，schema 22 加密归档链与 Minecraft 世界均通过真实隔离恢复。DSH 安装清单补齐 `session-steps.mjs`，生产独立 Minecraft 代理使用校验过的新发布目录恢复启动。
+- 工程指令按目录分层，根文件精简并增加体积、导航和命令引用检查。除 CHANGELOG/ROADMAP 外，文档统一为当前契约、能力、配置、操作与验收状态。对齐 QQ/告警单 webhook、mcbot 契约 v2 与 404 边界，清除操作手册中已经失效的 QQ 管线、OpenCode 在线升级和直接行动面板说明。
 - 2026-11-19 发布 annotated Tag `v1.2.5` 和 GitHub Release，附 Windows x64 安装包、沿用兼容签名的 Android ARM64 APK 与 SHA-256 清单。正式包和 CI 证据见 [验收状态](docs/ACCEPTANCE.md)。
 
 ## [v1.2.4] - 2026-11-16

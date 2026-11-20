@@ -12,7 +12,7 @@ export const inject = ['tools']
 const PREFIX = 'mcbot_autonomy_'
 const TOOL_NAMES = new Set([
   'start_task', 'stop_task', 'go_home', 'deposit', 'task_status', 'observe',
-  'inspect_chest', 'eat', 'equip', 'finish', 'memory_read', 'memory_write', 'memory_forget',
+  'inspect_chest', 'eat', 'equip', 'finish', 'memory_read', 'memory_write', 'memory_forget', 'expedition',
 ])
 const MAX_BYTES = 64 * 1024
 

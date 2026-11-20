@@ -162,8 +162,8 @@ function McbotStatusCard({
             <Fact label="血量">{dashNumber(status.player.health)}</Fact>
             <Fact label="饥饿">{dashNumber(status.player.food)}</Fact>
             <Fact label="任务">{taskText}</Fact>
-            <Fact label="TPS（1m / 5m / 15m）" hint={status.admin.rcon ? undefined : 'RCON 不可用'}>
-              {tpsText}
+            <Fact label={status.admin.tick ? '刻率目标 / MSPT' : '刻指标'} hint={status.admin.rcon ? undefined : 'RCON 不可用'}>
+              {status.admin.tick ? `${status.admin.tick.targetRate.toFixed(1)} / ${status.admin.tick.averageMs.toFixed(1)} ms` : tpsText}
             </Fact>
             <Fact label="版本">
               {snapshot.version ?? status.version ?? '未知'}

@@ -1,13 +1,15 @@
 import type { Bot } from 'mineflayer'
 import { Vec3 } from 'vec3'
 import type { Config } from '../config.ts'
-import { requireBot, TaskStopError, type TaskContext } from './types.ts'
+import { requireBot, TaskError, TaskStopError, type TaskContext } from './types.ts'
 import { safeSpotNear } from './navigation.ts'
 
 /** 绕家的四个方向点。半径不超过 16，也不超过扫描半径。 */
 export function patrolCorners (config: Config): Vec3[] {
+  const home = config.home
+  if (!home) throw new TaskError('还没有配置基地')
   const radius = Math.min(16, config.scanRadius)
-  const { x, y, z } = config.home
+  const { x, y, z } = home
   return [
     new Vec3(x + radius, y, z),
     new Vec3(x, y, z + radius),

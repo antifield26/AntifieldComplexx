@@ -3,8 +3,9 @@ import type { Bot } from 'mineflayer'
 import { Vec3 } from 'vec3'
 import type { Config } from '../config.ts'
 import { depositProduce } from './deposit.ts'
+import { worldMemoryDir } from '../autonomy/world-memory.ts'
 import { readResourceMemory, rememberedCoordinates, rememberedProbes, rememberObservedResources } from './memory-points.ts'
-import { equipItem } from './inventory.ts'
+import { equipItem, freshAxe } from './inventory.ts'
 import { isExpired, requireBot, sleep, TaskError, TaskStopError, type TaskContext } from './types.ts'
 import { columnsWithinRadius, surveyRing } from './navigation.ts'
 import {
@@ -164,13 +165,6 @@ export function rememberedTrees (bot: Bot, config: Config, items: ReturnType<typ
   return trees
 }
 
-function freshAxe (bot: Bot): ReturnType<Bot['inventory']['items']>[number] | null {
-  return bot.inventory.items()
-    .filter(item => item.name === 'iron_axe')
-    .sort((a, b) => ((b.maxDurability ?? 0) - (b.durabilityUsed ?? 0)) - ((a.maxDurability ?? 0) - (a.durabilityUsed ?? 0)))
-    .find(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10) ?? null
-}
-
 async function moveNear (ctx: TaskContext, position: Vec3): Promise<void> {
   if (ctx.signal.aborted) throw new TaskStopError()
   await ctx.movement.goNearPoint(position.x + 0.5, position.y, position.z + 0.5, 3, 15000, true)
@@ -235,14 +229,14 @@ function pointKey (position: Vec3): string {
 }
 
 function rememberForest (bot: Bot, config: Config, skipped: Set<string>): NaturalTree[] {
-  return rememberedTrees(bot, config, readResourceMemory(config.dataDir, bot.game?.dimension))
+  return rememberedTrees(bot, config, readResourceMemory(worldMemoryDir(config.dataDir, config.worldId), bot.game?.dimension))
     .filter(tree => !skipped.has(pointKey(tree.base)))
 }
 
 function nextTreeProbe (bot: Bot, config: Config, skipped: Set<string>, tried: Set<string>): Vec3 | null {
   const origin = bot.entity?.position
   if (!origin) return null
-  return rememberedProbes(bot, readResourceMemory(config.dataDir, bot.game?.dimension), 'tree', origin, config.scanRadius * 2)
+  return rememberedProbes(bot, readResourceMemory(worldMemoryDir(config.dataDir, config.worldId), bot.game?.dimension), 'tree', origin, config.scanRadius * 2)
     .find(point => {
       const key = pointKey(point)
       return !skipped.has(key) && !tried.has(key)

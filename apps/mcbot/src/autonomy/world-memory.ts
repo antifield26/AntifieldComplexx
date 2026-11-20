@@ -44,6 +44,11 @@ export function worldMemoryPath (dataDir: string, dimension?: string): string {
   return path.join(dataDir, scope === 'overworld' ? 'world-memory.json' : `world-memory.${scope}.json`)
 }
 
+/** 存档标识由配置校验。旧目录保留供归档与回退，新存档从独立目录读取。 */
+export function worldMemoryDir (dataDir: string, worldId: string): string {
+  return path.join(dataDir, 'worlds', worldId)
+}
+
 // 按文件共享写队列，避免自动观察与自主工具在同一进程互相覆盖；弱引用不延长运行实例寿命。
 const stores = new Map<string, WeakRef<WorldMemoryStore>>()
 export function sharedWorldMemory (dataDir: string, dimension?: string, logger?: Logger): WorldMemoryStore {

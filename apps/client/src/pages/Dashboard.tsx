@@ -168,7 +168,7 @@ export function Dashboard() {
   // 优先使用 dashboard 下发字段；旧服务端回退到 /api/backups 汇总
   const pendingBackups = backup?.pendingCount ?? backupOverview?.pending ?? 0
   const backupError = backup?.lastError ?? backupOverview?.error ?? (backup?.ok === false ? '最近一次备份有失败项' : null)
-  const mcDegraded = minecraft.tps === null || minecraft.whitelistCount === null
+  const mcDegraded = minecraft.whitelistCount === null
   const tempClass =
     host.tempC === null ? 'text-dim' : host.tempC >= 85 ? 'text-danger' : host.tempC >= 75 ? 'text-warning' : undefined
   // 域名优先取服务端下发的 aiOrigin，其次 opencode.url；均缺失时不渲染可点击链接
@@ -304,7 +304,7 @@ export function Dashboard() {
               <>
                 {minecraft.version || '版本未知'}
                 {' · '}
-                TPS {minecraft.tps ? minecraft.tps.m1.toFixed(2) : '—'}
+                MSPT {minecraft.tick ? minecraft.tick.averageMs.toFixed(1) : '—'}
                 {' · '}
                 白名单 {minecraft.whitelistCount ?? '—'}
               </>
@@ -412,10 +412,10 @@ export function Dashboard() {
               <span className="mc-fact-value">{minecraft.players.online} / {minecraft.players.max}</span>
             </div>
             <div className="mc-fact">
-              <span className="mc-fact-label">TPS（1m / 5m / 15m）</span>
+              <span className="mc-fact-label">刻率目标 / MSPT</span>
               <span className="mc-fact-value">
-                {minecraft.tps
-                  ? `${minecraft.tps.m1.toFixed(1)} / ${minecraft.tps.m5.toFixed(1)} / ${minecraft.tps.m15.toFixed(1)}`
+                {minecraft.tick
+                  ? `${minecraft.tick.targetRate.toFixed(1)} / ${minecraft.tick.averageMs.toFixed(1)} ms`
                   : '—'}
               </span>
             </div>

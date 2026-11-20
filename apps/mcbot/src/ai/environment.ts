@@ -285,12 +285,15 @@ export function buildEnvironment (
   }
   const dimension = dimensionLabel(gameDimension(bot))
   const homeDimension = dimensionLabel('minecraft:overworld')
-  const home = {
-    distance: gameDimension(bot) === 'minecraft:overworld' || gameDimension(bot) === 'overworld'
-      ? round(distanceTo(position, new Vec3(config.home.x, config.home.y, config.home.z)), 1)
-      : null,
-    dimension: homeDimension
-  }
+  const homePoint = config.home
+  const home = homePoint
+    ? {
+        distance: gameDimension(bot) === 'minecraft:overworld' || gameDimension(bot) === 'overworld'
+          ? round(distanceTo(position, new Vec3(homePoint.x, homePoint.y, homePoint.z)), 1)
+          : null,
+        dimension: homeDimension
+      }
+    : null
   const snapshot: EnvironmentSnapshot = {
     connected: true,
     observedAt: new Date().toISOString(),

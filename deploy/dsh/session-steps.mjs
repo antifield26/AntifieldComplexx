@@ -24,6 +24,7 @@ export const TOOL_NAMES = [
   'memory_read',
   'memory_write',
   'memory_forget',
+  'expedition',
 ]
 
 const TOOLS = new Set(TOOL_NAMES)

@@ -173,6 +173,10 @@ export function startAgent(config) {
           textRuns.delete(run)
         }
       } else if (req.url === '/run/start' || req.url === '/admin/start') {
+        if (data.toolContract !== 2) {
+          send(res, 400, { error: 'tool_contract_mismatch' })
+          return
+        }
         const planning = req.url === '/admin/start'
         const current = planning ? admin : autonomy
         if (current) {

@@ -7,7 +7,7 @@
 import { Vec3 } from 'vec3'
 import type { Bot } from 'mineflayer'
 import type { Config } from '../config.ts'
-import { WorldMemoryStore, worldMemoryPath, sharedWorldMemory, memoryDimension, type WorldMemoryItem } from '../autonomy/world-memory.ts'
+import { WorldMemoryStore, worldMemoryPath, sharedWorldMemory, memoryDimension, worldMemoryDir, type WorldMemoryItem } from '../autonomy/world-memory.ts'
 import { exposedOreAt, type OreTarget } from './resources.ts'
 
 const MAX_POINTS = 8
@@ -26,7 +26,7 @@ export async function rememberObservedResources (
   bot: Bot, config: Config, kind: 'ore' | 'tree', points: readonly { position: Vec3, name: string }[]
 ): Promise<void> {
   const dimension = memoryDimension(bot.game?.dimension)
-  const memory = sharedWorldMemory(config.dataDir, dimension)
+  const memory = sharedWorldMemory(worldMemoryDir(config.dataDir, config.worldId), dimension)
   const now = Date.now()
   for (const { position, name } of points.slice(0, MAX_POINTS)) {
     if (memoryDimension(bot.game?.dimension) !== dimension) break

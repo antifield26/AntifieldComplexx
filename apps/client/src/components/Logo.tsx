@@ -6,7 +6,7 @@ export interface LogoProps {
   className?: string
 }
 
-/** 石墨底暖橙 AC 标识；登录页与侧栏共用。 */
+/** 石墨底暖橙几何徽记；登录页与侧栏共用。 */
 export function Logo({ size = 36, withText = false, className }: LogoProps) {
   return (
     <span className={cx('logo', className)}>
