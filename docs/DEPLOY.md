@@ -11,10 +11,10 @@
 | 组件/用途 | 当前资源 |
 |---|---|
 | Workbench | `/opt/antifieldcloud/releases/20261121T023912Z` |
-| Workbench 同 schema 回滚目标 | v1.2.6，`/opt/antifieldcloud/releases/20261120T002240Z`。v1.2.5 `/opt/antifieldcloud/releases/20261118T150139Z` 仍在磁盘上。 |
+| Workbench 同 schema 回滚目标 | v1.2.6，`/opt/antifieldcloud/releases/20261120T002240Z` |
 | Workbench 跨 schema 回滚目标 | v1.2.3 程序目录 `/var/backups/antifieldcloud/acceptance-126.hjzZRg1i/20261114T082631Z` 仍在。schema 21 快照 `db-predeploy-20261116T135240676Z.sqlite` 不在 `/var/lib/antifieldcloud/backups/`，同名 `-wal` 与 `-shm` 仍在；主库恢复前不能按该快照回退。既录 SHA-256 为 `ca3f4565626f288013db296dd88dfabc5a55a6355da904e2e1836b9f108bced2`。 |
-| mcbot | `/opt/mcbot/releases/20261121T024457Z`；同契约回滚指针 `/opt/mcbot/releases/20261120T002522Z`。`/opt/mcbot/releases/20261118T150139Z` 仍保留。单元开机禁用。 |
-| DSH | 当前 `/opt/antifield-dsh/releases/20261121T024350Z`；首选回滚资源 `/opt/antifield-dsh/releases/20261120T002111Z`。更早的 `/opt/antifield-dsh/releases/20261119T020617Z` 仍在。回滚前按本手册验证加密冷备、配置和三项服务。 |
+| mcbot | `/opt/mcbot/releases/20261121T024457Z`；同契约回滚指针 `/opt/mcbot/releases/20261120T002522Z`。单元开机禁用。 |
+| DSH | 当前 `/opt/antifield-dsh/releases/20261121T024350Z`；首选回滚资源 `/opt/antifield-dsh/releases/20261120T002111Z`。回滚前按本手册验证加密冷备、配置和三项服务。 |
 | 生产回滚配置 | Workbench 部署保护目录 `/var/lib/antifieldcloud/deploy-state/20261121T023912Z`，上一 release 为 `/opt/antifieldcloud/releases/20261120T002240Z`。异地监控变更前的 env 位于 `/var/backups/antifieldcloud/offsite-env-126.Dn1vXI4F`。固定维护入口本次安装的回滚目录为 `/var/backups/antifieldcloud/maintenance/install.9y1k10e4`；较早的 `install.gfxDYUiT` 仍在。 | |
 
 同 schema 回滚只恢复指针和配置，保留现行 DB/WAL。目标程序不支持现行 schema 时进入人工维护，先加密保全新写入，再使用匹配快照，不能只切 release。其他版本的变更记录仅见 CHANGELOG/ROADMAP，不能凭版本名称直接推断可恢复性。

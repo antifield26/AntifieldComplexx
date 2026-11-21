@@ -42,4 +42,4 @@
 
 ## 当前恢复源
 
-Workbench 首选同 schema 回滚至 v1.2.6 `/opt/antifieldcloud/releases/20261120T002240Z`，保留在用 DB/WAL。部署保护目录 `/var/lib/antifieldcloud/deploy-state/20261121T023912Z`。本次部署快照 `db-predeploy-20261121T024026240Z.sqlite` 在切换前已核验完整性、schema 22 和 SHA-256 `f282afcf337aa3622448d299a23f2c7b71650fd2aae0a6eb04abb80cec6f4764`。v1.2.5 目录 `/opt/antifieldcloud/releases/20261118T150139Z` 仍在。schema 21 主库缺失，不能据此回退 v1.2.3。DSH 首选回滚 `/opt/antifield-dsh/releases/20261120T002111Z`；本次切换未新做 DSH 加密冷备。固定维护入口回滚目录 `/var/backups/antifieldcloud/maintenance/install.9y1k10e4`。mcbot 开机保持禁用。组件指针见 [DEPLOY](DEPLOY.md)。
+Workbench 首选同 schema 回滚至 v1.2.6 `/opt/antifieldcloud/releases/20261120T002240Z`，保留在用 DB/WAL。部署保护目录 `/var/lib/antifieldcloud/deploy-state/20261121T023912Z`。本次部署快照 `db-predeploy-20261121T024026240Z.sqlite` 在切换前已核验完整性、schema 22 和 SHA-256 `f282afcf337aa3622448d299a23f2c7b71650fd2aae0a6eb04abb80cec6f4764`。schema 21 主库缺失，不能据此回退 v1.2.3。DSH 首选回滚 `/opt/antifield-dsh/releases/20261120T002111Z`；本次切换未新做 DSH 加密冷备。固定维护入口回滚目录 `/var/backups/antifieldcloud/maintenance/install.9y1k10e4`。mcbot 开机保持禁用。组件指针见 [DEPLOY](DEPLOY.md)。
