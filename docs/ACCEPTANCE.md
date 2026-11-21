@@ -1,15 +1,15 @@
 # 验收状态
 
-当前版本 v1.3.0 已正式发布，真实模型隔离验收及 Windows、Android 原位升级已通过。生产树莓派应用使用 v1.2.6。本地 Windows 与受验 Android 设备使用 v1.3.0。Workbench schema 22，mcbot 契约 v2，DSH 0.2.2-rc.3，QQ 插件 0.5.5。版本沿革见 [CHANGELOG](../CHANGELOG.md)。
+当前版本 v1.3.0 已正式发布，真实模型隔离验收及 Windows、Android 原位升级已通过。生产树莓派的 Workbench 与 mcbot 使用 v1.3.0。本地 Windows 与受验 Android 设备使用 v1.3.0。Workbench schema 22，mcbot 契约 v2，DSH 0.2.2-rc.3，QQ 插件 0.5.5。版本沿革见 [CHANGELOG](../CHANGELOG.md)。
 
 ## 当前运行资产
 
 | 组件 | 证据 |
 |---|---|
-| Workbench | `/opt/antifieldcloud/releases/20261120T002240Z`，基于 `a22b9a7`；工作区包 1,003,636 字节，SHA-256 `9867df10d0f4c43c307bc7f02c49f8927bb164bbd91c7ddcd7cc46d0cb49d938`。2026-11-21 本机 `/healthz` 为 1.2.6、schema 22。 |
-| mcbot | `/opt/mcbot/releases/20261120T002522Z`，基于 `a22b9a7`；工作区包 SHA-256 `85dc8237c6d451c817a7b5101e2247324b58107c2c581a750fcbab74315cb694`。2026-11-21 只读核对：单元 inactive、开机禁用，`127.0.0.1:3010` 未监听。 |
-| DSH | `/opt/antifield-dsh/releases/20261120T002111Z`，源提交 `a22b9a7`。`SHA256SUMS` 的 SHA-256 为 `4e384d1ffc88ef119f3154612ea0ff09b90df9c587e608d5e4d508b90e075c4b`。2026-11-21 只读核对三个生产服务均为 active。Windows 归档导出的 QQ 设置文件曾为 CRLF，当前指针指向重新验过完整清单的 LF 目录。 |
-| Minecraft 与 OpenCode | 2026-11-21 只读核对：minecraft.service 为 active，主进程 PID 1056，启动于 2026-11-20 23:00:22（北京时间）。OpenCode v2.2.5 作为离线回滚运行时。 |
+| Workbench | `/opt/antifieldcloud/releases/20261121T023912Z`。`release.json` 记录提交 `bc070ec`、版本 1.3.0、schema 22；工作区包 1,009,322 字节，SHA-256 `03dbe6376fe0401b062e03849deb638ac081d364722b1a6dc77b22d31ba94651`。2026-11-21 `/healthz` 为 1.3.0、schema 22、db ok、pendingBackups 0。此后的文档提交不是该运行包。 |
+| mcbot | `/opt/mcbot/releases/20261121T024457Z`，包由 `bc070ec` 的工作区打出，SHA-256 `726622f297f3ed6aa5aeec1e042da547438b77f02cd1544955402a8a13d5aed7`。2026-11-21 healthz 为 1.3.0、契约 v2、idle、未连接。单元开机禁用；当次进程 PID 8734，启动于 10:45:18（北京时间）。 |
+| DSH | `/opt/antifield-dsh/releases/20261121T024350Z`，源提交 `bc070ec79c9ad9ff377387561e55840a1ad2e780`。`SHA256SUMS` 的 SHA-256 为 `e4414a05b370177a956e2f656e7cfa636f6cbe94f3102c302e2fcb8521d1857d`。mcbot-agent PID 8494，启动于 2026-11-21 10:44:28（北京时间），运行时 0.2.2-rc.3。Web PID 1304 与 QQ PID 1303 仍为 2026-11-20 23:00:25，QQ 插件 0.5.5。 |
+| Minecraft 与 OpenCode | 2026-11-21 复核：minecraft.service 为 active，主进程 PID 1056，启动于 2026-11-20 23:00:22（北京时间）。OpenCode v2.2.5 作为离线回滚运行时。 |
 | 正式发布 | 附注标签 `v1.3.0` 指向 `58894d056bb7d786761251d8ee60bcc130331b97`。2026-11-20 23:24（北京时间）发布并设为 Latest。草稿中的两个现场验收客户端附件和 SHA-256 校验清单已从 GitHub 下载核验，正式发布所列摘要一致。标签客户端源码与通过原位升级的构建一致。[GitHub Release](https://github.com/antifield26/AntifieldComplexx/releases/tag/v1.3.0) |
 
 ## 验证结果与缺口
@@ -22,6 +22,7 @@
 | 真实模型 | 2026-11-20，Pi ARM64 回环 Fabric 与独立 DSH 进程验证 `58894d0`。游戏内点名经 DeepSeek 调用工具，从共享箱取出 8 个铁锭并逐件交付，接收方背包和 Bot 账本均为 8。模型曾提交一个无效坐标，重试成功。同行走到距主人 2.48 格，失联后停止。临时服务均已停止，生产 Minecraft 的进程和启动时间复核一致。 |
 | Windows x64 原位升级 | 2026-11-20，使用已发布 NSIS 安装包，SHA-256 为 `e3031e61ac5bcdb0f948674044fa35982cfee9bb9da47224d062e71a01b05aaa`。常规尝试遇临时目录和文件写入错误。经用户确认管理员提示后，安装器退出码为 0，注册表和程序版本均为 1.3.0，路径保留，主窗口恢复原已登录会话。 |
 | Android ARM64 签名与原位升级 | 2026-11-20，同一证书签署，v2/v3 签名和对齐通过。签名 APK SHA-256 为 `482c9a516c51d9a0d920ee98614d608648a369dfc6e7571280f3c6c19778965b`。真机从 versionCode 1002006 升至 1003000，应用 ID、首次安装时间和数据目录一致，主 Activity 启动成功，用户确认可进入原有页面。 |
+| v1.3.0 生产切换 | 2026-11-21，Pi 部署内 smoke 为 30 通过、0 失败、0 警告、0 跳过。覆盖应用 1.3.0、schema 22、mcbot 1.3.0 契约 v2、DSH 0.2.2-rc.3、QQ 插件 0.5.5、35 个 DSH 文件和 3 个固定维护入口。未包含 Access 公网、本机备份标记、Windows 计划任务、`-RequireMcbotState`、`-RequireOpenCodeStopped` 与恢复演练。 |
 
 | 范围 | 状态 | 证据 |
 |---|---|---|
@@ -34,9 +35,11 @@
 | 异地备份与恢复 | 上传状态通过，真实取回待验 | 已设置 `BACKUP_OFFSITE_EXPECTED=true`。v1.2.6 的云端应用归档取回和解密通过隔离夹具验证；Windows 真实 Drive 演练待完成。 |
 | Windows x64 | 原位升级、启动通过 | 2026-11-20，本机已由 v1.2.5 升级。安装登记和已安装程序均为 1.2.6，普通权限启动后正常创建主窗口。安装包 SHA-256 为 `9e074998047a9002a1dc56934f5bd0f1c53b0ca9e13c25838db8c37c9941a3cc`。 |
 | Windows 备份任务 | 已更新 | 2026-11-20，三个任务沿用原配置，安装标记为 v1.2.6，四个固定脚本 SHA-256 与仓库一致。应用与世界拉取任务实际退出码均为 0，Pi 的应用归档、世界和密钥包状态成功。本地新增密文 `snapshot-20261120T003501392Z-inc.tar.gz.age` 旁文件齐全且 SHA-256 匹配。 |
+| Windows 备份任务（v1.3.0） | 未随本次切换更新 | 2026-11-21 未运行 `install-backup-task.ps1`。部署内 smoke 使用了 `-SkipLocalTaskCheck`。 |
+| schema 21 快照 | 主库缺失 | 2026-11-21 只读核对：`db-predeploy-20261116T135240676Z.sqlite` 不在 `/var/lib/antifieldcloud/backups/`，同名 `-wal` 与 `-shm` 仍在。跨 schema 回退到 v1.2.3 在主库恢复前不可用。 |
 | Android ARM64 | 同签名校验通过，真机待验 | `versionCode=1002006`，目标 SDK 36，沿用 v1.2.5 证书。签名后的 APK SHA-256 为 `db6890ae2749dbc52a9220dc6d9fd0fe934a2611d8af977494355fb0720f71a0`。 |
 | `inspect_chest` 实机路径 | 待验 | 离线夹具覆盖，实机路径无独立通过证据。 |
 
 ## 当前恢复源
 
-Workbench 首选同 schema 回滚至 v1.2.5，保留在用 DB/WAL。本次部署快照 `db-predeploy-20261120T002353606Z.sqlite` 已核验 SQLite 完整性、schema 22 和 SHA-256 `47a1bbef8a111bb4b850a7054749e82582e964f5c2c334d41b9ef58e2d5951b5`。DSH 冷备 `dsh-20261120T002008799679508Z.tar.age` 已生成，密文 SHA-256 旁文件校验通过。组件回滚指针及配置位置见 [DEPLOY](DEPLOY.md)。
+Workbench 首选同 schema 回滚至 v1.2.6 `/opt/antifieldcloud/releases/20261120T002240Z`，保留在用 DB/WAL。部署保护目录 `/var/lib/antifieldcloud/deploy-state/20261121T023912Z`。本次部署快照 `db-predeploy-20261121T024026240Z.sqlite` 在切换前已核验完整性、schema 22 和 SHA-256 `f282afcf337aa3622448d299a23f2c7b71650fd2aae0a6eb04abb80cec6f4764`。v1.2.5 目录 `/opt/antifieldcloud/releases/20261118T150139Z` 仍在。schema 21 主库缺失，不能据此回退 v1.2.3。DSH 首选回滚 `/opt/antifield-dsh/releases/20261120T002111Z`；本次切换未新做 DSH 加密冷备。固定维护入口回滚目录 `/var/backups/antifieldcloud/maintenance/install.9y1k10e4`。mcbot 开机保持禁用。组件指针见 [DEPLOY](DEPLOY.md)。
