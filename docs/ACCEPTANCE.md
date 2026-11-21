@@ -7,7 +7,7 @@
 | 组件 | 证据 |
 |---|---|
 | Workbench | `/opt/antifieldcloud/releases/20261121T023912Z`。`release.json` 记录提交 `bc070ec`、版本 1.3.0、schema 22；工作区包 1,009,322 字节，SHA-256 `03dbe6376fe0401b062e03849deb638ac081d364722b1a6dc77b22d31ba94651`。2026-11-21 `/healthz` 为 1.3.0、schema 22、db ok、pendingBackups 0。此后的文档提交不是该运行包。 |
-| mcbot | `/opt/mcbot/releases/20261121T024457Z`，包由 `bc070ec` 的工作区打出，SHA-256 `726622f297f3ed6aa5aeec1e042da547438b77f02cd1544955402a8a13d5aed7`。2026-11-21 healthz 为 1.3.0、契约 v2、idle、未连接。单元开机禁用；当次进程 PID 8734，启动于 10:45:18（北京时间）。 |
+| mcbot | `/opt/mcbot/releases/20261121T024457Z`，包由 `bc070ec` 的工作区打出，SHA-256 `726622f297f3ed6aa5aeec1e042da547438b77f02cd1544955402a8a13d5aed7`。2026-11-21 healthz 为 1.3.0、契约 v2、idle、未连接。2026-11-21 18:42（北京时间）设为开机自启，进程未重启，PID 8734 仍启动于 10:45:18（北京时间）。 |
 | DSH | `/opt/antifield-dsh/releases/20261121T024350Z`，源提交 `bc070ec79c9ad9ff377387561e55840a1ad2e780`。`SHA256SUMS` 的 SHA-256 为 `e4414a05b370177a956e2f656e7cfa636f6cbe94f3102c302e2fcb8521d1857d`。mcbot-agent PID 8494，启动于 2026-11-21 10:44:28（北京时间），运行时 0.2.2-rc.3。Web PID 1304 与 QQ PID 1303 仍为 2026-11-20 23:00:25，QQ 插件 0.5.5。 |
 | Minecraft 与 OpenCode | 2026-11-21 复核：minecraft.service 为 active，主进程 PID 1056，启动于 2026-11-20 23:00:22（北京时间）。OpenCode v2.2.5 作为离线回滚运行时。 |
 | 正式发布 | 附注标签 `v1.3.0` 指向 `58894d056bb7d786761251d8ee60bcc130331b97`。2026-11-20 23:24（北京时间）发布并设为 Latest。草稿中的两个现场验收客户端附件和 SHA-256 校验清单已从 GitHub 下载核验，正式发布所列摘要一致。标签客户端源码与通过原位升级的构建一致。[GitHub Release](https://github.com/antifield26/AntifieldComplexx/releases/tag/v1.3.0) |
@@ -42,4 +42,4 @@
 
 ## 当前恢复源
 
-Workbench 首选同 schema 回滚至 v1.2.6 `/opt/antifieldcloud/releases/20261120T002240Z`，保留在用 DB/WAL。部署保护目录 `/var/lib/antifieldcloud/deploy-state/20261121T023912Z`。本次部署快照 `db-predeploy-20261121T024026240Z.sqlite` 在切换前已核验完整性、schema 22 和 SHA-256 `f282afcf337aa3622448d299a23f2c7b71650fd2aae0a6eb04abb80cec6f4764`。schema 21 主库缺失，不能据此回退 v1.2.3。DSH 首选回滚 `/opt/antifield-dsh/releases/20261120T002111Z`；本次切换未新做 DSH 加密冷备。固定维护入口回滚目录 `/var/backups/antifieldcloud/maintenance/install.9y1k10e4`。mcbot 开机保持禁用。组件指针见 [DEPLOY](DEPLOY.md)。
+Workbench 首选同 schema 回滚至 v1.2.6 `/opt/antifieldcloud/releases/20261120T002240Z`，保留在用 DB/WAL。部署保护目录 `/var/lib/antifieldcloud/deploy-state/20261121T023912Z`。本次部署快照 `db-predeploy-20261121T024026240Z.sqlite` 在切换前已核验完整性、schema 22 和 SHA-256 `f282afcf337aa3622448d299a23f2c7b71650fd2aae0a6eb04abb80cec6f4764`。schema 21 主库缺失，不能据此回退 v1.2.3。DSH 首选回滚 `/opt/antifield-dsh/releases/20261120T002111Z`；本次切换未新做 DSH 加密冷备。固定维护入口回滚目录 `/var/backups/antifieldcloud/maintenance/install.9y1k10e4`。mcbot 开机自启。组件指针见 [DEPLOY](DEPLOY.md)。
