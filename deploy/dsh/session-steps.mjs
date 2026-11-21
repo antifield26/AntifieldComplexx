@@ -1,6 +1,6 @@
 /**
  * 从 DSH RunResult.events 抽出管理员时间线。
- * 只保留直接用户发言、助手正文、13 个 mcbot 工具、goal 与 todo。
+ * 只保留直接用户发言、助手正文、14 个 mcbot 工具、goal 与 todo。
  * 不包含 arguments、结果正文、usage 或 token。单次回合最多 80 步，
  * steps 的 UTF-8 JSON 不超过 24 KiB，并与 final text 一起放进 64 KiB。
  */

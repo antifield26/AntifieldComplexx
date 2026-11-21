@@ -1,25 +1,27 @@
 # 验收状态
 
-当前版本 v1.3.0 候选，隔离 Fabric 与签名安装包验收待完成。生产树莓派与本机 Windows 使用 v1.2.6。Workbench schema 22，mcbot 契约 v2，DSH 0.2.2-rc.3，QQ 插件 0.5.5。正式发布与版本沿革见 [CHANGELOG](../CHANGELOG.md)。
+当前版本 v1.3.0 已正式发布，真实模型隔离验收及 Windows、Android 原位升级已通过。生产树莓派应用使用 v1.2.6。本地 Windows 与受验 Android 设备使用 v1.3.0。Workbench schema 22，mcbot 契约 v2，DSH 0.2.2-rc.3，QQ 插件 0.5.5。版本沿革见 [CHANGELOG](../CHANGELOG.md)。
 
 ## 当前运行资产
 
 | 组件 | 证据 |
 |---|---|
-| Workbench | `/opt/antifieldcloud/releases/20261120T002240Z`，基于 `a22b9a7`；工作区包 1,003,636 字节，SHA-256 `9867df10d0f4c43c307bc7f02c49f8927bb164bbd91c7ddcd7cc46d0cb49d938`。 |
-| mcbot | `/opt/mcbot/releases/20261120T002522Z`，基于 `a22b9a7`；工作区包 SHA-256 `85dc8237c6d451c817a7b5101e2247324b58107c2c581a750fcbab74315cb694`。 |
-| DSH | `/opt/antifield-dsh/releases/20261120T002111Z`，源提交 `a22b9a7`。`SHA256SUMS` 的 SHA-256 为 `4e384d1ffc88ef119f3154612ea0ff09b90df9c587e608d5e4d508b90e075c4b`。三个生产服务就绪。Windows 归档导出的 QQ 设置文件曾为 CRLF，当前指针指向重新验过完整清单的 LF 目录。 |
-| Minecraft 与 OpenCode | 部署前后 Minecraft 主进程 PID 均为 1051。OpenCode v2.2.5 作为离线回滚运行时。 |
-| 正式发布 | 最新正式 Tag 为 `v1.2.6`，指向 `8d7c1877005d07be295a1bba364e4f00452256aa`。2026-11-20 08:51（北京时间）发布，两个客户端附件和 SHA-256 清单均已从 GitHub 下载核验。客户端产物来自 `a22b9a7`，至发布标签仅追加恢复脚本和回归测试变更。[GitHub Release](https://github.com/antifield26/AntifieldComplexx/releases/tag/v1.2.6) |
+| Workbench | `/opt/antifieldcloud/releases/20261120T002240Z`，基于 `a22b9a7`；工作区包 1,003,636 字节，SHA-256 `9867df10d0f4c43c307bc7f02c49f8927bb164bbd91c7ddcd7cc46d0cb49d938`。2026-11-21 本机 `/healthz` 为 1.2.6、schema 22。 |
+| mcbot | `/opt/mcbot/releases/20261120T002522Z`，基于 `a22b9a7`；工作区包 SHA-256 `85dc8237c6d451c817a7b5101e2247324b58107c2c581a750fcbab74315cb694`。2026-11-21 只读核对：单元 inactive、开机禁用，`127.0.0.1:3010` 未监听。 |
+| DSH | `/opt/antifield-dsh/releases/20261120T002111Z`，源提交 `a22b9a7`。`SHA256SUMS` 的 SHA-256 为 `4e384d1ffc88ef119f3154612ea0ff09b90df9c587e608d5e4d508b90e075c4b`。2026-11-21 只读核对三个生产服务均为 active。Windows 归档导出的 QQ 设置文件曾为 CRLF，当前指针指向重新验过完整清单的 LF 目录。 |
+| Minecraft 与 OpenCode | 2026-11-21 只读核对：minecraft.service 为 active，主进程 PID 1056，启动于 2026-11-20 23:00:22（北京时间）。OpenCode v2.2.5 作为离线回滚运行时。 |
+| 正式发布 | 附注标签 `v1.3.0` 指向 `58894d056bb7d786761251d8ee60bcc130331b97`。2026-11-20 23:24（北京时间）发布并设为 Latest。草稿中的两个现场验收客户端附件和 SHA-256 校验清单已从 GitHub 下载核验，正式发布所列摘要一致。标签客户端源码与通过原位升级的构建一致。[GitHub Release](https://github.com/antifield26/AntifieldComplexx/releases/tag/v1.3.0) |
 
 ## 验证结果与缺口
 
-| v1.3.0 候选范围 | 环境与观测 |
+| v1.3.0 发布验收 | 环境与观测 |
 |---|---|
+| CI | 2026-11-20，提交 `58894d056bb7d786761251d8ee60bcc130331b97` 的常规 CI、Windows x64 和 Android ARM64 原生工作流均通过，两个平台的产物已归档。现场安装包哈希见下方验收项。[常规 CI](https://github.com/antifield26/AntifieldComplexx/actions/runs/44724747802) · [原生 CI](https://github.com/antifield26/AntifieldComplexx/actions/runs/44724747832) |
 | 游戏执行器 | 2026-11-20，Pi 隔离 Fabric 26.1.2，Loader 0.20.1，匹配生产模组。两个测试账号分别验证共享箱取出和主人拾取 8 个铁锭。另验证同维度会合与跟丢、扫描与采矿入包、真实冶炼、逐次许可及重放拒绝。测试进程最高一次观测 RSS 221 MiB。 |
 | Fabric 刻率 | 隔离 Fabric 控制台返回目标 20.0 刻/秒与平均每刻耗时。RCON 通路由离线夹具验证。 |
-| 模型 | Pi ARM64 固定 DSH 包完成占位凭据的进程级工具注册与隔离 smoke。真实 DeepSeek 自然语言决策需独立候选凭据，仍待验。 |
-| 本机原生构建 | Windows x64 NSIS 安装包已生成，SHA-256 `e3031e61ac5bcdb0f948674044fa35982cfee9bb9da47224d062e71a01b05aaa`。Android ARM64 未签名 APK 已生成，SHA-256 `a902f88edd2283c73bcbc31999323da5879a3f0b9ab1bbb58bb3af6df0c30e07`。签名与原位安装待验。 |
+| 真实模型 | 2026-11-20，Pi ARM64 回环 Fabric 与独立 DSH 进程验证 `58894d0`。游戏内点名经 DeepSeek 调用工具，从共享箱取出 8 个铁锭并逐件交付，接收方背包和 Bot 账本均为 8。模型曾提交一个无效坐标，重试成功。同行走到距主人 2.48 格，失联后停止。临时服务均已停止，生产 Minecraft 的进程和启动时间复核一致。 |
+| Windows x64 原位升级 | 2026-11-20，使用已发布 NSIS 安装包，SHA-256 为 `e3031e61ac5bcdb0f948674044fa35982cfee9bb9da47224d062e71a01b05aaa`。常规尝试遇临时目录和文件写入错误。经用户确认管理员提示后，安装器退出码为 0，注册表和程序版本均为 1.3.0，路径保留，主窗口恢复原已登录会话。 |
+| Android ARM64 签名与原位升级 | 2026-11-20，同一证书签署，v2/v3 签名和对齐通过。签名 APK SHA-256 为 `482c9a516c51d9a0d920ee98614d608648a369dfc6e7571280f3c6c19778965b`。真机从 versionCode 1002006 升至 1003000，应用 ID、首次安装时间和数据目录一致，主 Activity 启动成功，用户确认可进入原有页面。 |
 
 | 范围 | 状态 | 证据 |
 |---|---|---|

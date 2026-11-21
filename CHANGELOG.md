@@ -2,12 +2,13 @@
 
 记录按版本从新到旧排列。每个版本注明模块：workbench、mcbot、client、dsh、ops。
 
-## [v1.3.0] - 候选
+## [v1.3.0] - 2026-11-20
 
 模块：mcbot、dsh、workbench、client、ops
 
 - Lofii 的游戏点名和管理员会话共用自然语言执行入口。新增按物品数量核验的生存协作工具，支持跟随、探索、采集、加工、共享箱、交付和逐次物品生成许可。
 - Fabric 目标刻率与 MSPT 分开显示。全端应用图标改用石墨底暖橙几何徽记。
+- 发布附注标签 `v1.3.0`，附 Windows x64 安装包、同证书签名的 Android ARM64 APK 和 SHA-256 校验清单。提交与现场验收证据见 [验收状态](docs/ACCEPTANCE.md)。
 
 - 未填写基地坐标时不再回退到旧世界默认点。依赖基地的传送、补货和任务在坐标整组配齐前拒绝执行。聊天记忆文件按现行 version 2 保存。
 - 生产 Minecraft 为 Fabric 26.1.2（Loader 0.20.1）。服务目录、隧道和世界备份仍使用 `/home/antifield/minecraft-server`。运行模组为 Fabric API 0.155.3、Lithium 0.24.7、FerriteCore 9.0.0、Lithostitched 1.8.1、Terralith 2.6.2。
